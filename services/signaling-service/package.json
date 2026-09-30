@@ -1,0 +1,13 @@
+{
+  "name": "signaling-service",
+  "version": "1.0.0",
+  "description": "WebRTC WebSocket Signaling Service",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "ws": "^8.16.0",
+    "dotenv": "^16.4.5"
+  }
+}

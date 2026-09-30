@@ -1,0 +1,729 @@
+/* Clean, Modern Video Conferencing Design (Google Meet / Whereby Style) */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  /* Google Meet / Whereby inspired calm dark palette */
+  --bg-app: #121417;
+  --bg-tile: #1f2227;
+  --bg-surface: #1a1d21;
+  --bg-surface-elevated: #262a30;
+  --bg-surface-hover: #2f343c;
+  
+  --border-subtle: #2b3038;
+  --border-default: #383e48;
+  
+  --text-main: #f1f3f5;
+  --text-secondary: #9aa2ac;
+  --text-muted: #6c7580;
+  
+  --accent-blue: #1a73e8;
+  --accent-blue-hover: #1557b0;
+  
+  --danger-red: #ea4335;
+  --danger-red-hover: #d93025;
+  
+  --success-green: #34a853;
+  
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-full: 9999px;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  background-color: var(--bg-app);
+  color: var(--text-main);
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  height: 100%;
+  width: 100%;
+}
+
+/* App Shell (100% Viewport, Zero Window Scrolling) */
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+  background-color: var(--bg-app);
+  position: relative;
+  overflow: hidden;
+}
+
+/* 1. Sleek, Minimal Top Bar (Like Google Meet) */
+.top-nav {
+  height: 50px;
+  min-height: 50px;
+  background-color: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  z-index: 20;
+}
+
+.top-nav-left, .top-nav-center, .top-nav-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-main);
+  letter-spacing: -0.01em;
+}
+
+.room-chip {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.room-chip:hover {
+  background: var(--bg-surface-elevated);
+  color: var(--text-main);
+}
+
+.call-timer {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.nav-btn {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s;
+}
+
+.nav-btn:hover {
+  background: var(--bg-surface-elevated);
+  color: var(--text-main);
+}
+
+.nav-btn.active {
+  background: var(--bg-surface-elevated);
+  color: var(--text-main);
+  border-color: var(--border-default);
+}
+
+/* 2. Main Stage (Flex Layout) */
+.main-stage {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  position: relative;
+}
+
+/* 3. Video Canvas (CRITICAL: ZERO OVERLAP FLEX LAYOUT) */
+.video-canvas {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 20px 84px 20px;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Video flex row: side-by-side without any possibility of overlapping */
+.video-flex-container {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  width: 100%;
+  max-width: 1200px;
+  height: 100%;
+}
+
+/* Individual Video Tile (Google Meet Style) */
+.video-tile {
+  flex: 1 1 0;
+  min-width: 0; /* Prevents overflow blowouts */
+  width: 100%;
+  max-width: calc(50% - 8px);
+  aspect-ratio: 16 / 9;
+  max-height: calc(100vh - 170px);
+  background-color: var(--bg-tile);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-subtle);
+  transition: border-color 0.2s ease;
+}
+
+.video-tile.speaking {
+  border-color: #5c93e6;
+}
+
+.video-element {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Bottom-left user name pill (Google Meet standard) */
+.tile-footer {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.user-name-tag {
+  background: rgba(18, 20, 23, 0.75);
+  backdrop-filter: blur(8px);
+  color: var(--text-main);
+  font-size: 0.78rem;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Bottom-right mic status */
+.tile-mic-tag {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgba(18, 20, 23, 0.75);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  z-index: 5;
+}
+
+.tile-mic-tag.muted {
+  background: var(--danger-red);
+  color: white;
+}
+
+/* Standby Avatar */
+.avatar-standby {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.avatar-circle {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: #2b3038;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4rem;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.avatar-circle.host {
+  background: #1a4980;
+  color: #c2e7ff;
+}
+
+.standby-text {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+/* 4. Floating Bottom Control Dock (Google Meet Style) */
+.bottom-dock {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(26, 29, 33, 0.9);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border-subtle);
+  padding: 8px 16px;
+  border-radius: var(--radius-full);
+  z-index: 30;
+}
+
+.dock-icon-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: none;
+  background: #2b3038;
+  color: var(--text-main);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 1.05rem;
+  transition: background 0.15s, transform 0.1s;
+}
+
+.dock-icon-btn:hover {
+  background: #383e48;
+}
+
+.dock-icon-btn.active {
+  background: var(--bg-surface-elevated);
+}
+
+.dock-icon-btn.muted {
+  background: var(--danger-red);
+  color: white;
+}
+
+.dock-icon-btn.muted:hover {
+  background: var(--danger-red-hover);
+}
+
+.dock-leave-btn {
+  height: 44px;
+  padding: 0 22px;
+  border-radius: var(--radius-full);
+  border: none;
+  background: var(--danger-red);
+  color: white;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 0.15s;
+}
+
+.dock-leave-btn:hover {
+  background: var(--danger-red-hover);
+}
+
+/* 5. Right Sidebar (Clean, Notion-like Notes & Transcript) */
+.right-drawer {
+  width: 360px;
+  min-width: 360px;
+  background-color: var(--bg-surface);
+  border-left: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: 15;
+}
+
+.drawer-top {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.drawer-tabs {
+  display: flex;
+  gap: 4px;
+  background: var(--bg-app);
+  padding: 3px;
+  border-radius: var(--radius-md);
+}
+
+.drawer-tab-btn {
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.drawer-tab-btn.active {
+  background: var(--bg-surface-elevated);
+  color: var(--text-main);
+  font-weight: 600;
+}
+
+.drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Clean Notes Style (Human, Calm, No AI Hype) */
+.notes-card {
+  background: var(--bg-app);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.notes-card-title {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.notes-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.notes-list li {
+  font-size: 0.84rem;
+  color: var(--text-secondary);
+  line-height: 1.45;
+  position: relative;
+  padding-left: 14px;
+}
+
+.notes-list li::before {
+  content: "•";
+  position: absolute;
+  left: 0;
+  color: var(--text-muted);
+}
+
+/* Action Items Checkbox List */
+.task-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.task-checkbox {
+  margin-top: 3px;
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+  accent-color: var(--accent-blue);
+}
+
+.task-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.task-text {
+  font-size: 0.82rem;
+  color: var(--text-main);
+  line-height: 1.35;
+}
+
+.task-text.done {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+
+.task-meta {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.notes-action-footer {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.btn-export-pdf {
+  width: 100%;
+  padding: 9px;
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-default);
+  color: var(--text-main);
+  font-size: 0.8rem;
+  font-weight: 500;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.btn-export-pdf:hover {
+  background: var(--bg-surface-hover);
+}
+
+/* Transcript Stream */
+.transcript-box {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.transcript-message {
+  padding: 10px 12px;
+  background: var(--bg-app);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.speaker-line {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.72rem;
+}
+
+.speaker-name {
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.speaker-time {
+  color: var(--text-muted);
+}
+
+.message-text {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+/* 6. Pre-Call Lobby Screen */
+.lobby-screen {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--bg-app);
+}
+
+.lobby-box {
+  width: 100%;
+  max-width: 480px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.lobby-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.lobby-subtitle {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.lobby-camera-preview {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: var(--bg-tile);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lobby-controls-bar {
+  position: absolute;
+  bottom: 12px;
+  display: flex;
+  gap: 10px;
+}
+
+.lobby-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.lobby-input {
+  background: var(--bg-app);
+  border: 1px solid var(--border-subtle);
+  padding: 11px 14px;
+  border-radius: var(--radius-sm);
+  color: var(--text-main);
+  font-size: 0.9rem;
+  outline: none;
+}
+
+.lobby-input:focus {
+  border-color: var(--accent-blue);
+}
+
+.btn-join {
+  background: var(--accent-blue);
+  color: white;
+  border: none;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.btn-join:hover {
+  background: var(--accent-blue-hover);
+}
+
+/* Architecture Modal */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  padding: 20px;
+}
+
+.modal-dialog {
+  width: 100%;
+  max-width: 540px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.modal-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-title-row h3 {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.modal-close {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 1.1rem;
+}
+
+.service-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.service-card {
+  background: var(--bg-app);
+  border: 1px solid var(--border-subtle);
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.service-card-title {
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.service-card-port {
+  color: var(--text-muted);
+}
+
+/* Toast */
+.toast-bar {
+  position: fixed;
+  bottom: 80px;
+  right: 24px;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.toast-msg {
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-default);
+  color: var(--text-main);
+  padding: 9px 15px;
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}

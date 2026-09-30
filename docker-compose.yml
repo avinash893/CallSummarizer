@@ -1,0 +1,88 @@
+version: '3.8'
+
+services:
+  # Client Application (Vite + React)
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_GATEWAY_URL=http://localhost:5000
+    depends_on:
+      - api-gateway
+    networks:
+      - callsummarizer-network
+
+  # API Gateway Service
+  api-gateway:
+    build:
+      context: ./services/api-gateway
+    ports:
+      - "5000:5000"
+    environment:
+      - PORT=5000
+      - MEETING_SERVICE_URL=http://meeting-service:5001
+      - SIGNALING_SERVICE_URL=http://signaling-service:5002
+      - NLP_SERVICE_URL=http://nlp-task-service:5003
+    depends_on:
+      - meeting-service
+      - signaling-service
+      - nlp-task-service
+    networks:
+      - callsummarizer-network
+
+  # Meeting Management Service (MongoDB persistence)
+  meeting-service:
+    build:
+      context: ./services/meeting-service
+    ports:
+      - "5001:5001"
+    environment:
+      - PORT=5001
+      - MONGO_URI=mongodb://mongodb:27017/callsummarizer
+    depends_on:
+      - mongodb
+    networks:
+      - callsummarizer-network
+
+  # WebRTC Signaling Service (WebSockets)
+  signaling-service:
+    build:
+      context: ./services/signaling-service
+    ports:
+      - "5002:5002"
+    environment:
+      - PORT=5002
+    networks:
+      - callsummarizer-network
+
+  # NLP Task Extraction & Summarization Service
+  nlp-task-service:
+    build:
+      context: ./services/nlp-task-service
+    ports:
+      - "5003:5003"
+    environment:
+      - PORT=5003
+      - GOOGLE_CALENDAR_CLIENT_ID=${GOOGLE_CALENDAR_CLIENT_ID}
+    networks:
+      - callsummarizer-network
+
+  # MongoDB Database (MERN Stack)
+  mongodb:
+    image: mongo:6.0
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - callsummarizer-network
+
+networks:
+  callsummarizer-network:
+    driver: bridge
+
+volumes:
+  mongo-data:

@@ -1,0 +1,14 @@
+{
+  "name": "nlp-task-service",
+  "version": "1.0.0",
+  "description": "NLP Speech-to-Text processing, Task Extraction, and Calendar Integration",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "googleapis": "^134.0.0",
+    "dotenv": "^16.4.5"
+  }
+}

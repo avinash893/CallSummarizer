@@ -1,0 +1,14 @@
+{
+  "name": "meeting-service",
+  "version": "1.0.0",
+  "description": "Meeting room management and MongoDB persistence",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "mongoose": "^8.3.1",
+    "cors": "^2.8.5"
+  }
+}

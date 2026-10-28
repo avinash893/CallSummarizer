@@ -18,7 +18,7 @@ app.post('/api/extract-tasks', (req, res) => {
     res.json({
         tasks: [
             { title: 'Review frontend responsiveness', assignee: 'You', due: 'Tomorrow' },
-            { title: 'Connect signaling service', assignee: 'Alex', due: 'Friday' }
+            { title: 'Connect signaling service', assignee: 'Rohan Sharma', due: 'Friday' }
         ]
     });
 });

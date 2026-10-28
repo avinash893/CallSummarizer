@@ -9,8 +9,20 @@ export default function VideoCanvas({
   const localVideoRef = useRef(null);
 
   useEffect(() => {
-    if (localVideoRef.current && localStream) {
-      localVideoRef.current.srcObject = isVideoOn ? localStream : null;
+    if (localVideoRef.current) {
+      if (localStream && isVideoOn) {
+        localVideoRef.current.srcObject = localStream;
+        try {
+          const playPromise = localVideoRef.current.play?.();
+          if (playPromise && typeof playPromise.catch === 'function') {
+            playPromise.catch(() => {});
+          }
+        } catch (e) {
+          // Ignore autoplay restriction or JSDOM stub
+        }
+      } else {
+        localVideoRef.current.srcObject = null;
+      }
     }
   }, [localStream, isVideoOn]);
 

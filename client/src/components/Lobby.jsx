@@ -13,8 +13,20 @@ export default function Lobby({
   const previewRef = useRef(null);
 
   useEffect(() => {
-    if (previewRef.current && localStream) {
-      previewRef.current.srcObject = isVideoOn ? localStream : null;
+    if (previewRef.current) {
+      if (localStream && isVideoOn) {
+        previewRef.current.srcObject = localStream;
+        try {
+          const playPromise = previewRef.current.play?.();
+          if (playPromise && typeof playPromise.catch === 'function') {
+            playPromise.catch(() => {});
+          }
+        } catch (e) {
+          // Ignore autoplay restriction or JSDOM stub
+        }
+      } else {
+        previewRef.current.srcObject = null;
+      }
     }
   }, [localStream, isVideoOn]);
 
@@ -82,7 +94,7 @@ export default function Lobby({
             required
           />
 
-          <button type="submit" className="btn-join">
+          <button type="submit" className="btn-join" disabled={!roomName.trim()}>
             Join now
           </button>
         </form>

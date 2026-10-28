@@ -25,23 +25,32 @@ export default function App() {
     { id: 3, title: 'Configure speech-to-text integration', assignee: 'You', due: 'Friday', completed: false }
   ]);
 
-  // Camera preview hook
+  // Camera preview hook with reliable cleanup
   useEffect(() => {
+    let activeStream = null;
+    let isMounted = true;
+
     async function initCamera() {
       try {
         if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
           const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-          setLocalStream(stream);
+          if (isMounted) {
+            activeStream = stream;
+            setLocalStream(stream);
+          } else {
+            stream.getTracks().forEach((track) => track.stop());
+          }
         }
       } catch (err) {
-        // Fallback to standby avatar
+        // Fallback to standby avatar gracefully
       }
     }
     initCamera();
 
     return () => {
-      if (localStream) {
-        localStream.getTracks().forEach((track) => track.stop());
+      isMounted = false;
+      if (activeStream) {
+        activeStream.getTracks().forEach((track) => track.stop());
       }
     };
   }, []);
@@ -78,8 +87,9 @@ export default function App() {
     const nextState = !isVideoOn;
     setIsVideoOn(nextState);
     if (localStream) {
-      const track = localStream.getVideoTracks()[0];
-      if (track) track.enabled = nextState;
+      localStream.getVideoTracks().forEach((track) => {
+        track.enabled = nextState;
+      });
     }
   };
 
@@ -87,8 +97,9 @@ export default function App() {
     const nextState = !isAudioOn;
     setIsAudioOn(nextState);
     if (localStream) {
-      const track = localStream.getAudioTracks()[0];
-      if (track) track.enabled = nextState;
+      localStream.getAudioTracks().forEach((track) => {
+        track.enabled = nextState;
+      });
     }
   };
 
@@ -105,8 +116,9 @@ export default function App() {
   };
 
   const handleCopyRoom = () => {
-    navigator.clipboard?.writeText(window.location.href);
-    alert('Meeting link copied to clipboard.');
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(window.location.href).catch(() => {});
+    }
   };
 
   // Real PDF Generator using jsPDF

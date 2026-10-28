@@ -15,12 +15,14 @@ export default function NotesDrawer({
       <div className="drawer-top">
         <div className="drawer-tabs">
           <button
+            type="button"
             className={`drawer-tab-btn ${activeTab === 'notes' ? 'active' : ''}`}
             onClick={() => setActiveTab('notes')}
           >
             Notes
           </button>
           <button
+            type="button"
             className={`drawer-tab-btn ${activeTab === 'transcript' ? 'active' : ''}`}
             onClick={() => setActiveTab('transcript')}
           >
@@ -68,7 +70,7 @@ export default function NotesDrawer({
             </div>
 
             <div className="notes-action-footer">
-              <button className="btn-export-pdf" onClick={onExportPdf}>
+              <button type="button" className="btn-export-pdf" onClick={onExportPdf}>
                 <i className="bi bi-file-earmark-pdf" style={{ marginRight: '6px' }}></i>
                 Download PDF Summary
               </button>

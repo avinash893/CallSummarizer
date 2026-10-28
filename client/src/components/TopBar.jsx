@@ -15,7 +15,7 @@ export default function TopBar({
           <span>CallSummarizer</span>
         </div>
 
-        <button className="room-chip" onClick={onCopyRoom} title="Copy meeting link">
+        <button type="button" className="room-chip" onClick={onCopyRoom} title="Copy meeting link">
           <span>{roomName}</span>
           <i className="bi bi-clipboard" style={{ fontSize: '0.75rem', opacity: 0.7 }}></i>
         </button>
@@ -27,6 +27,7 @@ export default function TopBar({
 
       <div className="top-nav-right">
         <button
+          type="button"
           className="nav-btn"
           onClick={onOpenArchModal}
           title="View Services Status"
@@ -36,6 +37,7 @@ export default function TopBar({
         </button>
 
         <button
+          type="button"
           className={`nav-btn ${isNotesOpen ? 'active' : ''}`}
           onClick={() => setIsNotesOpen(!isNotesOpen)}
           title="Toggle Meeting Notes"

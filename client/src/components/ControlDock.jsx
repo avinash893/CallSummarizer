@@ -15,6 +15,7 @@ export default function ControlDock({
     <div className="bottom-dock">
       {/* Mic button */}
       <button
+        type="button"
         className={`dock-icon-btn ${!isAudioOn ? 'muted' : ''}`}
         onClick={toggleAudio}
         title={isAudioOn ? 'Turn off microphone' : 'Turn on microphone'}
@@ -24,6 +25,7 @@ export default function ControlDock({
 
       {/* Camera button */}
       <button
+        type="button"
         className={`dock-icon-btn ${!isVideoOn ? 'muted' : ''}`}
         onClick={toggleVideo}
         title={isVideoOn ? 'Turn off camera' : 'Turn on camera'}
@@ -33,6 +35,7 @@ export default function ControlDock({
 
       {/* Screen share button */}
       <button
+        type="button"
         className={`dock-icon-btn ${isScreenSharing ? 'active' : ''}`}
         onClick={toggleScreenShare}
         title={isScreenSharing ? 'Stop presenting' : 'Present screen'}
@@ -42,6 +45,7 @@ export default function ControlDock({
 
       {/* Notes button */}
       <button
+        type="button"
         className={`dock-icon-btn ${isNotesOpen ? 'active' : ''}`}
         onClick={() => setIsNotesOpen(!isNotesOpen)}
         title="Meeting notes"
@@ -51,6 +55,7 @@ export default function ControlDock({
 
       {/* End call button */}
       <button
+        type="button"
         className="dock-leave-btn"
         onClick={onLeaveCall}
         title="Leave call"

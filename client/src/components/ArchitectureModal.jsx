@@ -8,7 +8,7 @@ export default function ArchitectureModal({ isOpen, onClose }) {
       <div className="modal-dialog" onClick={(e) => e.stopPropagation()}>
         <div className="modal-title-row">
           <h3>Services Architecture & Status</h3>
-          <button className="modal-close" onClick={onClose}>
+          <button type="button" className="modal-close" onClick={onClose}>
             <i className="bi bi-x-lg"></i>
           </button>
         </div>

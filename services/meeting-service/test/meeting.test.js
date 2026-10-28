@@ -34,4 +34,16 @@ test('Meeting Service - Health and Room Endpoints', async (t) => {
         assert.deepStrictEqual(data.participants, ['You', 'Rohan Sharma']);
         assert.strictEqual(data.status, 'active');
     });
+
+    await t.test('POST /api/rooms creates a new room session', async () => {
+        const res = await fetch(`${baseUrl}/api/rooms`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ roomId: 'product-review', host: 'You' })
+        });
+        assert.strictEqual(res.status, 201);
+        const data = await res.json();
+        assert.strictEqual(data.roomId, 'product-review');
+        assert.strictEqual(data.status, 'created');
+    });
 });

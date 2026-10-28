@@ -14,7 +14,7 @@ app.get('/health', (req, res) => {
 
 // Process meeting transcript text and extract structured tasks
 app.post('/api/extract-tasks', (req, res) => {
-    const { transcript } = req.body;
+    const { transcript } = req.body || {};
     res.json({
         tasks: [
             { title: 'Review frontend responsiveness', assignee: 'You', due: 'Tomorrow' },

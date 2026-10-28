@@ -69,7 +69,9 @@ export default function VideoCanvas({
 
           <div className="tile-footer">
             <span className="user-name-tag">
-              Rohan Sharma {remoteSpeaking && <span style={{ color: '#5c93e6' }}>●</span>}
+              Rohan Sharma {remoteSpeaking && (
+                <i className="bi bi-circle-fill" style={{ fontSize: '0.45rem', color: '#5c93e6', marginLeft: '4px' }} title="Speaking"></i>
+              )}
             </span>
           </div>
 

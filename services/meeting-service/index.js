@@ -21,6 +21,17 @@ app.get('/api/rooms/:id', (req, res) => {
     });
 });
 
+// Create room endpoint
+app.post('/api/rooms', (req, res) => {
+    const { roomId, host } = req.body || {};
+    res.status(201).json({
+        roomId: roomId || 'room-' + Date.now(),
+        host: host || 'You',
+        status: 'created',
+        createdAt: new Date()
+    });
+});
+
 if (require.main === module) {
     app.listen(PORT, () => {
         console.log(`[Meeting Service] Running on port ${PORT}`);

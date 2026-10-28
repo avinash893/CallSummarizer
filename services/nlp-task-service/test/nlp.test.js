@@ -48,4 +48,15 @@ test('NLP Task Service - Task Extraction & Indian Participant Naming', async (t)
         assert.strictEqual(rohanTask.title, 'Connect signaling service');
         assert.strictEqual(rohanTask.due, 'Friday');
     });
+
+    await t.test('POST /api/extract-tasks handles empty body gracefully', async () => {
+        const res = await fetch(`${baseUrl}/api/extract-tasks`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+        assert.strictEqual(res.status, 200);
+        const data = await res.json();
+        assert.ok(Array.isArray(data.tasks));
+    });
 });

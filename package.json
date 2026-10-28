@@ -1,0 +1,12 @@
+{
+  "name": "callsummarizer-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CallSummarizer monorepo containing React frontend and microservices",
+  "scripts": {
+    "test:client": "npm --prefix client test",
+    "test:services": "npm --prefix services/api-gateway test && npm --prefix services/meeting-service test && npm --prefix services/nlp-task-service test && npm --prefix services/signaling-service test",
+    "test": "npm run test:client && npm run test:services",
+    "build": "npm --prefix client run build"
+  }
+}

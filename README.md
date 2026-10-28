@@ -48,3 +48,16 @@ npm install
 npm run dev
 ```
 Open `http://localhost:5173` in your browser.
+
+## Running Tests
+
+Run all unit and integration test suites across the React frontend and all microservices:
+```bash
+npm test
+```
+
+Or run test suites independently:
+```bash
+npm run test:client    # Runs Vitest tests for React UI components
+npm run test:services  # Runs Node test runner across all 4 microservices
+```

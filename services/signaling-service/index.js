@@ -5,12 +5,27 @@
 const { WebSocketServer } = require('ws');
 
 const PORT = process.env.PORT || 5002;
-const wss = new WebSocketServer({ port: PORT });
 
-wss.on('connection', (ws) => {
-    ws.on('message', (message) => {
-        // Broadcast signaling messages (offers, answers, ICE candidates) to room peers
+function createSignalingServer(port = PORT) {
+    const wss = new WebSocketServer({ port });
+
+    wss.on('connection', (ws) => {
+        ws.on('message', (message) => {
+            // Broadcast signaling messages (offers, answers, ICE candidates) to other connected peers
+            wss.clients.forEach((client) => {
+                if (client !== ws && client.readyState === 1) { // 1 = OPEN
+                    client.send(message.toString());
+                }
+            });
+        });
     });
-});
 
-console.log(`[Signaling Service] WebSocket server listening on port ${PORT}`);
+    return wss;
+}
+
+if (require.main === module) {
+    createSignalingServer(PORT);
+    console.log(`[Signaling Service] WebSocket server listening on port ${PORT}`);
+}
+
+module.exports = { createSignalingServer };

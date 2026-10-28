@@ -4,7 +4,8 @@
   "description": "WebRTC WebSocket Signaling Service",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "test": "node --test"
   },
   "dependencies": {
     "ws": "^8.16.0",

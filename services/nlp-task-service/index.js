@@ -23,6 +23,10 @@ app.post('/api/extract-tasks', (req, res) => {
     });
 });
 
-app.listen(PORT, () => {
-    console.log(`[NLP Task Service] Running on port ${PORT}`);
-});
+if (require.main === module) {
+    app.listen(PORT, () => {
+        console.log(`[NLP Task Service] Running on port ${PORT}`);
+    });
+}
+
+module.exports = { app };

@@ -24,6 +24,10 @@ app.use('/api/nlp-tasks', (req, res) => {
     res.json({ message: 'Routed to NLP Task Service (Port 5003)' });
 });
 
-app.listen(PORT, () => {
-    console.log(`[API Gateway] Listening on port ${PORT}`);
-});
+if (require.main === module) {
+    app.listen(PORT, () => {
+        console.log(`[API Gateway] Listening on port ${PORT}`);
+    });
+}
+
+module.exports = { app };

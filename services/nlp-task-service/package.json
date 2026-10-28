@@ -4,7 +4,8 @@
   "description": "NLP Speech-to-Text processing, Task Extraction, and Calendar Integration",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "test": "node --test"
   },
   "dependencies": {
     "express": "^4.19.2",

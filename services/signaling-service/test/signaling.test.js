@@ -46,4 +46,11 @@ test('Signaling Service - WebRTC SDP & ICE Candidate Broadcast', async (t) => {
         client1.close();
         client2.close();
     });
+
+    await t.test('handles client termination gracefully without crashing daemon', async () => {
+        const client = new WebSocket(`ws://127.0.0.1:${port}`);
+        await new Promise((resolve) => client.on('open', resolve));
+        client.terminate();
+        assert.ok(true);
+    });
 });

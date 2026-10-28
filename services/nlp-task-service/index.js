@@ -3,9 +3,11 @@
  * Identifies actionable commitments from meeting speech and forms tasks / calendar events
  */
 const express = require('express');
+const cors = require('cors');
 const app = express();
 const PORT = process.env.PORT || 5003;
 
+app.use(cors());
 app.use(express.json());
 
 app.get('/health', (req, res) => {

@@ -36,9 +36,9 @@ export default function NotesDrawer({
             <div className="notes-card">
               <div className="notes-card-title">Summary</div>
               <ul className="notes-list">
-                <li>Reviewed project architecture and frontend migration to React.</li>
-                <li>Fixed video tile spacing to prevent layout overlap.</li>
-                <li>Simplified meeting interface to a clean, familiar format.</li>
+                <li>Aligned on project scope and sprint timeline for upcoming deliverables.</li>
+                <li>Assigned signaling and backend service review to Rohan.</li>
+                <li>Scheduled follow-up client presentation for Friday.</li>
               </ul>
             </div>
 

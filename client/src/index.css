@@ -1,4 +1,9 @@
-/* Clean, Modern Video Conferencing Design (Google Meet / Whereby Style) */
+/* ==========================================================================
+   CallSummarizer - Minimalist Meeting Platform
+   A clean, distraction-free interface inspired by Google Meet & Linear.
+   Zero AI gimmicks, zero glowing borders, pure functional elegance.
+   ========================================================================== */
+
 * {
   margin: 0;
   padding: 0;
@@ -6,42 +11,45 @@
 }
 
 :root {
-  /* Google Meet / Whereby inspired calm dark palette */
-  --bg-app: #121417;
-  --bg-tile: #1f2227;
-  --bg-surface: #1a1d21;
-  --bg-surface-elevated: #262a30;
-  --bg-surface-hover: #2f343c;
-  
-  --border-subtle: #2b3038;
-  --border-default: #383e48;
-  
-  --text-main: #f1f3f5;
-  --text-secondary: #9aa2ac;
-  --text-muted: #6c7580;
-  
-  --accent-blue: #1a73e8;
-  --accent-blue-hover: #1557b0;
-  
-  --danger-red: #ea4335;
-  --danger-red-hover: #d93025;
-  
-  --success-green: #34a853;
-  
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
+  /* Neutral Dark Theme */
+  --bg-app: #0f1013;
+  --bg-tile: #1a1c22;
+  --bg-surface: #181a20;
+  --bg-surface-elevated: #22252c;
+  --bg-surface-hover: #2c3039;
+
+  --border-subtle: #242730;
+  --border-default: #313540;
+  --border-focus: #4b5161;
+
+  --text-main: #f4f5f7;
+  --text-secondary: #9ea5b3;
+  --text-muted: #676e7d;
+
+  --accent-primary: #3b82f6;
+  --accent-primary-hover: #2563eb;
+
+  --danger: #ef4444;
+  --danger-hover: #dc2626;
+
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
   --radius-full: 9999px;
+
+  --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--font-family);
   background-color: var(--bg-app);
   color: var(--text-main);
   height: 100vh;
   width: 100vw;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 #root {
@@ -60,11 +68,14 @@ body {
   overflow: hidden;
 }
 
-/* 1. Sleek, Minimal Top Bar (Like Google Meet) */
+/* ==========================================================================
+   1. Top Navigation Bar
+   ========================================================================== */
 .top-nav {
-  height: 50px;
-  min-height: 50px;
-  background-color: transparent;
+  height: 52px;
+  min-height: 52px;
+  background-color: var(--bg-app);
+  border-bottom: 1px solid var(--border-subtle);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -72,7 +83,9 @@ body {
   z-index: 20;
 }
 
-.top-nav-left, .top-nav-center, .top-nav-right {
+.top-nav-left,
+.top-nav-center,
+.top-nav-right {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -82,7 +95,7 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 0.9rem;
+  font-size: 0.92rem;
   font-weight: 600;
   color: var(--text-main);
   letter-spacing: -0.01em;
@@ -91,19 +104,20 @@ body {
 .room-chip {
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
-  padding: 4px 10px;
+  padding: 5px 12px;
   border-radius: var(--radius-sm);
   font-size: 0.8rem;
   color: var(--text-secondary);
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: all 0.15s ease;
 }
 
 .room-chip:hover {
   background: var(--bg-surface-elevated);
+  border-color: var(--border-default);
   color: var(--text-main);
 }
 
@@ -112,6 +126,10 @@ body {
   font-weight: 500;
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
 }
 
 .nav-btn {
@@ -125,22 +143,25 @@ body {
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  transition: all 0.15s;
+  gap: 8px;
+  transition: all 0.15s ease;
 }
 
 .nav-btn:hover {
   background: var(--bg-surface-elevated);
+  border-color: var(--border-default);
   color: var(--text-main);
 }
 
 .nav-btn.active {
   background: var(--bg-surface-elevated);
-  color: var(--text-main);
   border-color: var(--border-default);
+  color: var(--text-main);
 }
 
-/* 2. Main Stage (Flex Layout) */
+/* ==========================================================================
+   2. Main Workspace Stage
+   ========================================================================== */
 .main-stage {
   flex: 1;
   display: flex;
@@ -148,18 +169,19 @@ body {
   position: relative;
 }
 
-/* 3. Video Canvas (CRITICAL: ZERO OVERLAP FLEX LAYOUT) */
+/* ==========================================================================
+   3. Video Canvas (Zero Overlap Flex Layout)
+   ========================================================================== */
 .video-canvas {
   flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 12px 20px 84px 20px;
+  padding: 16px 20px 88px 20px;
   position: relative;
   overflow: hidden;
 }
 
-/* Video flex row: side-by-side without any possibility of overlapping */
 .video-flex-container {
   display: flex;
   flex-direction: row;
@@ -171,16 +193,16 @@ body {
   height: 100%;
 }
 
-/* Individual Video Tile (Google Meet Style) */
+/* Video Tile */
 .video-tile {
   flex: 1 1 0;
-  min-width: 0; /* Prevents overflow blowouts */
+  min-width: 0; /* Prevents overflow issues */
   width: 100%;
   max-width: calc(50% - 8px);
   aspect-ratio: 16 / 9;
-  max-height: calc(100vh - 170px);
+  max-height: calc(100vh - 180px);
   background-color: var(--bg-tile);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   overflow: hidden;
   position: relative;
   display: flex;
@@ -191,7 +213,7 @@ body {
 }
 
 .video-tile.speaking {
-  border-color: #5c93e6;
+  border-color: var(--accent-primary);
 }
 
 .video-element {
@@ -201,7 +223,7 @@ body {
   display: block;
 }
 
-/* Bottom-left user name pill (Google Meet standard) */
+/* Bottom-left user name pill */
 .tile-footer {
   position: absolute;
   bottom: 12px;
@@ -214,19 +236,20 @@ body {
 }
 
 .user-name-tag {
-  background: rgba(18, 20, 23, 0.75);
+  background: rgba(15, 16, 19, 0.8);
   backdrop-filter: blur(8px);
   color: var(--text-main);
   font-size: 0.78rem;
   font-weight: 500;
   padding: 4px 10px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-xs);
   display: flex;
   align-items: center;
   gap: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-/* Bottom-right mic status */
+/* Bottom-right mic indicator */
 .tile-mic-tag {
   position: absolute;
   bottom: 12px;
@@ -234,7 +257,7 @@ body {
   width: 26px;
   height: 26px;
   border-radius: 50%;
-  background: rgba(18, 20, 23, 0.75);
+  background: rgba(15, 16, 19, 0.8);
   backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
@@ -242,11 +265,13 @@ body {
   font-size: 0.75rem;
   color: var(--text-secondary);
   z-index: 5;
+  border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .tile-mic-tag.muted {
-  background: var(--danger-red);
+  background: var(--danger);
   color: white;
+  border-color: transparent;
 }
 
 /* Standby Avatar */
@@ -259,21 +284,23 @@ body {
 }
 
 .avatar-circle {
-  width: 80px;
-  height: 80px;
+  width: 76px;
+  height: 76px;
   border-radius: 50%;
-  background: #2b3038;
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-default);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.4rem;
+  font-size: 1.35rem;
   font-weight: 600;
   color: var(--text-main);
 }
 
 .avatar-circle.host {
-  background: #1a4980;
-  color: #c2e7ff;
+  background: #1e3a5f;
+  border-color: #2563eb;
+  color: #bfdbfe;
 }
 
 .standby-text {
@@ -281,53 +308,58 @@ body {
   color: var(--text-muted);
 }
 
-/* 4. Floating Bottom Control Dock (Google Meet Style) */
+/* ==========================================================================
+   4. Floating Bottom Control Dock
+   ========================================================================== */
 .bottom-dock {
   position: absolute;
-  bottom: 16px;
+  bottom: 20px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
   gap: 12px;
-  background: rgba(26, 29, 33, 0.9);
-  backdrop-filter: blur(12px);
+  background: rgba(24, 26, 32, 0.92);
+  backdrop-filter: blur(16px);
   border: 1px solid var(--border-subtle);
   padding: 8px 16px;
   border-radius: var(--radius-full);
   z-index: 30;
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.4);
 }
 
 .dock-icon-btn {
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  border: none;
-  background: #2b3038;
+  border: 1px solid transparent;
+  background: var(--bg-surface-elevated);
   color: var(--text-main);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   font-size: 1.05rem;
-  transition: background 0.15s, transform 0.1s;
+  transition: all 0.15s ease;
 }
 
 .dock-icon-btn:hover {
-  background: #383e48;
+  background: var(--bg-surface-hover);
+  border-color: var(--border-default);
 }
 
 .dock-icon-btn.active {
-  background: var(--bg-surface-elevated);
+  background: var(--bg-surface-hover);
+  border-color: var(--border-default);
 }
 
 .dock-icon-btn.muted {
-  background: var(--danger-red);
+  background: var(--danger);
   color: white;
 }
 
 .dock-icon-btn.muted:hover {
-  background: var(--danger-red-hover);
+  background: var(--danger-hover);
 }
 
 .dock-leave-btn {
@@ -335,7 +367,7 @@ body {
   padding: 0 22px;
   border-radius: var(--radius-full);
   border: none;
-  background: var(--danger-red);
+  background: var(--danger);
   color: white;
   font-size: 0.85rem;
   font-weight: 600;
@@ -343,14 +375,16 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  transition: background 0.15s;
+  transition: background 0.15s ease;
 }
 
 .dock-leave-btn:hover {
-  background: var(--danger-red-hover);
+  background: var(--danger-hover);
 }
 
-/* 5. Right Sidebar (Clean, Notion-like Notes & Transcript) */
+/* ==========================================================================
+   5. Right Notes & Transcript Drawer
+   ========================================================================== */
 .right-drawer {
   width: 360px;
   min-width: 360px;
@@ -375,19 +409,20 @@ body {
   gap: 4px;
   background: var(--bg-app);
   padding: 3px;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
 }
 
 .drawer-tab-btn {
   padding: 6px 14px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-xs);
   border: none;
   background: transparent;
   color: var(--text-secondary);
   font-size: 0.8rem;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.15s ease;
 }
 
 .drawer-tab-btn.active {
@@ -405,19 +440,19 @@ body {
   gap: 16px;
 }
 
-/* Clean Notes Style (Human, Calm, No AI Hype) */
+/* Clean Cards for Summary and Tasks */
 .notes-card {
   background: var(--bg-app);
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   padding: 14px 16px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .notes-card-title {
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   font-weight: 600;
   color: var(--text-muted);
   text-transform: uppercase;
@@ -428,7 +463,7 @@ body {
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .notes-list li {
@@ -446,23 +481,29 @@ body {
   color: var(--text-muted);
 }
 
-/* Action Items Checkbox List */
+/* Action Items Checkbox Rows */
 .task-row {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  padding: 8px 10px;
+  padding: 9px 11px;
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.task-row:hover {
+  border-color: var(--border-default);
 }
 
 .task-checkbox {
-  margin-top: 3px;
+  margin-top: 2px;
   width: 15px;
   height: 15px;
   cursor: pointer;
-  accent-color: var(--accent-blue);
+  accent-color: var(--accent-primary);
 }
 
 .task-info {
@@ -484,31 +525,36 @@ body {
 }
 
 .task-meta {
-  font-size: 0.7rem;
+  font-size: 0.72rem;
   color: var(--text-muted);
 }
 
 .notes-action-footer {
   margin-top: auto;
-  padding-top: 12px;
+  padding-top: 14px;
   border-top: 1px solid var(--border-subtle);
 }
 
 .btn-export-pdf {
   width: 100%;
-  padding: 9px;
+  padding: 10px;
   background: var(--bg-surface-elevated);
   border: 1px solid var(--border-default);
   color: var(--text-main);
-  font-size: 0.8rem;
+  font-size: 0.82rem;
   font-weight: 500;
   border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: background 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.15s ease;
 }
 
 .btn-export-pdf:hover {
   background: var(--bg-surface-hover);
+  border-color: var(--border-focus);
 }
 
 /* Transcript Stream */
@@ -519,19 +565,19 @@ body {
 }
 
 .transcript-message {
-  padding: 10px 12px;
+  padding: 11px 13px;
   background: var(--bg-app);
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-xs);
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
 }
 
 .speaker-line {
   display: flex;
   justify-content: space-between;
-  font-size: 0.72rem;
+  font-size: 0.74rem;
 }
 
 .speaker-name {
@@ -549,7 +595,9 @@ body {
   line-height: 1.4;
 }
 
-/* 6. Pre-Call Lobby Screen */
+/* ==========================================================================
+   6. Pre-Call Lobby Screen
+   ========================================================================== */
 .lobby-screen {
   flex: 1;
   display: flex;
@@ -564,7 +612,7 @@ body {
   max-width: 480px;
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   padding: 28px;
   display: flex;
   flex-direction: column;
@@ -575,6 +623,7 @@ body {
   font-size: 1.25rem;
   font-weight: 600;
   color: var(--text-main);
+  margin-bottom: 4px;
 }
 
 .lobby-subtitle {
@@ -586,7 +635,8 @@ body {
   width: 100%;
   aspect-ratio: 16 / 9;
   background: var(--bg-tile);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
   overflow: hidden;
   position: relative;
   display: flex;
@@ -615,14 +665,15 @@ body {
   color: var(--text-main);
   font-size: 0.9rem;
   outline: none;
+  transition: border-color 0.15s ease;
 }
 
 .lobby-input:focus {
-  border-color: var(--accent-blue);
+  border-color: var(--accent-primary);
 }
 
 .btn-join {
-  background: var(--accent-blue);
+  background: var(--accent-primary);
   color: white;
   border: none;
   padding: 12px;
@@ -630,18 +681,21 @@ body {
   font-size: 0.9rem;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.15s ease;
 }
 
 .btn-join:hover {
-  background: var(--accent-blue-hover);
+  background: var(--accent-primary-hover);
 }
 
-/* Architecture Modal */
+/* ==========================================================================
+   7. Architecture Modal
+   ========================================================================== */
 .modal-overlay {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -651,7 +705,7 @@ body {
 
 .modal-dialog {
   width: 100%;
-  max-width: 540px;
+  max-width: 520px;
   background: var(--bg-surface);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
@@ -678,6 +732,12 @@ body {
   color: var(--text-secondary);
   cursor: pointer;
   font-size: 1.1rem;
+  padding: 4px;
+  border-radius: var(--radius-xs);
+}
+
+.modal-close:hover {
+  color: var(--text-main);
 }
 
 .service-list {
@@ -689,8 +749,8 @@ body {
 .service-card {
   background: var(--bg-app);
   border: 1px solid var(--border-subtle);
-  padding: 10px 12px;
-  border-radius: var(--radius-sm);
+  padding: 11px 13px;
+  border-radius: var(--radius-xs);
   font-size: 0.8rem;
   display: flex;
   flex-direction: column;
@@ -700,30 +760,10 @@ body {
 .service-card-title {
   font-weight: 600;
   color: var(--text-main);
+  display: flex;
+  align-items: center;
 }
 
 .service-card-port {
   color: var(--text-muted);
-}
-
-/* Toast */
-.toast-bar {
-  position: fixed;
-  bottom: 80px;
-  right: 24px;
-  z-index: 60;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  pointer-events: none;
-}
-
-.toast-msg {
-  background: var(--bg-surface-elevated);
-  border: 1px solid var(--border-default);
-  color: var(--text-main);
-  padding: 9px 15px;
-  border-radius: var(--radius-sm);
-  font-size: 0.82rem;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }

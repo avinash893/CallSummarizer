@@ -21,8 +21,8 @@ export default function App() {
   // Clean task items with Indian name
   const [tasks, setTasks] = useState([
     { id: 1, title: 'Review microservice signaling service', assignee: 'Rohan', due: 'Tomorrow', completed: false },
-    { id: 2, title: 'Check video layout on different screen sizes', assignee: 'You', due: 'Today', completed: true },
-    { id: 3, title: 'Connect speech-to-text recording endpoint', assignee: 'You', due: 'Friday', completed: false }
+    { id: 2, title: 'Complete frontend usability review', assignee: 'You', due: 'Today', completed: true },
+    { id: 3, title: 'Configure speech-to-text integration', assignee: 'You', due: 'Friday', completed: false }
   ]);
 
   // Camera preview hook
@@ -143,9 +143,9 @@ export default function App() {
       doc.setFontSize(10);
       doc.setTextColor(50, 50, 50);
       const summaryItems = [
-        '• Reviewed project architecture and frontend migration to React.',
-        '• Fixed video tile spacing to prevent layout overlap.',
-        '• Verified microservice blueprints for signaling, meetings, and NLP task extraction.'
+        '• Aligned on project scope and sprint timeline for upcoming deliverables.',
+        '• Assigned signaling and backend service review to Rohan.',
+        '• Scheduled follow-up client presentation for Friday.'
       ];
 
       let currentY = 68;

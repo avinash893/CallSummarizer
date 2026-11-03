@@ -13,50 +13,52 @@ export default function ControlDock({
 }) {
   return (
     <div className="bottom-dock">
-      {/* Mic button */}
-      <button
-        type="button"
-        className={`dock-icon-btn ${!isAudioOn ? 'muted' : ''}`}
-        onClick={toggleAudio}
-        title={isAudioOn ? 'Turn off microphone' : 'Turn on microphone'}
-      >
-        <i className={`bi ${isAudioOn ? 'bi-mic-fill' : 'bi-mic-mute-fill'}`}></i>
-      </button>
+      <div className="btn-group btn-group-sm" role="group" aria-label="Media controls">
+        {/* Mic button */}
+        <button
+          type="button"
+          className={`btn btn-outline-secondary dock-icon-btn ${!isAudioOn ? 'muted' : ''}`}
+          onClick={toggleAudio}
+          title={isAudioOn ? 'Turn off microphone' : 'Turn on microphone'}
+        >
+          <i className={`bi ${isAudioOn ? 'bi-mic-fill' : 'bi-mic-mute-fill'}`}></i>
+        </button>
 
-      {/* Camera button */}
-      <button
-        type="button"
-        className={`dock-icon-btn ${!isVideoOn ? 'muted' : ''}`}
-        onClick={toggleVideo}
-        title={isVideoOn ? 'Turn off camera' : 'Turn on camera'}
-      >
-        <i className={`bi ${isVideoOn ? 'bi-camera-video-fill' : 'bi-camera-video-off-fill'}`}></i>
-      </button>
+        {/* Camera button */}
+        <button
+          type="button"
+          className={`btn btn-outline-secondary dock-icon-btn ${!isVideoOn ? 'muted' : ''}`}
+          onClick={toggleVideo}
+          title={isVideoOn ? 'Turn off camera' : 'Turn on camera'}
+        >
+          <i className={`bi ${isVideoOn ? 'bi-camera-video-fill' : 'bi-camera-video-off-fill'}`}></i>
+        </button>
 
-      {/* Screen share button */}
-      <button
-        type="button"
-        className={`dock-icon-btn ${isScreenSharing ? 'active' : ''}`}
-        onClick={toggleScreenShare}
-        title={isScreenSharing ? 'Stop presenting' : 'Present screen'}
-      >
-        <i className="bi bi-display"></i>
-      </button>
+        {/* Screen share button */}
+        <button
+          type="button"
+          className={`btn btn-outline-secondary dock-icon-btn ${isScreenSharing ? 'active' : ''}`}
+          onClick={toggleScreenShare}
+          title={isScreenSharing ? 'Stop presenting' : 'Present screen'}
+        >
+          <i className="bi bi-display"></i>
+        </button>
 
-      {/* Notes button */}
-      <button
-        type="button"
-        className={`dock-icon-btn ${isNotesOpen ? 'active' : ''}`}
-        onClick={() => setIsNotesOpen(!isNotesOpen)}
-        title="Meeting notes"
-      >
-        <i className="bi bi-journal-text"></i>
-      </button>
+        {/* Notes button */}
+        <button
+          type="button"
+          className={`btn btn-outline-secondary dock-icon-btn ${isNotesOpen ? 'active' : ''}`}
+          onClick={() => setIsNotesOpen(!isNotesOpen)}
+          title="Meeting notes"
+        >
+          <i className="bi bi-journal-text"></i>
+        </button>
+      </div>
 
       {/* End call button */}
       <button
         type="button"
-        className="dock-leave-btn"
+        className="btn dock-leave-btn"
         onClick={onLeaveCall}
         title="Leave call"
       >

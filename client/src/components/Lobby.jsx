@@ -334,16 +334,18 @@ export default function Lobby({
               onChange={(e) => setGoogleEmail(e.target.value)}
               required
             />
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button type="submit" className="btn-join" style={{ flex: 1, padding: '9px' }} disabled={authLoading}>
-                {authLoading ? 'Signing in...' : 'Continue'}
+            <div className="btn-group btn-group-sm" style={{ display: 'flex', gap: '8px' }}>
+              <button type="submit" className="btn btn-join" style={{ flex: 1, padding: '9px' }} disabled={authLoading}>
+                <i className="bi bi-check2-circle" style={{ marginRight: '6px' }}></i>
+                <span>{authLoading ? 'Signing in...' : 'Continue'}</span>
               </button>
               <button
                 type="button"
-                className="btn-secondary-action"
+                className="btn btn-outline-secondary btn-secondary-action"
                 onClick={() => setShowGoogleModal(false)}
               >
-                Cancel
+                <i className="bi bi-x-lg" style={{ marginRight: '4px' }}></i>
+                <span>Cancel</span>
               </button>
             </div>
           </form>
@@ -368,10 +370,10 @@ export default function Lobby({
             </div>
           )}
 
-          <div className="lobby-controls-bar">
+          <div className="lobby-controls-bar btn-group btn-group-sm" role="group" aria-label="Camera preview controls">
             <button
               type="button"
-              className={`dock-icon-btn ${!isAudioOn ? 'muted' : ''}`}
+              className={`btn btn-outline-secondary dock-icon-btn ${!isAudioOn ? 'muted' : ''}`}
               onClick={toggleAudio}
               title={isAudioOn ? 'Mute microphone' : 'Unmute microphone'}
             >
@@ -379,7 +381,7 @@ export default function Lobby({
             </button>
             <button
               type="button"
-              className={`dock-icon-btn ${!isVideoOn ? 'muted' : ''}`}
+              className={`btn btn-outline-secondary dock-icon-btn ${!isVideoOn ? 'muted' : ''}`}
               onClick={toggleVideo}
               title={isVideoOn ? 'Turn off camera' : 'Turn on camera'}
             >
@@ -390,10 +392,10 @@ export default function Lobby({
 
         {/* Meeting Management Form (New Meeting, Code or Shareable Link) */}
         <form onSubmit={handleSubmit} className="lobby-form">
-          <div className="meeting-actions-row">
+          <div className="meeting-actions-row btn-group btn-group-sm" role="group" aria-label="Meeting link actions">
             <button
               type="button"
-              className="btn-secondary-action"
+              className="btn btn-outline-secondary btn-secondary-action"
               onClick={handleNewMeeting}
               title="Generate a new meeting code"
             >
@@ -403,7 +405,7 @@ export default function Lobby({
 
             <button
               type="button"
-              className="btn-secondary-action"
+              className="btn btn-outline-secondary btn-secondary-action"
               onClick={handleCopyShareLink}
               title="Copy shareable meeting link"
             >
@@ -412,17 +414,23 @@ export default function Lobby({
             </button>
           </div>
 
-          <input
-            type="text"
-            className="lobby-input"
-            placeholder="Meeting name, code, or link (e.g. abc-defg-hij)"
-            value={roomName}
-            onChange={handleRoomInputChange}
-            required
-          />
+          <div className="input-group">
+            <span className="input-group-text" style={{ background: 'var(--bg-app)', borderColor: 'var(--border-subtle)', color: 'var(--text-muted)' }}>
+              <i className="bi bi-hash"></i>
+            </span>
+            <input
+              type="text"
+              className="form-control lobby-input"
+              placeholder="Meeting name, code, or link (e.g. abc-defg-hij)"
+              value={roomName}
+              onChange={handleRoomInputChange}
+              required
+            />
+          </div>
 
-          <button type="submit" className="btn-join" disabled={!roomName.trim()}>
-            Join now
+          <button type="submit" className="btn btn-join" disabled={!roomName.trim()}>
+            <i className="bi bi-box-arrow-in-right" style={{ marginRight: '6px' }}></i>
+            <span>Join now</span>
           </button>
         </form>
 

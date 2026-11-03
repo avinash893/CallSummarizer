@@ -80,20 +80,22 @@ export default function NotesDrawer({
   return (
     <aside className="right-drawer">
       <div className="drawer-top">
-        <div className="drawer-tabs">
+        <div className="drawer-tabs nav nav-tabs" role="tablist">
           <button
             type="button"
-            className={`drawer-tab-btn ${activeTab === 'notes' ? 'active' : ''}`}
+            className={`nav-link drawer-tab-btn ${activeTab === 'notes' ? 'active' : ''}`}
             onClick={() => setActiveTab('notes')}
           >
-            Notes
+            <i className="bi bi-card-checklist" style={{ marginRight: '6px' }}></i>
+            <span>Notes</span>
           </button>
           <button
             type="button"
-            className={`drawer-tab-btn ${activeTab === 'transcript' ? 'active' : ''}`}
+            className={`nav-link drawer-tab-btn ${activeTab === 'transcript' ? 'active' : ''}`}
             onClick={() => setActiveTab('transcript')}
           >
-            Transcript
+            <i className="bi bi-chat-left-text" style={{ marginRight: '6px' }}></i>
+            <span>Transcript</span>
           </button>
         </div>
       </div>
@@ -103,7 +105,10 @@ export default function NotesDrawer({
           <>
             {/* Discussion Summary */}
             <div className="notes-card">
-              <div className="notes-card-title">Summary</div>
+              <div className="notes-card-title">
+                <i className="bi bi-file-text" style={{ marginRight: '6px' }}></i>
+                <span>Summary</span>
+              </div>
               {transcript.length > 0 ? (
                 <ul className="notes-list">
                   {transcript.slice(-3).map((item) => (
@@ -122,13 +127,16 @@ export default function NotesDrawer({
 
             {/* Action Items */}
             <div className="notes-card">
-              <div className="notes-card-title">Action Items</div>
+              <div className="notes-card-title">
+                <i className="bi bi-check2-square" style={{ marginRight: '6px' }}></i>
+                <span>Action Items</span>
+              </div>
 
               {onAddTask && (
-                <form onSubmit={handleTaskSubmit} style={{ display: 'flex', gap: '6px' }}>
+                <form onSubmit={handleTaskSubmit} className="input-group input-group-sm">
                   <input
                     type="text"
-                    className="lobby-input"
+                    className="form-control lobby-input"
                     style={{ flex: 1, padding: '7px 10px', fontSize: '0.8rem' }}
                     placeholder="Add action item..."
                     value={newTaskTitle}
@@ -136,7 +144,7 @@ export default function NotesDrawer({
                   />
                   <button
                     type="submit"
-                    className="btn-secondary-action"
+                    className="btn btn-outline-secondary btn-secondary-action"
                     style={{ padding: '7px 12px' }}
                     title="Add task"
                   >
@@ -151,24 +159,24 @@ export default function NotesDrawer({
                   <span style={{ flex: 1, fontSize: '0.78rem', color: '#fca5a5' }}>{calendarError.message}</span>
                   <button
                     type="button"
-                    className="btn-dismiss-alert"
+                    className="btn btn-outline-secondary btn-sm btn-dismiss-alert"
                     onClick={() => setCalendarError(null)}
                     title="Dismiss"
                     aria-label="Dismiss error"
                   >
-                    &times;
+                    <i className="bi bi-x"></i>
                   </button>
                 </div>
               )}
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div className="list-group" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {tasks.length === 0 ? (
                   <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                     No action items yet. Add one above or extract from transcript.
                   </p>
                 ) : (
                   tasks.map((task) => (
-                    <div key={task.id} className="task-item-container" data-testid={`task-item-${task.id}`}>
+                    <div key={task.id} className="list-group-item task-item-container" data-testid={`task-item-${task.id}`}>
                       <label className="task-row">
                         <input
                           type="checkbox"
@@ -194,30 +202,35 @@ export default function NotesDrawer({
                           </span>
                         ) : confirmingTaskId === task.id ? (
                           <div className="calendar-confirm-box" role="dialog" aria-label="Confirm adding event to Google Calendar">
-                            <span className="calendar-confirm-prompt">Add to Google Calendar? (15m reminder)</span>
-                            <div className="calendar-confirm-btns">
+                            <span className="calendar-confirm-prompt">
+                              <i className="bi bi-bell-fill" style={{ marginRight: '4px' }}></i>
+                              Add to Google Calendar? (15m reminder)
+                            </span>
+                            <div className="calendar-confirm-btns btn-group btn-group-sm">
                               <button
                                 type="button"
-                                className="btn-calendar-confirm"
+                                className="btn btn-calendar-confirm"
                                 onClick={() => handleConfirmAddToCalendar(task)}
                                 disabled={calendarLoadingId !== null}
                               >
-                                {calendarLoadingId === task.id ? 'Adding...' : 'Confirm'}
+                                <i className="bi bi-check2" style={{ marginRight: '4px' }}></i>
+                                <span>{calendarLoadingId === task.id ? 'Adding...' : 'Confirm'}</span>
                               </button>
                               <button
                                 type="button"
-                                className="btn-calendar-cancel"
+                                className="btn btn-outline-secondary btn-calendar-cancel"
                                 onClick={() => setConfirmingTaskId(null)}
                                 disabled={calendarLoadingId !== null}
                               >
-                                Cancel
+                                <i className="bi bi-x" style={{ marginRight: '4px' }}></i>
+                                <span>Cancel</span>
                               </button>
                             </div>
                           </div>
                         ) : (
                           <button
                             type="button"
-                            className="btn-add-calendar"
+                            className="btn btn-outline-secondary btn-sm btn-add-calendar"
                             title="Add to Google Calendar"
                             aria-label="Add to Google Calendar"
                             onClick={() => handleRequestAddToCalendar(task)}
@@ -235,9 +248,9 @@ export default function NotesDrawer({
             </div>
 
             <div className="notes-action-footer">
-              <button type="button" className="btn-export-pdf" onClick={onExportPdf}>
+              <button type="button" className="btn btn-outline-secondary btn-export-pdf" onClick={onExportPdf}>
                 <i className="bi bi-file-earmark-pdf" style={{ marginRight: '6px' }}></i>
-                Download PDF Summary
+                <span>Download PDF Summary</span>
               </button>
             </div>
           </>
@@ -253,7 +266,10 @@ export default function NotesDrawer({
               transcript.map((item) => (
                 <div key={item.id} className="transcript-message">
                   <div className="speaker-line">
-                    <span className="speaker-name">{item.speaker}</span>
+                    <span className="speaker-name">
+                      <i className="bi bi-person-badge" style={{ marginRight: '4px' }}></i>
+                      {item.speaker}
+                    </span>
                     <span className="speaker-time">{item.time}</span>
                   </div>
                   <p className="message-text">"{item.text}"</p>
@@ -262,16 +278,16 @@ export default function NotesDrawer({
             )}
 
             {onAddTranscript && (
-              <form onSubmit={handleTranscriptSubmit} style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
+              <form onSubmit={handleTranscriptSubmit} className="input-group input-group-sm" style={{ marginTop: '6px' }}>
                 <input
                   type="text"
-                  className="lobby-input"
+                  className="form-control lobby-input"
                   style={{ flex: 1, padding: '8px 10px', fontSize: '0.8rem' }}
                   placeholder="Type a meeting note or commitment..."
                   value={newTranscriptText}
                   onChange={(e) => setNewTranscriptText(e.target.value)}
                 />
-                <button type="submit" className="btn-secondary-action" title="Send to transcript">
+                <button type="submit" className="btn btn-outline-secondary btn-secondary-action" title="Send to transcript">
                   <i className="bi bi-send"></i>
                 </button>
               </form>
@@ -281,13 +297,12 @@ export default function NotesDrawer({
               <div style={{ marginTop: '10px' }}>
                 <button
                   type="button"
-                  className="btn-export-pdf"
+                  className="btn btn-outline-secondary btn-export-pdf"
                   onClick={onExtractTasks}
                   disabled={isExtracting}
-                  style={{ background: 'var(--bg-surface-elevated)', border: '1px solid var(--border-default)' }}
                 >
                   <i className="bi bi-cpu" style={{ marginRight: '6px' }}></i>
-                  {isExtracting ? 'Extracting tasks...' : 'Extract Tasks from Transcript'}
+                  <span>{isExtracting ? 'Extracting tasks...' : 'Extract Tasks from Transcript'}</span>
                 </button>
               </div>
             )}

@@ -88,10 +88,52 @@ export default function Lobby({
     }
   }, []);
 
-  const [calendarPermissionGranted, setCalendarPermissionGranted] = useState(true);
-
   const handleGoogleSignInClick = () => {
     setAuthError('');
+    if (typeof window !== 'undefined' && window.google?.accounts?.oauth2 && googleClientId) {
+      try {
+        const tokenClient = window.google.accounts.oauth2.initTokenClient({
+          client_id: googleClientId,
+          scope: 'openid email profile https://www.googleapis.com/auth/calendar.events',
+          callback: async (response) => {
+            if (response && response.access_token) {
+              setAuthLoading(true);
+              try {
+                const res = await fetch('/api/auth/google', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ accessToken: response.access_token })
+                });
+                if (res.ok) {
+                  const data = await res.json();
+                  if (data.user && onUserChange) {
+                    onUserChange(data.user);
+                    setShowGoogleModal(false);
+                    setAuthError('');
+                    return;
+                  }
+                } else {
+                  const errData = await res.json().catch(() => ({}));
+                  setAuthError(errData.error || 'Google token authorization rejected');
+                }
+              } catch (e) {
+                setAuthError('Failed to verify Google OAuth token');
+              } finally {
+                setAuthLoading(false);
+              }
+            }
+          }
+        });
+        tokenClient.requestAccessToken();
+        return;
+      } catch (e) {
+        // Fallback to server-side OAuth redirect
+      }
+    }
+    if (typeof window !== 'undefined' && googleClientId) {
+      window.location.href = '/api/auth/google/login';
+      return;
+    }
     setShowGoogleModal((prev) => !prev);
   };
 
@@ -293,28 +335,6 @@ export default function Lobby({
               onChange={(e) => setGoogleEmail(e.target.value)}
               required
             />
-            <label
-              style={{
-                display: 'flex',
-                alignItems: 'flex-start',
-                gap: '8px',
-                fontSize: '0.76rem',
-                color: 'var(--text-secondary)',
-                cursor: 'pointer',
-                padding: '4px 2px'
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={calendarPermissionGranted}
-                onChange={(e) => setCalendarPermissionGranted(e.target.checked)}
-                style={{ marginTop: '2px', accentColor: 'var(--accent-primary)' }}
-              />
-              <span>
-                <i className="bi bi-calendar-check" style={{ marginRight: '4px' }}></i>
-                Grant Google Calendar permission (<code>calendar.events</code>) to add action items with 15-minute alarm
-              </span>
-            </label>
             <div className="btn-group btn-group-sm" style={{ display: 'flex', gap: '8px' }}>
               <button type="submit" className="btn btn-join" style={{ flex: 1, padding: '9px' }} disabled={authLoading}>
                 <i className="bi bi-check2-circle" style={{ marginRight: '6px' }}></i>

@@ -26,6 +26,7 @@ if (fs.existsSync(envPath)) {
 }
 
 const app = express();
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 8080;
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
@@ -355,9 +356,17 @@ app.post('/api/auth/google', async (req, res) => {
     }
 });
 
+function getGoogleRedirectUri(req) {
+    const forwardedProto = req.headers['x-forwarded-proto']
+        ? String(req.headers['x-forwarded-proto']).split(',')[0].trim()
+        : '';
+    const proto = forwardedProto || req.protocol || 'https';
+    return `${proto}://${req.get('host')}/api/auth/google/callback`;
+}
+
 // Server-side Google OAuth2 authorization URL initiation
 app.get('/api/auth/google/url', (req, res) => {
-    const redirectUri = `${req.protocol}://${req.get('host')}/api/auth/google/callback`;
+    const redirectUri = getGoogleRedirectUri(req);
     const params = new URLSearchParams({
         client_id: GOOGLE_CLIENT_ID || 'dummy-google-client-id',
         redirect_uri: redirectUri,
@@ -372,6 +381,20 @@ app.get('/api/auth/google/url', (req, res) => {
     });
 });
 
+// Direct browser redirect to Google OAuth2 consent screen
+app.get('/api/auth/google/login', (req, res) => {
+    const redirectUri = getGoogleRedirectUri(req);
+    const params = new URLSearchParams({
+        client_id: GOOGLE_CLIENT_ID || 'dummy-google-client-id',
+        redirect_uri: redirectUri,
+        response_type: 'code',
+        scope: 'openid email profile https://www.googleapis.com/auth/calendar.events',
+        access_type: 'offline',
+        prompt: 'consent'
+    });
+    return res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`);
+});
+
 // Server-side Google OAuth2 code exchange (if redirect flow is used)
 app.get('/api/auth/google/callback', async (req, res) => {
     const { code } = req.query;
@@ -379,7 +402,7 @@ app.get('/api/auth/google/callback', async (req, res) => {
         return res.redirect('/?authError=missing_code');
     }
     try {
-        const redirectUri = `${req.protocol}://${req.get('host')}/api/auth/google/callback`;
+        const redirectUri = getGoogleRedirectUri(req);
         const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },

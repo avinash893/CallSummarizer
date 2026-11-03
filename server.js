@@ -785,10 +785,15 @@ Return JSON structure:
                 if (rawJson) {
                     const parsed = JSON.parse(rawJson);
                     if (Array.isArray(parsed.tasks) && parsed.tasks.length > 0) {
+                        const normalizedTasks = parsed.tasks.map((t, idx) => ({
+                            ...t,
+                            id: t.id !== undefined && t.id !== null && t.id !== '' ? `${t.id}-${idx + 1}` : `task-${Date.now()}-${idx + 1}`,
+                            completed: Boolean(t.completed)
+                        }));
                         if (roomId && rooms.has(roomId)) {
-                            rooms.get(roomId).tasks = parsed.tasks;
+                            rooms.get(roomId).tasks = normalizedTasks;
                         }
-                        return res.json({ tasks: parsed.tasks, source: 'gemini-1.5-flash' });
+                        return res.json({ tasks: normalizedTasks, source: 'gemini-1.5-flash' });
                     }
                 }
             }
@@ -797,7 +802,16 @@ Return JSON structure:
         }
     }
 
-    const tasks = extractLocalTasks(transcript);
+    const rawTasks = extractLocalTasks(transcript);
+    const seenIds = new Set();
+    const tasks = rawTasks.map((t, idx) => {
+        let id = t.id !== undefined && t.id !== null && t.id !== '' ? t.id : idx + 1;
+        if (seenIds.has(id)) {
+            id = `${id}-${idx + 1}`;
+        }
+        seenIds.add(id);
+        return { ...t, id, completed: Boolean(t.completed) };
+    });
     if (roomId && rooms.has(roomId)) {
         rooms.get(roomId).tasks = tasks;
     }

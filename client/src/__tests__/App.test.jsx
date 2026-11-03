@@ -109,7 +109,7 @@ describe('App Main Flow', () => {
     expect(screen.getByText('Ready to join?')).toBeInTheDocument();
   });
 
-  it('allows adding and toggling tasks in active call', async () => {
+  it('allows adding and toggling tasks independently without checking other tasks', async () => {
     render(<App />);
 
     await act(async () => {
@@ -126,15 +126,22 @@ describe('App Main Flow', () => {
       fireEvent.submit(addInput.closest('form'));
     });
 
-    const checkboxes = screen.getAllByRole('checkbox');
-    expect(checkboxes.length).toBe(1);
-
-    const firstCheckbox = checkboxes[0];
-    expect(firstCheckbox.checked).toBe(false);
     await act(async () => {
-      fireEvent.click(firstCheckbox);
+      fireEvent.change(addInput, { target: { value: 'Schedule security review' } });
+      fireEvent.submit(addInput.closest('form'));
     });
-    expect(firstCheckbox.checked).toBe(true);
+
+    const checkboxes = screen.getAllByRole('checkbox');
+    expect(checkboxes.length).toBe(2);
+
+    expect(checkboxes[0].checked).toBe(false);
+    expect(checkboxes[1].checked).toBe(false);
+
+    await act(async () => {
+      fireEvent.click(checkboxes[0]);
+    });
+    expect(checkboxes[0].checked).toBe(true);
+    expect(checkboxes[1].checked).toBe(false);
   });
 
   it('resets stale user state when server session check returns 401 on startup', async () => {

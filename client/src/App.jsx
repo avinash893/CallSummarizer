@@ -17,6 +17,25 @@ const DEFAULT_ICE_SERVERS = [
   }
 ];
 
+function ensureUniqueTaskIds(taskList = []) {
+  const seen = new Set();
+  return taskList.map((t, idx) => {
+    let id =
+      t.id !== undefined && t.id !== null && t.id !== ''
+        ? t.id
+        : `task-${idx + 1}-${Date.now()}`;
+    if (seen.has(id)) {
+      id = `${id}-${idx + 1}`;
+    }
+    seen.add(id);
+    return {
+      ...t,
+      id,
+      completed: Boolean(t.completed)
+    };
+  });
+}
+
 function getInitialRoomFromUrl() {
   if (typeof window !== 'undefined' && window.location?.search) {
     const params = new URLSearchParams(window.location.search);
@@ -325,7 +344,7 @@ export default function App() {
             setTranscript(msg.transcript);
           }
           if (Array.isArray(msg.tasks) && msg.tasks.length > 0) {
-            setTasks(msg.tasks);
+            setTasks(ensureUniqueTaskIds(msg.tasks));
           }
           break;
         }
@@ -437,7 +456,7 @@ export default function App() {
 
         case 'tasks-sync': {
           if (Array.isArray(msg.tasks)) {
-            setTasks(msg.tasks);
+            setTasks(ensureUniqueTaskIds(msg.tasks));
           }
           break;
         }
@@ -623,14 +642,14 @@ export default function App() {
 
   const handleAddTask = (title) => {
     const newTask = {
-      id: Date.now(),
+      id: `task-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       title,
       assignee: user?.name || 'You',
       due: 'Upcoming',
       completed: false
     };
     setTasks((prev) => {
-      const next = [...prev, newTask];
+      const next = ensureUniqueTaskIds([...prev, newTask]);
       if (wsRef.current && wsRef.current.readyState === 1) {
         wsRef.current.send(JSON.stringify({ type: 'tasks-sync', tasks: next }));
       }
@@ -677,13 +696,15 @@ export default function App() {
       if (response.ok) {
         const data = await response.json();
         if (Array.isArray(data.tasks) && data.tasks.length > 0) {
-          const formatted = data.tasks.map((t, idx) => ({
-            id: t.id || idx + 1,
-            title: t.title,
-            assignee: t.assignee || user?.name || 'You',
-            due: t.due || 'Tomorrow',
-            completed: false
-          }));
+          const formatted = ensureUniqueTaskIds(
+            data.tasks.map((t, idx) => ({
+              id: t.id !== undefined && t.id !== null && t.id !== '' ? t.id : `task-${Date.now()}-${idx + 1}`,
+              title: t.title,
+              assignee: t.assignee || user?.name || 'You',
+              due: t.due || 'Tomorrow',
+              completed: Boolean(t.completed)
+            }))
+          );
           setTasks(formatted);
           if (wsRef.current && wsRef.current.readyState === 1) {
             wsRef.current.send(JSON.stringify({ type: 'tasks-sync', tasks: formatted }));

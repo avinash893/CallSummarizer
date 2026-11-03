@@ -69,10 +69,13 @@ function extractLocalTasks(text) {
 
     if (tasks.length === 1) {
         tasks.unshift({
-            id: 0,
+            id: 1,
             title: 'Review frontend responsiveness',
             assignee: 'You',
             due: 'Tomorrow'
+        });
+        tasks.forEach((t, idx) => {
+            t.id = idx + 1;
         });
     }
 

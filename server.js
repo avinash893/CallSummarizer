@@ -799,6 +799,7 @@ Return JSON structure:
             const apiRes = await fetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                signal: AbortSignal.timeout(4000),
                 body: JSON.stringify({
                     contents: [{ parts: [{ text: prompt }] }],
                     generationConfig: { responseMimeType: "application/json" }
@@ -841,7 +842,7 @@ Return JSON structure:
     if (roomId && rooms.has(roomId)) {
         rooms.get(roomId).tasks = tasks;
     }
-    res.json({ tasks, source: 'heuristic-nlp' });
+    res.json({ tasks, source: 'render-server-nlp' });
 });
 
 // Serve frontend static build

@@ -1,6 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 
-function RemotePeerTile({ peer }) {
+function RemotePeerTile({ peer, isCaptured = false, onToggleCapture }) {
   const remoteVideoRef = useRef(null);
 
   useEffect(() => {
@@ -32,7 +32,10 @@ function RemotePeerTile({ peer }) {
       : 'P');
 
   return (
-    <div className={`video-tile ${peer.speaking ? 'speaking' : ''}`} data-testid={`peer-tile-${peer.peerId}`}>
+    <div
+      className={`video-tile ${peer.speaking ? 'speaking' : ''} ${isCaptured ? 'captured-tile' : ''}`}
+      data-testid={`peer-tile-${peer.peerId}`}
+    >
       {peer.stream && peer.isVideoOn !== false ? (
         <video
           ref={remoteVideoRef}
@@ -46,6 +49,42 @@ function RemotePeerTile({ peer }) {
           <span className="standby-text">{peer.name || 'Participant'}</span>
         </div>
       )}
+
+      {/* Private Audio Capture indicator badge on top-left if active */}
+      {isCaptured && (
+        <div
+          className="tile-capture-badge"
+          title="Private audio capture active (listening privately)"
+          data-testid={`capture-badge-${peer.peerId}`}
+        >
+          <i className="bi bi-disc-fill pulse-record-dot"></i>
+          <span>Listening Privately</span>
+        </div>
+      )}
+
+      {/* Selective Audio Capture Button on top-right */}
+      <button
+        type="button"
+        className={`btn btn-sm tile-capture-btn ${isCaptured ? 'active' : ''}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (onToggleCapture) onToggleCapture(peer.peerId);
+        }}
+        title={
+          isCaptured
+            ? `Stop capturing audio from ${peer.name || 'participant'}`
+            : `Capture audio from ${peer.name || 'participant'} privately`
+        }
+        aria-label={
+          isCaptured
+            ? `Stop capturing ${peer.name || 'participant'}`
+            : `Capture audio from ${peer.name || 'participant'}`
+        }
+        data-testid={`btn-capture-${peer.peerId}`}
+      >
+        <i className={`bi ${isCaptured ? 'bi-record-circle-fill' : 'bi-soundwave'}`}></i>
+        <span>{isCaptured ? 'Capturing' : 'Capture'}</span>
+      </button>
 
       <div className="tile-footer">
         <span className="user-name-tag">
@@ -77,7 +116,9 @@ export default function VideoCanvas({
   screenStream = null,
   isScreenSharing = false,
   localUser = { name: 'You', initials: 'You' },
-  remotePeers = []
+  remotePeers = [],
+  capturedPeerIds = [],
+  onToggleCapturePeer
 }) {
   const localVideoRef = useRef(null);
   const activeLocalStream = isScreenSharing && screenStream ? screenStream : localStream;
@@ -147,7 +188,12 @@ export default function VideoCanvas({
 
         {/* Remote Participant Video Tiles (Rendered ONLY when real participants join) */}
         {remotePeers.map((peer) => (
-          <RemotePeerTile key={peer.peerId} peer={peer} />
+          <RemotePeerTile
+            key={peer.peerId}
+            peer={peer}
+            isCaptured={Array.isArray(capturedPeerIds) && capturedPeerIds.includes(peer.peerId)}
+            onToggleCapture={onToggleCapturePeer}
+          />
         ))}
       </div>
     </div>

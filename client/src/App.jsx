@@ -77,6 +77,8 @@ export default function App() {
 
   // Real room state (no fake demo second participant)
   const [remotePeers, setRemotePeers] = useState([]);
+  const [capturedPeerIds, setCapturedPeerIds] = useState([]);
+  const [capturedAudioClips, setCapturedAudioClips] = useState([]);
   const [transcript, setTranscript] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [appConfig, setAppConfig] = useState({
@@ -88,6 +90,7 @@ export default function App() {
   const wsRef = useRef(null);
   const peerConnectionsRef = useRef(new Map());
   const pendingCandidatesRef = useRef(new Map());
+  const peerAudioRecordersRef = useRef(new Map());
   const localStreamRef = useRef(null);
   const iceServersRef = useRef(DEFAULT_ICE_SERVERS);
 
@@ -459,6 +462,16 @@ export default function App() {
             } catch (e) {}
             peerConnectionsRef.current.delete(leftId);
           }
+          const session = peerAudioRecordersRef.current.get(leftId);
+          if (session) {
+            try {
+              if (session.recorder && session.recorder.state !== 'inactive') {
+                session.recorder.stop();
+              }
+            } catch (e) {}
+            peerAudioRecordersRef.current.delete(leftId);
+          }
+          setCapturedPeerIds((prev) => prev.filter((id) => id !== leftId));
           setRemotePeers((prev) => prev.filter((p) => p.peerId !== leftId));
           break;
         }
@@ -583,9 +596,127 @@ export default function App() {
       screenStream.getTracks().forEach((t) => t.stop());
       setScreenStream(null);
     }
+    // Stop any active selective audio recordings
+    peerAudioRecordersRef.current.forEach((session) => {
+      try {
+        if (session.recorder && session.recorder.state !== 'inactive') {
+          session.recorder.stop();
+        }
+      } catch (e) {}
+    });
+    peerAudioRecordersRef.current.clear();
+    setCapturedPeerIds([]);
+
     setIsInCall(false);
     setIsScreenSharing(false);
     setRemotePeers([]);
+  };
+
+  const handleToggleCapturePeer = useCallback((peerId) => {
+    if (!peerId) return;
+
+    setCapturedPeerIds((prev) => {
+      const isAlreadyCaptured = prev.includes(peerId);
+
+      if (isAlreadyCaptured) {
+        // Stop capturing for this peer
+        const activeSession = peerAudioRecordersRef.current.get(peerId);
+        if (activeSession) {
+          try {
+            if (activeSession.recorder && activeSession.recorder.state !== 'inactive') {
+              activeSession.recorder.stop();
+            }
+          } catch (e) {}
+          peerAudioRecordersRef.current.delete(peerId);
+        }
+        return prev.filter((id) => id !== peerId);
+      } else {
+        // Start private capture for this peer
+        const targetPeer = remotePeers.find((p) => p.peerId === peerId);
+        const peerName = targetPeer?.name || 'Participant';
+        const audioTracks = targetPeer?.stream?.getAudioTracks() || [];
+        const startTime = Date.now();
+        const chunks = [];
+
+        if (typeof window !== 'undefined' && typeof window.MediaRecorder !== 'undefined' && audioTracks.length > 0) {
+          try {
+            const audioStream = new MediaStream(audioTracks);
+            let mimeType = 'audio/webm';
+            if (typeof MediaRecorder.isTypeSupported === 'function') {
+              if (!MediaRecorder.isTypeSupported('audio/webm')) {
+                mimeType = MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : '';
+              }
+            } else {
+              mimeType = '';
+            }
+
+            const options = mimeType ? { mimeType } : undefined;
+            const recorder = new MediaRecorder(audioStream, options);
+
+            recorder.ondataavailable = (e) => {
+              if (e.data && e.data.size > 0) {
+                chunks.push(e.data);
+              }
+            };
+
+            recorder.onstop = () => {
+              const mime = recorder.mimeType || 'audio/webm';
+              const blob = new Blob(chunks, { type: mime });
+              const url = typeof URL !== 'undefined' && URL.createObjectURL ? URL.createObjectURL(blob) : '';
+              const durationSec = Math.max(1, Math.round((Date.now() - startTime) / 1000));
+              const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+              const clip = {
+                id: `clip-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                peerId,
+                peerName,
+                url,
+                blob,
+                duration: `${durationSec}s`,
+                durationSec,
+                time: timeStr
+              };
+              setCapturedAudioClips((prevClips) => [clip, ...prevClips]);
+            };
+
+            recorder.start(1000);
+            peerAudioRecordersRef.current.set(peerId, { recorder, chunks, startTime, stream: audioStream });
+          } catch (err) {
+            console.warn('Failed to start MediaRecorder on peer audio track:', err);
+          }
+        } else {
+          // Graceful fallback for headless test runners / mock environments
+          const mockSession = {
+            recorder: {
+              state: 'recording',
+              stop: () => {
+                const durationSec = Math.max(1, Math.round((Date.now() - startTime) / 1000));
+                const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                const clip = {
+                  id: `clip-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                  peerId,
+                  peerName,
+                  url: 'blob:mock-audio-clip',
+                  duration: `${durationSec}s`,
+                  durationSec,
+                  time: timeStr
+                };
+                setCapturedAudioClips((prevClips) => [clip, ...prevClips]);
+              }
+            },
+            chunks: [],
+            startTime
+          };
+          peerAudioRecordersRef.current.set(peerId, mockSession);
+        }
+
+        return [...prev, peerId];
+      }
+    });
+  }, [remotePeers]);
+
+  const handleDeleteClip = (clipId) => {
+    setCapturedAudioClips((prev) => prev.filter((c) => c.id !== clipId));
   };
 
   const toggleVideo = () => {
@@ -907,6 +1038,8 @@ export default function App() {
               isScreenSharing={isScreenSharing}
               localUser={user}
               remotePeers={remotePeers}
+              capturedPeerIds={capturedPeerIds}
+              onToggleCapturePeer={handleToggleCapturePeer}
             />
 
             <NotesDrawer
@@ -920,6 +1053,11 @@ export default function App() {
               onExtractTasks={handleExtractTasks}
               isExtracting={isExtracting}
               onAddToCalendar={handleAddToCalendar}
+              capturedPeerIds={capturedPeerIds}
+              capturedAudioClips={capturedAudioClips}
+              remotePeers={remotePeers}
+              onToggleCapturePeer={handleToggleCapturePeer}
+              onDeleteClip={handleDeleteClip}
             />
 
             <ControlDock

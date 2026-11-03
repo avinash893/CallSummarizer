@@ -58,4 +58,55 @@ describe('VideoCanvas Component', () => {
     expect(mutedBadge).toBeInTheDocument();
     expect(mutedBadge).toHaveClass('muted');
   });
+
+  it('renders selective capture button for remote peers and triggers toggle callback', () => {
+    let capturedId = null;
+    const remotePeers = [
+      { peerId: 'peer-alice', name: 'Alice Smith', initials: 'AS', isAudioOn: true }
+    ];
+
+    render(
+      <VideoCanvas
+        isVideoOn={true}
+        isAudioOn={true}
+        localStream={null}
+        remotePeers={remotePeers}
+        capturedPeerIds={[]}
+        onToggleCapturePeer={(id) => {
+          capturedId = id;
+        }}
+      />
+    );
+
+    const captureBtn = screen.getByTestId('btn-capture-peer-alice');
+    expect(captureBtn).toBeInTheDocument();
+    expect(captureBtn).toHaveTextContent(/Capture/i);
+
+    captureBtn.click();
+    expect(capturedId).toBe('peer-alice');
+  });
+
+  it('displays private listening badge and active state when peer audio is being captured', () => {
+    const remotePeers = [
+      { peerId: 'peer-bob', name: 'Bob Jones', initials: 'BJ', isAudioOn: true }
+    ];
+
+    render(
+      <VideoCanvas
+        isVideoOn={true}
+        isAudioOn={true}
+        localStream={null}
+        remotePeers={remotePeers}
+        capturedPeerIds={['peer-bob']}
+      />
+    );
+
+    const badge = screen.getByTestId('capture-badge-peer-bob');
+    expect(badge).toBeInTheDocument();
+    expect(badge).toHaveTextContent(/Listening Privately/i);
+
+    const captureBtn = screen.getByTestId('btn-capture-peer-bob');
+    expect(captureBtn).toHaveClass('active');
+    expect(captureBtn).toHaveTextContent(/Capturing/i);
+  });
 });

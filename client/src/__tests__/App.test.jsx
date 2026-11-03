@@ -188,4 +188,23 @@ describe('App Main Flow', () => {
       vi.useRealTimers();
     }
   });
+
+  it('exposes Captured Audio tab in NotesDrawer during active call', async () => {
+    render(<App />);
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 60));
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Join now/i }));
+    });
+
+    const capturedTab = screen.getByTestId('tab-captured-audio');
+    expect(capturedTab).toBeInTheDocument();
+    fireEvent.click(capturedTab);
+
+    expect(screen.getByText('Active Private Capture')).toBeInTheDocument();
+    expect(screen.getByText(/Captured Audio Library/i)).toBeInTheDocument();
+  });
 });

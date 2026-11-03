@@ -257,4 +257,65 @@ describe('NotesDrawer Component', () => {
     resolvePromise({ success: true, event: { id: 'evt-resolved' } });
     expect(await screen.findByText(/In Calendar/i)).toBeInTheDocument();
   });
+
+  it('renders Captured Audio tab and allows stopping active capture and managing clips', () => {
+    const handleToggleCapture = vi.fn();
+    const handleDeleteClip = vi.fn();
+    const handleAddTranscript = vi.fn();
+
+    const sampleClips = [
+      {
+        id: 'clip-1',
+        peerId: 'peer-alice',
+        peerName: 'Alice Smith',
+        url: 'blob:mock-audio-alice',
+        duration: '14s',
+        time: '10:05:00 AM'
+      }
+    ];
+
+    const remotePeers = [
+      { peerId: 'peer-alice', name: 'Alice Smith' },
+      { peerId: 'peer-bob', name: 'Bob Jones' }
+    ];
+
+    render(
+      <NotesDrawer
+        isOpen={true}
+        tasks={sampleTasks}
+        transcript={sampleTranscript}
+        capturedPeerIds={['peer-alice']}
+        capturedAudioClips={sampleClips}
+        remotePeers={remotePeers}
+        onToggleCapturePeer={handleToggleCapture}
+        onDeleteClip={handleDeleteClip}
+        onAddTranscript={handleAddTranscript}
+      />
+    );
+
+    // Switch to Captured tab
+    const capturedTabBtn = screen.getByTestId('tab-captured-audio');
+    expect(capturedTabBtn).toBeInTheDocument();
+    fireEvent.click(capturedTabBtn);
+
+    // Verify active capture section
+    expect(screen.getByTestId('active-captured-peer-peer-alice')).toBeInTheDocument();
+    const stopBtn = screen.getByTestId('btn-stop-capture-peer-alice');
+    fireEvent.click(stopBtn);
+    expect(handleToggleCapture).toHaveBeenCalledWith('peer-alice');
+
+    // Verify audio clip card
+    expect(screen.getByTestId('captured-clip-clip-1')).toBeInTheDocument();
+    expect(screen.getByTestId('audio-player-clip-1')).toBeInTheDocument();
+
+    // Verify note creation from clip
+    const noteBtn = screen.getByTestId('btn-add-note-clip-1');
+    fireEvent.click(noteBtn);
+    expect(handleAddTranscript).toHaveBeenCalled();
+
+    // Verify delete clip
+    const deleteBtn = screen.getByTestId('btn-delete-clip-clip-1');
+    fireEvent.click(deleteBtn);
+    expect(handleDeleteClip).toHaveBeenCalledWith('clip-1');
+  });
 });

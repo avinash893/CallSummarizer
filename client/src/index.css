@@ -366,6 +366,135 @@ body {
   color: var(--text-muted);
 }
 
+/* Selective Audio Capture Controls */
+.tile-capture-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(20, 22, 26, 0.88);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  font-weight: 500;
+  padding: 4px 9px;
+  border-radius: var(--bs-border-radius-sm);
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+}
+
+.tile-capture-btn:hover {
+  background: var(--bg-surface-elevated);
+  color: var(--text-main);
+  border-color: var(--border-default);
+}
+
+.tile-capture-btn.active {
+  background: #3b1111;
+  border-color: #ef4444;
+  color: #fca5a5;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.35);
+}
+
+.tile-capture-badge {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(20, 22, 26, 0.88);
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  color: #fca5a5;
+  font-size: 0.68rem;
+  font-family: var(--font-mono);
+  padding: 3px 8px;
+  border-radius: var(--bs-border-radius-sm);
+}
+
+.captured-tile {
+  border: 1.5px solid rgba(239, 68, 68, 0.6) !important;
+}
+
+@keyframes pulseRecord {
+  0% { transform: scale(1); opacity: 0.75; }
+  50% { transform: scale(1.3); opacity: 1; }
+  100% { transform: scale(1); opacity: 0.75; }
+}
+
+.pulse-record-dot {
+  color: #ef4444;
+  animation: pulseRecord 1.2s infinite ease-in-out;
+}
+
+/* Captured Audio Tab in NotesDrawer */
+.captured-clip-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.clip-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.clip-participant-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.clip-peer-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-default);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  color: var(--text-main);
+}
+
+.clip-peer-name {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-main);
+  line-height: 1.2;
+}
+
+.clip-meta {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.clip-audio-player audio {
+  width: 100%;
+  height: 32px;
+  outline: none;
+  border-radius: 4px;
+}
+
+.clip-actions {
+  display: flex;
+  gap: 6px;
+}
+
 /* ==========================================================================
    4. Tactile Bottom Control Dock
    ========================================================================== */

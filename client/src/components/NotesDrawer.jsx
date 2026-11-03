@@ -1,5 +1,12 @@
 import React, { useState } from 'react';
 
+function getInitials(name = 'User') {
+  const parts = String(name).trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return 'U';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
 export default function NotesDrawer({
   isOpen,
   tasks = [],
@@ -10,7 +17,12 @@ export default function NotesDrawer({
   onExportPdf,
   onExtractTasks,
   isExtracting = false,
-  onAddToCalendar
+  onAddToCalendar,
+  capturedPeerIds = [],
+  capturedAudioClips = [],
+  remotePeers = [],
+  onToggleCapturePeer,
+  onDeleteClip
 }) {
   const [activeTab, setActiveTab] = useState('notes');
   const [newTaskTitle, setNewTaskTitle] = useState('');
@@ -97,11 +109,157 @@ export default function NotesDrawer({
             <i className="bi bi-chat-left-text" style={{ marginRight: '6px' }}></i>
             <span>Transcript</span>
           </button>
+          <button
+            type="button"
+            className={`nav-link drawer-tab-btn ${activeTab === 'captured' ? 'active' : ''}`}
+            onClick={() => setActiveTab('captured')}
+            data-testid="tab-captured-audio"
+          >
+            <i className="bi bi-soundwave" style={{ marginRight: '6px' }}></i>
+            <span>Captured</span>
+            {capturedPeerIds.length > 0 && (
+              <span className="badge bg-danger ms-1" style={{ fontSize: '0.6rem', padding: '2px 5px' }}>
+                REC
+              </span>
+            )}
+            {capturedAudioClips.length > 0 && (
+              <span className="badge bg-secondary ms-1" style={{ fontSize: '0.6rem', padding: '2px 5px' }}>
+                {capturedAudioClips.length}
+              </span>
+            )}
+          </button>
         </div>
       </div>
 
       <div className="drawer-body">
-        {activeTab === 'notes' ? (
+        {activeTab === 'captured' ? (
+          <div className="captured-audio-view" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {/* Active selective capture status */}
+            <div className="notes-card">
+              <div className="notes-card-title">
+                <i className="bi bi-broadcast" style={{ marginRight: '6px', color: '#ef4444' }}></i>
+                <span>Active Private Capture</span>
+              </div>
+              {capturedPeerIds.length === 0 ? (
+                <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0, lineHeight: 1.45 }}>
+                  <i className="bi bi-info-circle me-1"></i> No participants currently captured.
+                  In group calls, click the <strong>Capture</strong> button on any participant's video tile to privately listen and record their audio.
+                </p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {capturedPeerIds.map((peerId) => {
+                    const peer = remotePeers.find((p) => p.peerId === peerId) || { name: 'Participant', peerId };
+                    return (
+                      <div
+                        key={peerId}
+                        className="d-flex align-items-center justify-content-between p-2 rounded"
+                        style={{ background: 'var(--bg-surface)', border: '1px solid rgba(239, 68, 68, 0.35)' }}
+                        data-testid={`active-captured-peer-${peerId}`}
+                      >
+                        <div className="d-flex align-items-center gap-2">
+                          <i className="bi bi-disc-fill pulse-record-dot"></i>
+                          <div>
+                            <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-main)' }}>
+                              {peer.name || 'Participant'}
+                            </div>
+                            <div style={{ fontSize: '0.7rem', color: '#fca5a5' }}>
+                              Listening privately • Recording
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          className="btn btn-outline-danger btn-sm"
+                          style={{ padding: '3px 8px', fontSize: '0.72rem' }}
+                          onClick={() => onToggleCapturePeer && onToggleCapturePeer(peerId)}
+                          data-testid={`btn-stop-capture-${peerId}`}
+                          title="Stop private capture"
+                        >
+                          <i className="bi bi-stop-fill me-1"></i> Stop
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Recorded Audio Clips */}
+            <div className="notes-card">
+              <div className="notes-card-title">
+                <i className="bi bi-music-note-list" style={{ marginRight: '6px' }}></i>
+                <span>Captured Audio Library ({capturedAudioClips.length})</span>
+              </div>
+
+              {capturedAudioClips.length === 0 ? (
+                <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0 }}>
+                  No recorded clips yet. Completed audio captures will be stored here with playback and download options.
+                </p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {capturedAudioClips.map((clip) => (
+                    <div key={clip.id} className="captured-clip-card" data-testid={`captured-clip-${clip.id}`}>
+                      <div className="clip-header">
+                        <div className="clip-participant-info">
+                          <span className="clip-peer-avatar">{getInitials(clip.peerName)}</span>
+                          <div>
+                            <div className="clip-peer-name">{clip.peerName}</div>
+                            <div className="clip-meta">{clip.time} • {clip.duration}</div>
+                          </div>
+                        </div>
+                        <span className="badge bg-dark border border-secondary text-secondary" style={{ fontSize: '0.65rem' }}>
+                          Private
+                        </span>
+                      </div>
+
+                      {clip.url && (
+                        <div className="clip-audio-player">
+                          <audio controls src={clip.url} data-testid={`audio-player-${clip.id}`} />
+                        </div>
+                      )}
+
+                      <div className="clip-actions btn-group btn-group-sm w-100">
+                        {clip.url && (
+                          <a
+                            href={clip.url}
+                            download={`capture-${(clip.peerName || 'audio').replace(/\s+/g, '_')}-${clip.id}.webm`}
+                            className="btn btn-outline-secondary btn-sm"
+                            title="Download audio recording"
+                          >
+                            <i className="bi bi-download me-1"></i> Download
+                          </a>
+                        )}
+                        <button
+                          type="button"
+                          className="btn btn-outline-secondary btn-sm"
+                          onClick={() =>
+                            onAddTranscript &&
+                            onAddTranscript(`[Private Capture - ${clip.peerName} (${clip.duration}) at ${clip.time}]`)
+                          }
+                          title="Add reference to transcript"
+                          data-testid={`btn-add-note-${clip.id}`}
+                        >
+                          <i className="bi bi-journal-plus me-1"></i> Note
+                        </button>
+                        {onDeleteClip && (
+                          <button
+                            type="button"
+                            className="btn btn-outline-secondary btn-sm text-danger"
+                            onClick={() => onDeleteClip(clip.id)}
+                            title="Delete audio clip"
+                            data-testid={`btn-delete-clip-${clip.id}`}
+                          >
+                            <i className="bi bi-trash"></i>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : activeTab === 'notes' ? (
           <>
             {/* Discussion Summary */}
             <div className="notes-card">

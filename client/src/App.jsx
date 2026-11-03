@@ -34,7 +34,7 @@ function getInitialUser() {
       const saved = window.localStorage.getItem('cs_google_user');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed && parsed.name) return parsed;
+        if (parsed && parsed.name && parsed.email) return parsed;
       }
     } catch (e) {}
   }
@@ -45,6 +45,7 @@ export default function App() {
   const [user, setUser] = useState(getInitialUser);
   const [isInCall, setIsInCall] = useState(false);
   const [roomName, setRoomName] = useState(getInitialRoomFromUrl);
+  const [isTurnstileVerified, setIsTurnstileVerified] = useState(false);
   const [isVideoOn, setIsVideoOn] = useState(true);
   const [isAudioOn, setIsAudioOn] = useState(true);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
@@ -80,6 +81,9 @@ export default function App() {
 
   const handleUserChange = useCallback((nextUser) => {
     setUser(nextUser);
+    if (!nextUser || !nextUser.email) {
+      setIsTurnstileVerified(false);
+    }
     if (typeof window !== 'undefined' && window.localStorage) {
       try {
         if (nextUser && nextUser.email) {
@@ -110,23 +114,58 @@ export default function App() {
     }
     loadConfig();
 
-    if (typeof window !== 'undefined' && window.location?.search) {
-      const params = new URLSearchParams(window.location.search);
-      const cred = params.get('googleCredential');
-      if (cred) {
-        fetch('/api/auth/google', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ credential: cred })
-        })
-          .then((r) => r.json())
-          .then((data) => {
-            if (data.user && isMounted) {
-              handleUserChange(data.user);
+    const params = typeof window !== 'undefined' && window.location?.search ? new URLSearchParams(window.location.search) : null;
+    const urlSessionId = params?.get('sessionId');
+    const cred = params?.get('googleCredential');
+    const effectiveSessionId = urlSessionId || user?.sessionId;
+
+    if (urlSessionId && typeof window !== 'undefined' && window.history?.replaceState) {
+      try {
+        const cleanUrl = new URL(window.location.href);
+        cleanUrl.searchParams.delete('sessionId');
+        cleanUrl.searchParams.delete('googleCredential');
+        window.history.replaceState({}, '', cleanUrl.toString());
+      } catch (e) {}
+    }
+
+    if (effectiveSessionId) {
+      fetch('/api/auth/session?sessionId=' + encodeURIComponent(effectiveSessionId), {
+        headers: { 'X-Session-ID': effectiveSessionId },
+        credentials: 'include'
+      })
+        .then((r) => {
+          if (r.status === 401) {
+            // Stale/expired local session on server restart -> reset ghost authenticated state
+            if (isMounted) {
+              handleUserChange({ name: 'You', email: '', initials: 'You' });
             }
-          })
-          .catch(() => {});
-      }
+            return null;
+          }
+          return r.ok ? r.json() : null;
+        })
+        .then((data) => {
+          if (data && data.authenticated && data.user && isMounted) {
+            handleUserChange({
+              ...data.user,
+              hasCalendarAccess: data.hasCalendarAccess
+            });
+          }
+        })
+        .catch(() => {});
+    } else if (cred) {
+      fetch('/api/auth/google', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ credential: cred })
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data && data.user && isMounted) {
+            handleUserChange(data.user);
+          }
+        })
+        .catch(() => {});
     }
 
     return () => {
@@ -488,6 +527,9 @@ export default function App() {
   };
 
   const handleJoinCall = () => {
+    if (!user?.email || !isTurnstileVerified) {
+      return;
+    }
     const cleanCode = extractRoomCode(roomName) || 'strategy-sync';
     setRoomName(cleanCode);
     if (typeof window !== 'undefined' && window.history?.replaceState) {
@@ -626,11 +668,7 @@ export default function App() {
         transcript.length > 0
           ? transcript.map((item) => `${item.speaker}: ${item.text}`).join('\n')
           : `${user?.name || 'You'}: We will review the meeting deliverables and finalize action items by tomorrow.`;
-      const gatewayUrl =
-        import.meta.env.VITE_GATEWAY_URL ??
-        (typeof window !== 'undefined' && window.location.port === '5173'
-          ? 'http://localhost:5000'
-          : '');
+      const gatewayUrl = import.meta.env.VITE_GATEWAY_URL || '';
       const response = await fetch(`${gatewayUrl}/api/nlp-tasks/extract-tasks`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -656,6 +694,55 @@ export default function App() {
       // Gracefully maintain tasks if service is not running
     } finally {
       setIsExtracting(false);
+    }
+  };
+
+  const handleAddToCalendar = async (task) => {
+    try {
+      const gatewayUrl = import.meta.env.VITE_GATEWAY_URL || '';
+
+      const headers = {
+        'Content-Type': 'application/json'
+      };
+      if (user?.sessionId) {
+        headers['X-Session-ID'] = user.sessionId;
+      }
+
+      const userTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+      const res = await fetch(`${gatewayUrl}/api/calendar/events`, {
+        method: 'POST',
+        headers,
+        credentials: 'include',
+        body: JSON.stringify({
+          title: task.title,
+          description: `Action item assigned to ${task.assignee || 'You'}. Due: ${task.due || 'Upcoming'}\nRoom: ${roomName}`,
+          due: task.due,
+          timeZone: userTimeZone,
+          sessionId: user?.sessionId
+        })
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        setTasks((prev) => {
+          const next = prev.map((t) => (t.id === task.id ? { ...t, calendarAdded: true } : t));
+          if (wsRef.current && wsRef.current.readyState === 1) {
+            wsRef.current.send(JSON.stringify({ type: 'tasks-sync', tasks: next }));
+          }
+          return next;
+        });
+        return { success: true, event: data.event };
+      }
+      return {
+        success: false,
+        error: data.error || `Calendar service error (${res.status})`
+      };
+    } catch (err) {
+      return {
+        success: false,
+        error: err.message || 'Failed to connect to Google Calendar service'
+      };
     }
   };
 
@@ -756,6 +843,8 @@ export default function App() {
           onUserChange={handleUserChange}
           googleClientId={appConfig.googleClientId}
           turnstileSiteKey={appConfig.turnstileSiteKey}
+          isTurnstileVerified={isTurnstileVerified}
+          onTurnstileVerified={setIsTurnstileVerified}
         />
       ) : (
         <>
@@ -790,6 +879,7 @@ export default function App() {
               onExportPdf={handleExportPdf}
               onExtractTasks={handleExtractTasks}
               isExtracting={isExtracting}
+              onAddToCalendar={handleAddToCalendar}
             />
 
             <ControlDock

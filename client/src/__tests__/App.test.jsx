@@ -3,8 +3,40 @@ import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import App from '../App';
 
+const authUser = {
+  name: 'Avinash Kumar',
+  email: 'avinash@gmail.com',
+  initials: 'AK',
+  sessionId: 'test-session-123'
+};
+
+let store = {};
+
 describe('App Main Flow', () => {
   beforeEach(() => {
+    store = {
+      cs_google_user: JSON.stringify(authUser)
+    };
+
+    const mockStorage = {
+      getItem: vi.fn((key) => store[key] || null),
+      setItem: vi.fn((key, val) => {
+        store[key] = String(val);
+      }),
+      removeItem: vi.fn((key) => {
+        delete store[key];
+      }),
+      clear: vi.fn(() => {
+        store = {};
+      })
+    };
+
+    Object.defineProperty(window, 'localStorage', {
+      value: mockStorage,
+      writable: true,
+      configurable: true
+    });
+
     Object.defineProperty(global.navigator, 'mediaDevices', {
       value: {
         getUserMedia: vi.fn().mockImplementation(() =>
@@ -20,11 +52,32 @@ describe('App Main Flow', () => {
     });
   });
 
+  it('blocks unauthenticated user from joining call and displays sign-in prompt', async () => {
+    store = {}; // unauthenticated user
+    render(<App />);
+
+    expect(screen.getByText('Ready to join?')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Join now/i })).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Join now/i }));
+    });
+
+    expect(screen.queryByText('CallSummarizer')).not.toBeInTheDocument();
+    expect(screen.getByTestId('lobby-auth-error')).toHaveTextContent(/Sign in with Google is required to join a meeting/i);
+    expect(screen.getByTestId('google-signin-form')).toBeInTheDocument();
+  });
+
   it('renders Lobby initially and navigates into active call stage showing only the single joined user', async () => {
     const { container } = render(<App />);
 
     expect(screen.getByText('Ready to join?')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Join now/i })).toBeInTheDocument();
+
+    // Allow Turnstile fallback to complete
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 60));
+    });
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /Join now/i }));
@@ -39,8 +92,10 @@ describe('App Main Flow', () => {
   });
 
   it('supports leaving call and returning to lobby', async () => {
+    render(<App />);
+
     await act(async () => {
-      render(<App />);
+      await new Promise((r) => setTimeout(r, 60));
     });
 
     await act(async () => {
@@ -55,8 +110,10 @@ describe('App Main Flow', () => {
   });
 
   it('allows adding and toggling tasks in active call', async () => {
+    render(<App />);
+
     await act(async () => {
-      render(<App />);
+      await new Promise((r) => setTimeout(r, 60));
     });
 
     await act(async () => {
@@ -78,5 +135,50 @@ describe('App Main Flow', () => {
       fireEvent.click(firstCheckbox);
     });
     expect(firstCheckbox.checked).toBe(true);
+  });
+
+  it('resets stale user state when server session check returns 401 on startup', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch').mockImplementation((url) => {
+      if (String(url).includes('/api/auth/session')) {
+        return Promise.resolve({
+          status: 401,
+          ok: false,
+          json: () => Promise.resolve({ authenticated: false, error: 'Session expired' })
+        });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+    });
+
+    render(<App />);
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 60));
+    });
+
+    // Stale local user should have been cleared, so clicking Join now prompts for sign-in
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Join now/i }));
+    });
+
+    expect(screen.getByTestId('lobby-auth-error')).toHaveTextContent(/Sign in with Google is required to join a meeting/i);
+    fetchSpy.mockRestore();
+  });
+
+  it('blocks joining call if Turnstile is not verified even if user is signed in', async () => {
+    vi.useFakeTimers();
+    try {
+      await act(async () => {
+        render(<App />);
+      });
+
+      act(() => {
+        fireEvent.click(screen.getByRole('button', { name: /Join now/i }));
+      });
+
+      expect(screen.queryByText('CallSummarizer')).not.toBeInTheDocument();
+      expect(screen.getByTestId('lobby-auth-error')).toHaveTextContent(/Cloudflare Turnstile verification required/i);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

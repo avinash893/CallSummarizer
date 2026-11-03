@@ -95,4 +95,166 @@ describe('NotesDrawer Component', () => {
     fireEvent.click(extractBtn);
     expect(handleExtract).toHaveBeenCalledTimes(1);
   });
+
+  it('displays Add to Calendar button and handles approval confirmation to create event', async () => {
+    const handleAddToCalendar = vi.fn().mockResolvedValue({ success: true, event: { id: 'evt-1' } });
+
+    render(
+      <NotesDrawer
+        isOpen={true}
+        tasks={sampleTasks}
+        transcript={sampleTranscript}
+        onToggleTask={vi.fn()}
+        onExportPdf={vi.fn()}
+        onAddToCalendar={handleAddToCalendar}
+      />
+    );
+
+    const addCalButtons = screen.getAllByRole('button', { name: /Add to Google Calendar/i });
+    expect(addCalButtons.length).toBe(2);
+
+    // Click trigger on first task
+    fireEvent.click(addCalButtons[0]);
+
+    // Confirmation popover appears
+    expect(screen.getByText(/Add to Google Calendar\? \(15m reminder\)/i)).toBeInTheDocument();
+    const confirmBtn = screen.getByRole('button', { name: /Confirm/i });
+    const cancelBtn = screen.getByRole('button', { name: /Cancel/i });
+    expect(confirmBtn).toBeInTheDocument();
+    expect(cancelBtn).toBeInTheDocument();
+
+    // Confirm adding to calendar
+    fireEvent.click(confirmBtn);
+
+    expect(handleAddToCalendar).toHaveBeenCalledWith(sampleTasks[0]);
+    expect(await screen.findByText(/In Calendar/i)).toBeInTheDocument();
+  });
+
+  it('displays user-facing error feedback when calendar creation fails without crashing', async () => {
+    const handleAddToCalendar = vi.fn().mockResolvedValue({
+      success: false,
+      error: 'Google Calendar API error: User calendar access revoked'
+    });
+
+    render(
+      <NotesDrawer
+        isOpen={true}
+        tasks={sampleTasks}
+        transcript={sampleTranscript}
+        onToggleTask={vi.fn()}
+        onExportPdf={vi.fn()}
+        onAddToCalendar={handleAddToCalendar}
+      />
+    );
+
+    const addCalButtons = screen.getAllByRole('button', { name: /Add to Google Calendar/i });
+    fireEvent.click(addCalButtons[0]);
+
+    const confirmBtn = screen.getByRole('button', { name: /Confirm/i });
+    fireEvent.click(confirmBtn);
+
+    const errorAlert = await screen.findByTestId('calendar-error-alert');
+    expect(errorAlert).toBeInTheDocument();
+    expect(errorAlert).toHaveTextContent(/Google Calendar API error: User calendar access revoked/i);
+
+    // Dismiss error
+    const dismissBtn = screen.getByRole('button', { name: /Dismiss error/i });
+    fireEvent.click(dismissBtn);
+    expect(screen.queryByTestId('calendar-error-alert')).not.toBeInTheDocument();
+  });
+
+  it('prevents multiple in-flight calendar requests on rapid consecutive clicks', async () => {
+    let resolvePromise;
+    const pendingPromise = new Promise((resolve) => {
+      resolvePromise = resolve;
+    });
+    const handleAddToCalendar = vi.fn().mockReturnValue(pendingPromise);
+
+    render(
+      <NotesDrawer
+        isOpen={true}
+        tasks={sampleTasks}
+        transcript={sampleTranscript}
+        onToggleTask={vi.fn()}
+        onExportPdf={vi.fn()}
+        onAddToCalendar={handleAddToCalendar}
+      />
+    );
+
+    const addCalButtons = screen.getAllByRole('button', { name: /Add to Google Calendar/i });
+    fireEvent.click(addCalButtons[0]);
+
+    const confirmBtn = screen.getByRole('button', { name: /Confirm/i });
+    // Rapid duplicate clicks
+    fireEvent.click(confirmBtn);
+    fireEvent.click(confirmBtn);
+
+    expect(handleAddToCalendar).toHaveBeenCalledTimes(1);
+
+    // Resolve in-flight request
+    resolvePromise({ success: true, event: { id: 'evt-2' } });
+    expect(await screen.findByText(/In Calendar/i)).toBeInTheDocument();
+  });
+
+  it('handles tasks with id 0 properly without treating them as invalid', async () => {
+    const zeroIdTasks = [
+      { id: 0, title: 'Zero id action item', assignee: 'Dev', due: 'Tomorrow', completed: false }
+    ];
+    const handleAddToCalendar = vi.fn().mockResolvedValue({ success: true, event: { id: 'cal-zero-1' } });
+
+    render(
+      <NotesDrawer
+        isOpen={true}
+        tasks={zeroIdTasks}
+        transcript={[]}
+        onToggleTask={vi.fn()}
+        onExportPdf={vi.fn()}
+        onAddToCalendar={handleAddToCalendar}
+      />
+    );
+
+    const addBtn = screen.getByRole('button', { name: /Add to Google Calendar/i });
+    fireEvent.click(addBtn);
+
+    const confirmBtn = screen.getByRole('button', { name: /Confirm/i });
+    fireEvent.click(confirmBtn);
+
+    expect(handleAddToCalendar).toHaveBeenCalledWith(zeroIdTasks[0]);
+    expect(await screen.findByText(/In Calendar/i)).toBeInTheDocument();
+  });
+
+  it('disables all add to calendar trigger buttons while an event creation is in-flight', async () => {
+    let resolvePromise;
+    const pendingPromise = new Promise((resolve) => {
+      resolvePromise = resolve;
+    });
+    const handleAddToCalendar = vi.fn().mockReturnValue(pendingPromise);
+
+    render(
+      <NotesDrawer
+        isOpen={true}
+        tasks={sampleTasks}
+        transcript={sampleTranscript}
+        onToggleTask={vi.fn()}
+        onExportPdf={vi.fn()}
+        onAddToCalendar={handleAddToCalendar}
+      />
+    );
+
+    const addCalButtons = screen.getAllByRole('button', { name: /Add to Google Calendar/i });
+    expect(addCalButtons.length).toBe(2);
+
+    // Trigger on first task
+    fireEvent.click(addCalButtons[0]);
+    const confirmBtn = screen.getByRole('button', { name: /Confirm/i });
+    fireEvent.click(confirmBtn);
+
+    // Second task's add button should now be disabled
+    const remainingAddBtns = screen.getAllByRole('button', { name: /Add to Google Calendar/i });
+    expect(remainingAddBtns[0]).toBeDisabled();
+
+    // Resolve in-flight request
+    resolvePromise({ success: true, event: { id: 'evt-resolved' } });
+    expect(await screen.findByText(/In Calendar/i)).toBeInTheDocument();
+  });
 });

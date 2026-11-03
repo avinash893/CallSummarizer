@@ -948,6 +948,166 @@ body {
 }
 
 /* ==========================================================================
+   Google Calendar Integration & Auth Gating Styles
+   ========================================================================== */
+.lobby-auth-error-banner {
+  display: flex;
+  align-items: center;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: #fca5a5;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 0.83rem;
+  font-weight: 500;
+  margin-bottom: 4px;
+  line-height: 1.4;
+}
+
+.task-item-container {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  transition: border-color 0.15s ease;
+  overflow: hidden;
+}
+
+.task-item-container:hover {
+  border-color: var(--border-default);
+}
+
+.task-item-container .task-row {
+  border: none;
+  background: transparent;
+  padding-bottom: 4px;
+}
+
+.task-calendar-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 4px 10px 8px 10px;
+}
+
+.btn-add-calendar {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  color: #60a5fa;
+  font-size: 0.73rem;
+  font-weight: 500;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-add-calendar:hover:not(:disabled) {
+  background: rgba(59, 130, 246, 0.22);
+  border-color: #3b82f6;
+  color: #93c5fd;
+}
+
+.btn-add-calendar:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.calendar-badge-success {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  color: #34d399;
+  font-size: 0.72rem;
+  font-weight: 500;
+  border-radius: var(--radius-xs);
+}
+
+.calendar-confirm-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--bg-app);
+  border: 1px solid var(--border-default);
+  padding: 8px 10px;
+  border-radius: var(--radius-xs);
+  width: 100%;
+}
+
+.calendar-confirm-prompt {
+  font-size: 0.74rem;
+  color: var(--text-main);
+  font-weight: 500;
+}
+
+.calendar-confirm-btns {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.btn-calendar-confirm {
+  padding: 3px 10px;
+  background: #2563eb;
+  border: 1px solid #3b82f6;
+  color: #ffffff;
+  font-size: 0.72rem;
+  font-weight: 500;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.btn-calendar-confirm:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.btn-calendar-cancel {
+  padding: 3px 8px;
+  background: transparent;
+  border: 1px solid var(--border-default);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+}
+
+.btn-calendar-cancel:hover:not(:disabled) {
+  color: var(--text-main);
+  background: var(--bg-surface-elevated);
+}
+
+.calendar-error-banner {
+  display: flex;
+  align-items: center;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  padding: 7px 10px;
+  border-radius: var(--radius-xs);
+  margin-bottom: 6px;
+}
+
+.btn-dismiss-alert {
+  background: transparent;
+  border: none;
+  color: #f87171;
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.btn-dismiss-alert:hover {
+  color: #ef4444;
+}
+
+/* ==========================================================================
    6. Responsive Viewport Adaptations
    ========================================================================== */
 @media (max-width: 900px) {

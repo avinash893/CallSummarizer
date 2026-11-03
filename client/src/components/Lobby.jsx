@@ -41,7 +41,9 @@ export default function Lobby({
   user = { name: 'You', email: '', initials: 'YO' },
   onUserChange,
   googleClientId = DEFAULT_GOOGLE_CLIENT_ID,
-  turnstileSiteKey
+  turnstileSiteKey,
+  isTurnstileVerified = false,
+  onTurnstileVerified
 }) {
   const previewRef = useRef(null);
   const [showGoogleModal, setShowGoogleModal] = useState(false);
@@ -50,6 +52,9 @@ export default function Lobby({
   const [authLoading, setAuthLoading] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
   const [turnstileVerified, setTurnstileVerified] = useState(false);
+  const [authError, setAuthError] = useState('');
+
+  const effectiveTurnstileVerified = Boolean(turnstileVerified || isTurnstileVerified);
 
   useEffect(() => {
     if (previewRef.current) {
@@ -84,11 +89,11 @@ export default function Lobby({
   }, []);
 
   const handleGoogleSignInClick = () => {
-    if (typeof window !== 'undefined' && window.google?.accounts?.oauth2) {
+    if (typeof window !== 'undefined' && window.google?.accounts?.oauth2 && googleClientId) {
       try {
         const tokenClient = window.google.accounts.oauth2.initTokenClient({
           client_id: googleClientId,
-          scope: 'openid email profile',
+          scope: 'openid email profile https://www.googleapis.com/auth/calendar.events',
           callback: async (response) => {
             if (response && response.access_token) {
               setAuthLoading(true);
@@ -103,8 +108,12 @@ export default function Lobby({
                   if (data.user && onUserChange) {
                     onUserChange(data.user);
                     setShowGoogleModal(false);
+                    setAuthError('');
                     return;
                   }
+                } else {
+                  const errData = await res.json().catch(() => ({}));
+                  setAuthError(errData.error || 'Google token authorization rejected');
                 }
               } catch (e) {
                 // Fallback to manual Google Account modal
@@ -124,26 +133,22 @@ export default function Lobby({
         // Fallback to inline Google Account sign-in modal
       }
     }
-    setShowGoogleModal((prev) => !prev);
+    setShowGoogleModal(true);
   };
 
   const handleGoogleAccountSubmit = async (e) => {
     e.preventDefault();
     if (!googleName.trim() || !googleEmail.trim()) return;
-    setAuthLoading(true);
     const cleanName = googleName.trim();
     const cleanEmail = googleEmail.trim().toLowerCase();
-    const parts = cleanName.split(/\s+/).filter(Boolean);
-    const initials =
-      parts.length > 1
-        ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
-        : cleanName.slice(0, 2).toUpperCase();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(cleanEmail)) {
+      setAuthError('Please enter a valid Google email address.');
+      return;
+    }
 
-    let verifiedUser = {
-      name: cleanName,
-      email: cleanEmail,
-      initials
-    };
+    setAuthLoading(true);
+    setAuthError('');
 
     try {
       const res = await fetch('/api/auth/google', {
@@ -151,32 +156,55 @@ export default function Lobby({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: cleanName, email: cleanEmail })
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.user) {
-          verifiedUser = data.user;
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.authenticated && data.user) {
+        if (onUserChange) {
+          onUserChange(data.user);
         }
+        setShowGoogleModal(false);
+        setAuthError('');
+      } else {
+        setAuthError(data.error || 'Failed to authenticate with Google');
       }
     } catch (err) {
-      // Offline / test fallback
+      setAuthError('Network error connecting to authentication service');
     } finally {
       setAuthLoading(false);
-      if (onUserChange) {
-        onUserChange(verifiedUser);
-      }
-      setShowGoogleModal(false);
     }
   };
 
   const handleSignOut = () => {
+    const currentSessionId = user?.sessionId;
     if (onUserChange) {
       onUserChange({ name: 'You', email: '', initials: 'YO' });
     }
     setGoogleName('');
     setGoogleEmail('');
+    setAuthError('');
+    try {
+      fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(currentSessionId ? { 'X-Session-ID': currentSessionId } : {})
+        },
+        credentials: 'include',
+        body: JSON.stringify({ sessionId: currentSessionId })
+      }).catch(() => {});
+    } catch (e) {}
   };
 
   const handleNewMeeting = async () => {
+    if (!isSignedInWithGoogle) {
+      setAuthError('Sign in with Google is required to create a new meeting.');
+      setShowGoogleModal(true);
+      return;
+    }
+    if (!effectiveTurnstileVerified) {
+      setAuthError('Cloudflare Turnstile verification required to create a meeting.');
+      return;
+    }
+    setAuthError('');
     const newCode = generateClientMeetingCode();
     setRoomName(newCode);
     if (typeof window !== 'undefined' && window.history?.replaceState) {
@@ -215,6 +243,16 @@ export default function Lobby({
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (!isSignedInWithGoogle) {
+      setAuthError('Sign in with Google is required to join a meeting.');
+      setShowGoogleModal(true);
+      return;
+    }
+    if (!effectiveTurnstileVerified) {
+      setAuthError('Cloudflare Turnstile verification required to join.');
+      return;
+    }
+    setAuthError('');
     const code = extractRoomCode(roomName);
     if (!code) return;
     if (code !== roomName) {
@@ -265,6 +303,13 @@ export default function Lobby({
             )}
           </div>
         </div>
+
+        {authError && (
+          <div className="lobby-auth-error-banner" role="alert" data-testid="lobby-auth-error">
+            <i className="bi bi-shield-exclamation" style={{ marginRight: '8px', color: '#ef4444', fontSize: '1.1rem' }}></i>
+            <span>{authError}</span>
+          </div>
+        )}
 
         {/* Inline Google Sign-In Form when clicked */}
         {showGoogleModal && !isSignedInWithGoogle && (
@@ -384,7 +429,11 @@ export default function Lobby({
         {/* Cloudflare Turnstile Security Verification */}
         <TurnstileWidget
           siteKey={turnstileSiteKey}
-          onVerified={() => setTurnstileVerified(true)}
+          onVerified={(token) => {
+            setTurnstileVerified(true);
+            if (onTurnstileVerified) onTurnstileVerified(token);
+            setAuthError((prev) => (prev && prev.includes('Turnstile') ? '' : prev));
+          }}
         />
       </div>
     </div>

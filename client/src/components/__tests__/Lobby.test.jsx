@@ -1,10 +1,10 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
-import Lobby from '../Lobby';
+import Lobby, { extractRoomCode } from '../Lobby';
 
 describe('Lobby Component', () => {
-  it('renders pre-join title, input, and join button', () => {
+  it('renders pre-join title, Google Sign-In button, Cloudflare Turnstile security, and join button', () => {
     const handleJoin = vi.fn();
     const handleSetRoom = vi.fn();
     const handleToggleAudio = vi.fn();
@@ -25,10 +25,19 @@ describe('Lobby Component', () => {
 
     expect(screen.getByText('Ready to join?')).toBeInTheDocument();
     expect(screen.getByText('Check your camera and microphone')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Sign in with Google/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /New meeting/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Copy link/i })).toBeInTheDocument();
+    expect(screen.getByTestId('turnstile-security-box')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Join now/i })).toBeInTheDocument();
 
-    const input = screen.getByPlaceholderText(/Meeting name/i);
+    const input = screen.getByPlaceholderText(/Meeting name, code, or link/i);
     expect(input).toHaveValue('strategy-sync');
+  });
+
+  it('extracts meeting code cleanly when a full meeting link is pasted', () => {
+    expect(extractRoomCode('https://callsummarizer.onrender.com/?room=abc-defg-hij')).toBe('abc-defg-hij');
+    expect(extractRoomCode('abc-defg-hij')).toBe('abc-defg-hij');
   });
 
   it('triggers onJoinCall when form is submitted with valid room name', () => {

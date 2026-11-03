@@ -2,15 +2,34 @@ import React, { useState } from 'react';
 
 export default function NotesDrawer({
   isOpen,
-  tasks,
+  tasks = [],
+  transcript = [],
   onToggleTask,
+  onAddTask,
+  onAddTranscript,
   onExportPdf,
   onExtractTasks,
   isExtracting = false
 }) {
   const [activeTab, setActiveTab] = useState('notes');
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [newTranscriptText, setNewTranscriptText] = useState('');
 
   if (!isOpen) return null;
+
+  const handleTaskSubmit = (e) => {
+    e.preventDefault();
+    if (!newTaskTitle.trim() || !onAddTask) return;
+    onAddTask(newTaskTitle.trim());
+    setNewTaskTitle('');
+  };
+
+  const handleTranscriptSubmit = (e) => {
+    e.preventDefault();
+    if (!newTranscriptText.trim() || !onAddTranscript) return;
+    onAddTranscript(newTranscriptText.trim());
+    setNewTranscriptText('');
+  };
 
   return (
     <aside className="right-drawer">
@@ -39,35 +58,72 @@ export default function NotesDrawer({
             {/* Discussion Summary */}
             <div className="notes-card">
               <div className="notes-card-title">Summary</div>
-              <ul className="notes-list">
-                <li>Aligned on project scope and sprint timeline for upcoming deliverables.</li>
-                <li>Assigned signaling and backend service review to Rohan.</li>
-                <li>Scheduled follow-up client presentation for Friday.</li>
-              </ul>
+              {transcript.length > 0 ? (
+                <ul className="notes-list">
+                  {transcript.slice(-3).map((item) => (
+                    <li key={item.id}>
+                      <strong>{item.speaker}:</strong> {item.text}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <ul className="notes-list">
+                  <li>Meeting room active and ready for discussion.</li>
+                  <li>Use the Transcript tab or microphone to capture notes and action items.</li>
+                </ul>
+              )}
             </div>
 
             {/* Action Items */}
             <div className="notes-card">
               <div className="notes-card-title">Action Items</div>
+
+              {onAddTask && (
+                <form onSubmit={handleTaskSubmit} style={{ display: 'flex', gap: '6px' }}>
+                  <input
+                    type="text"
+                    className="lobby-input"
+                    style={{ flex: 1, padding: '7px 10px', fontSize: '0.8rem' }}
+                    placeholder="Add action item..."
+                    value={newTaskTitle}
+                    onChange={(e) => setNewTaskTitle(e.target.value)}
+                  />
+                  <button
+                    type="submit"
+                    className="btn-secondary-action"
+                    style={{ padding: '7px 12px' }}
+                    title="Add task"
+                  >
+                    <i className="bi bi-plus-lg"></i>
+                  </button>
+                </form>
+              )}
+
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                {tasks.map((task) => (
-                  <label key={task.id} className="task-row">
-                    <input
-                      type="checkbox"
-                      className="task-checkbox"
-                      checked={task.completed}
-                      onChange={() => onToggleTask(task.id)}
-                    />
-                    <div className="task-info">
-                      <span className={`task-text ${task.completed ? 'done' : ''}`}>
-                        {task.title}
-                      </span>
-                      <span className="task-meta">
-                        {task.assignee} • {task.due}
-                      </span>
-                    </div>
-                  </label>
-                ))}
+                {tasks.length === 0 ? (
+                  <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                    No action items yet. Add one above or extract from transcript.
+                  </p>
+                ) : (
+                  tasks.map((task) => (
+                    <label key={task.id} className="task-row">
+                      <input
+                        type="checkbox"
+                        className="task-checkbox"
+                        checked={Boolean(task.completed)}
+                        onChange={() => onToggleTask && onToggleTask(task.id)}
+                      />
+                      <div className="task-info">
+                        <span className={`task-text ${task.completed ? 'done' : ''}`}>
+                          {task.title}
+                        </span>
+                        <span className="task-meta">
+                          {task.assignee} • {task.due}
+                        </span>
+                      </div>
+                    </label>
+                  ))
+                )}
               </div>
             </div>
 
@@ -80,28 +136,42 @@ export default function NotesDrawer({
           </>
         ) : (
           <div className="transcript-box">
-            <div className="transcript-message">
-              <div className="speaker-line">
-                <span className="speaker-name">You</span>
-                <span className="speaker-time">10:00 AM</span>
+            {transcript.length === 0 ? (
+              <div className="transcript-message">
+                <p className="message-text" style={{ color: 'var(--text-muted)' }}>
+                  No transcript lines recorded yet. Speak into your microphone or add a meeting statement below.
+                </p>
               </div>
-              <p className="message-text">
-                "Welcome to the meeting. Let's discuss today's project milestones and action items."
-              </p>
-            </div>
+            ) : (
+              transcript.map((item) => (
+                <div key={item.id} className="transcript-message">
+                  <div className="speaker-line">
+                    <span className="speaker-name">{item.speaker}</span>
+                    <span className="speaker-time">{item.time}</span>
+                  </div>
+                  <p className="message-text">"{item.text}"</p>
+                </div>
+              ))
+            )}
 
-            <div className="transcript-message">
-              <div className="speaker-line">
-                <span className="speaker-name">Rohan Sharma</span>
-                <span className="speaker-time">10:01 AM</span>
-              </div>
-              <p className="message-text">
-                "Sounds good, I have the architecture and task breakdown ready for review."
-              </p>
-            </div>
+            {onAddTranscript && (
+              <form onSubmit={handleTranscriptSubmit} style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
+                <input
+                  type="text"
+                  className="lobby-input"
+                  style={{ flex: 1, padding: '8px 10px', fontSize: '0.8rem' }}
+                  placeholder="Type a meeting note or commitment..."
+                  value={newTranscriptText}
+                  onChange={(e) => setNewTranscriptText(e.target.value)}
+                />
+                <button type="submit" className="btn-secondary-action" title="Send to transcript">
+                  <i className="bi bi-send"></i>
+                </button>
+              </form>
+            )}
 
             {onExtractTasks && (
-              <div style={{ marginTop: '14px' }}>
+              <div style={{ marginTop: '10px' }}>
                 <button
                   type="button"
                   className="btn-export-pdf"

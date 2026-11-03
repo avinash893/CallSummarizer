@@ -4,23 +4,44 @@ import { describe, it, expect } from 'vitest';
 import VideoCanvas from '../VideoCanvas';
 
 describe('VideoCanvas Component', () => {
-  it('renders local participant tile and remote participant tile with Rohan Sharma', () => {
-    render(
+  it('renders ONLY the single local participant tile when no remote peers have joined', () => {
+    const { container } = render(
       <VideoCanvas
         isVideoOn={true}
         isAudioOn={true}
         localStream={null}
-        remoteSpeaking={false}
+        remotePeers={[]}
       />
     );
 
-    // Host indicators
+    const tiles = container.querySelectorAll('.video-tile');
+    expect(tiles.length).toBe(1);
     expect(screen.getByText('You', { selector: '.avatar-circle' })).toBeInTheDocument();
     expect(screen.getByText('You', { selector: '.user-name-tag' })).toBeInTheDocument();
+    expect(screen.queryByText(/Rohan Sharma/i)).not.toBeInTheDocument();
+  });
 
-    // Remote participant indicators (Rohan Sharma)
+  it('renders remote participant tiles dynamically when real peers join the meeting', () => {
+    const remotePeers = [
+      { peerId: 'peer-1', name: 'Rohan Sharma', initials: 'RS', isAudioOn: true, isVideoOn: false, speaking: true }
+    ];
+
+    const { container } = render(
+      <VideoCanvas
+        isVideoOn={true}
+        isAudioOn={true}
+        localStream={null}
+        remotePeers={remotePeers}
+      />
+    );
+
+    const tiles = container.querySelectorAll('.video-tile');
+    expect(tiles.length).toBe(2);
     expect(screen.getByText('RS')).toBeInTheDocument();
-    expect(screen.getByText(/Rohan Sharma/i, { selector: '.standby-text' })).toBeInTheDocument();
+    expect(screen.getByText('Rohan Sharma', { selector: '.standby-text' })).toBeInTheDocument();
+
+    const speakingTile = container.querySelector('.video-tile.speaking');
+    expect(speakingTile).toBeInTheDocument();
   });
 
   it('displays microphone mute status when audio is off', () => {
@@ -29,26 +50,12 @@ describe('VideoCanvas Component', () => {
         isVideoOn={false}
         isAudioOn={false}
         localStream={null}
-        remoteSpeaking={false}
+        remotePeers={[]}
       />
     );
 
     const mutedBadge = screen.getByTitle('Microphone muted');
     expect(mutedBadge).toBeInTheDocument();
     expect(mutedBadge).toHaveClass('muted');
-  });
-
-  it('indicates speaking state when remote participant speaks', () => {
-    const { container } = render(
-      <VideoCanvas
-        isVideoOn={true}
-        isAudioOn={true}
-        localStream={null}
-        remoteSpeaking={true}
-      />
-    );
-
-    const speakingTile = container.querySelector('.video-tile.speaking');
-    expect(speakingTile).toBeInTheDocument();
   });
 });

@@ -9,11 +9,17 @@ describe('NotesDrawer Component', () => {
     { id: 2, title: 'Complete frontend usability review', assignee: 'You', due: 'Today', completed: true }
   ];
 
+  const sampleTranscript = [
+    { id: 't1', speaker: 'You', time: '10:00 AM', text: 'Welcome to the meeting.' },
+    { id: 't2', speaker: 'Rohan Sharma', time: '10:01 AM', text: 'Sounds good, I have the architecture ready.' }
+  ];
+
   it('renders null when isOpen is false', () => {
     const { container } = render(
       <NotesDrawer
         isOpen={false}
         tasks={sampleTasks}
+        transcript={sampleTranscript}
         onToggleTask={vi.fn()}
         onExportPdf={vi.fn()}
       />
@@ -29,6 +35,7 @@ describe('NotesDrawer Component', () => {
       <NotesDrawer
         isOpen={true}
         tasks={sampleTasks}
+        transcript={sampleTranscript}
         onToggleTask={handleToggle}
         onExportPdf={handleExport}
       />
@@ -39,13 +46,11 @@ describe('NotesDrawer Component', () => {
     expect(screen.getByText('Review microservice signaling service')).toBeInTheDocument();
     expect(screen.getByText('Complete frontend usability review')).toBeInTheDocument();
 
-    // Checkbox interaction
     const checkboxes = screen.getAllByRole('checkbox');
     expect(checkboxes.length).toBe(2);
     fireEvent.click(checkboxes[0]);
     expect(handleToggle).toHaveBeenCalledWith(1);
 
-    // Export PDF button
     const pdfBtn = screen.getByRole('button', { name: /Download PDF Summary/i });
     fireEvent.click(pdfBtn);
     expect(handleExport).toHaveBeenCalledTimes(1);
@@ -56,19 +61,16 @@ describe('NotesDrawer Component', () => {
       <NotesDrawer
         isOpen={true}
         tasks={sampleTasks}
+        transcript={sampleTranscript}
         onToggleTask={vi.fn()}
         onExportPdf={vi.fn()}
       />
     );
 
-    // Click Transcript tab
     fireEvent.click(screen.getByRole('button', { name: 'Transcript' }));
-
-    // Verify transcript conversation appears
     expect(screen.getByText('Rohan Sharma')).toBeInTheDocument();
     expect(screen.getByText(/Sounds good, I have the architecture/i)).toBeInTheDocument();
 
-    // Switch back to Notes tab
     fireEvent.click(screen.getByRole('button', { name: 'Notes' }));
     expect(screen.getByText('Summary')).toBeInTheDocument();
   });
@@ -79,6 +81,7 @@ describe('NotesDrawer Component', () => {
       <NotesDrawer
         isOpen={true}
         tasks={sampleTasks}
+        transcript={sampleTranscript}
         onToggleTask={vi.fn()}
         onExportPdf={vi.fn()}
         onExtractTasks={handleExtract}

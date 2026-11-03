@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 
 export default function TopBar({
   roomName,
@@ -6,8 +6,19 @@ export default function TopBar({
   isNotesOpen,
   setIsNotesOpen,
   onOpenArchModal,
-  onCopyRoom
+  onCopyRoom,
+  participantCount = 1
 }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyClick = () => {
+    if (onCopyRoom) {
+      onCopyRoom();
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   return (
     <header className="top-nav">
       <div className="top-nav-left">
@@ -15,10 +26,23 @@ export default function TopBar({
           <span>CallSummarizer</span>
         </div>
 
-        <button type="button" className="room-chip" onClick={onCopyRoom} title="Copy meeting link">
-          <span>{roomName}</span>
-          <i className="bi bi-clipboard" style={{ fontSize: '0.75rem', opacity: 0.7 }}></i>
+        <button
+          type="button"
+          className="room-chip"
+          onClick={handleCopyClick}
+          title="Copy meeting link"
+        >
+          <span>{copied ? 'Link copied!' : roomName}</span>
+          <i
+            className={`bi ${copied ? 'bi-check2' : 'bi-clipboard'}`}
+            style={{ fontSize: '0.75rem', opacity: 0.7 }}
+          ></i>
         </button>
+
+        <span className="participant-count-badge" title="Active participants in meeting">
+          <i className="bi bi-people-fill" style={{ fontSize: '0.75rem' }}></i>
+          <span>{participantCount}</span>
+        </span>
       </div>
 
       <div className="top-nav-center">

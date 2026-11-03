@@ -20,10 +20,8 @@ describe('App Main Flow', () => {
     });
   });
 
-  it('renders Lobby initially and navigates into active call stage upon join', async () => {
-    await act(async () => {
-      render(<App />);
-    });
+  it('renders Lobby initially and navigates into active call stage showing only the single joined user', async () => {
+    const { container } = render(<App />);
 
     expect(screen.getByText('Ready to join?')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Join now/i })).toBeInTheDocument();
@@ -33,7 +31,9 @@ describe('App Main Flow', () => {
     });
 
     expect(screen.getByText('CallSummarizer')).toBeInTheDocument();
-    expect(screen.getByText('RS')).toBeInTheDocument();
+    // Only 1 video tile when only 1 person has joined (no fake demo tile)
+    expect(container.querySelectorAll('.video-tile').length).toBe(1);
+    expect(screen.queryByText('RS')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Leave call/i })).toBeInTheDocument();
     expect(screen.getByText('Action Items')).toBeInTheDocument();
   });
@@ -54,7 +54,7 @@ describe('App Main Flow', () => {
     expect(screen.getByText('Ready to join?')).toBeInTheDocument();
   });
 
-  it('allows toggling tasks in active call', async () => {
+  it('allows adding and toggling tasks in active call', async () => {
     await act(async () => {
       render(<App />);
     });
@@ -63,14 +63,20 @@ describe('App Main Flow', () => {
       fireEvent.click(screen.getByRole('button', { name: /Join now/i }));
     });
 
+    const addInput = screen.getByPlaceholderText(/Add action item/i);
+    await act(async () => {
+      fireEvent.change(addInput, { target: { value: 'Finalize deployment checklist' } });
+      fireEvent.submit(addInput.closest('form'));
+    });
+
     const checkboxes = screen.getAllByRole('checkbox');
-    expect(checkboxes.length).toBeGreaterThan(0);
+    expect(checkboxes.length).toBe(1);
 
     const firstCheckbox = checkboxes[0];
-    const initialChecked = firstCheckbox.checked;
+    expect(firstCheckbox.checked).toBe(false);
     await act(async () => {
       fireEvent.click(firstCheckbox);
     });
-    expect(firstCheckbox.checked).toBe(!initialChecked);
+    expect(firstCheckbox.checked).toBe(true);
   });
 });

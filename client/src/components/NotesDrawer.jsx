@@ -4,7 +4,9 @@ export default function NotesDrawer({
   isOpen,
   tasks,
   onToggleTask,
-  onExportPdf
+  onExportPdf,
+  onExtractTasks,
+  isExtracting = false
 }) {
   const [activeTab, setActiveTab] = useState('notes');
 
@@ -97,6 +99,21 @@ export default function NotesDrawer({
                 "Sounds good, I have the architecture and task breakdown ready for review."
               </p>
             </div>
+
+            {onExtractTasks && (
+              <div style={{ marginTop: '14px' }}>
+                <button
+                  type="button"
+                  className="btn-export-pdf"
+                  onClick={onExtractTasks}
+                  disabled={isExtracting}
+                  style={{ background: 'var(--bg-surface-elevated)', border: '1px solid var(--border-default)' }}
+                >
+                  <i className="bi bi-cpu" style={{ marginRight: '6px' }}></i>
+                  {isExtracting ? 'Extracting tasks...' : 'Extract Tasks from Transcript'}
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

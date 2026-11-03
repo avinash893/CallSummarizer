@@ -72,4 +72,24 @@ describe('NotesDrawer Component', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Notes' }));
     expect(screen.getByText('Summary')).toBeInTheDocument();
   });
+
+  it('triggers onExtractTasks when Extract Tasks button is clicked in Transcript tab', () => {
+    const handleExtract = vi.fn();
+    render(
+      <NotesDrawer
+        isOpen={true}
+        tasks={sampleTasks}
+        onToggleTask={vi.fn()}
+        onExportPdf={vi.fn()}
+        onExtractTasks={handleExtract}
+        isExtracting={false}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Transcript' }));
+    const extractBtn = screen.getByRole('button', { name: /Extract Tasks from Transcript/i });
+    expect(extractBtn).toBeInTheDocument();
+    fireEvent.click(extractBtn);
+    expect(handleExtract).toHaveBeenCalledTimes(1);
+  });
 });

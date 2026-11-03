@@ -17,6 +17,7 @@ export default function App() {
   const [isArchModalOpen, setIsArchModalOpen] = useState(false);
   const [localStream, setLocalStream] = useState(null);
   const [callSeconds, setCallSeconds] = useState(0);
+  const [isExtracting, setIsExtracting] = useState(false);
 
   // Clean task items with Indian name
   const [tasks, setTasks] = useState([
@@ -118,6 +119,35 @@ export default function App() {
   const handleCopyRoom = () => {
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(window.location.href).catch(() => {});
+    }
+  };
+
+  const handleExtractTasks = async () => {
+    setIsExtracting(true);
+    try {
+      const transcriptText = 'You: Welcome to the meeting. Let\'s discuss today\'s project milestones and action items.\nRohan Sharma: Sounds good, I have the architecture and task breakdown ready for review. Rohan will connect the signaling service by Friday.';
+      const gatewayUrl = import.meta.env.VITE_GATEWAY_URL || 'http://localhost:5000';
+      const response = await fetch(`${gatewayUrl}/api/nlp-tasks/extract-tasks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transcript: transcriptText })
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (Array.isArray(data.tasks) && data.tasks.length > 0) {
+          setTasks(data.tasks.map((t, idx) => ({
+            id: t.id || idx + 1,
+            title: t.title,
+            assignee: t.assignee || 'You',
+            due: t.due || 'Tomorrow',
+            completed: false
+          })));
+        }
+      }
+    } catch (err) {
+      // Gracefully maintain tasks if service is not running
+    } finally {
+      setIsExtracting(false);
     }
   };
 
@@ -249,6 +279,8 @@ export default function App() {
               tasks={tasks}
               onToggleTask={handleToggleTask}
               onExportPdf={handleExportPdf}
+              onExtractTasks={handleExtractTasks}
+              isExtracting={isExtracting}
             />
 
             <ControlDock

@@ -628,12 +628,15 @@ app.post('/api/calendar/events', async (req, res) => {
 
         // If test / simulated token is provided
         if (accessToken.startsWith('mock-') || accessToken === 'test-access-token') {
+            const gcalStart = startDateTime.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+            const gcalEnd = endDateTime.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+            const templateUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(eventPayload.summary)}&dates=${gcalStart}/${gcalEnd}&details=${encodeURIComponent(eventPayload.description + '\n\nAlarm: 15-minute popup reminder')}`;
             return res.status(201).json({
                 success: true,
                 mode: 'simulated',
                 event: {
                     id: 'cal-event-' + Date.now(),
-                    htmlLink: 'https://calendar.google.com/calendar/r/eventedit',
+                    htmlLink: templateUrl,
                     summary: eventPayload.summary,
                     description: eventPayload.description,
                     start: eventPayload.start,

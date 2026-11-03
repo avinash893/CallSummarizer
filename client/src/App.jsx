@@ -87,6 +87,7 @@ export default function App() {
 
   const wsRef = useRef(null);
   const peerConnectionsRef = useRef(new Map());
+  const pendingCandidatesRef = useRef(new Map());
   const localStreamRef = useRef(null);
   const iceServersRef = useRef(DEFAULT_ICE_SERVERS);
 
@@ -387,6 +388,11 @@ export default function App() {
           if (pc) {
             try {
               await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+              const pending = pendingCandidatesRef.current.get(senderId) || [];
+              for (const cand of pending) {
+                try { await pc.addIceCandidate(new RTCIceCandidate(cand)); } catch (err) {}
+              }
+              pendingCandidatesRef.current.delete(senderId);
               const answer = await pc.createAnswer();
               await pc.setLocalDescription(answer);
               ws.send(
@@ -407,6 +413,11 @@ export default function App() {
           if (pc && msg.sdp) {
             try {
               await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+              const pending = pendingCandidatesRef.current.get(senderId) || [];
+              for (const cand of pending) {
+                try { await pc.addIceCandidate(new RTCIceCandidate(cand)); } catch (err) {}
+              }
+              pendingCandidatesRef.current.delete(senderId);
             } catch (e) {}
           }
           break;
@@ -417,7 +428,14 @@ export default function App() {
           const pc = peerConnectionsRef.current.get(senderId);
           if (pc && msg.candidate) {
             try {
-              await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+              if (pc.remoteDescription && pc.remoteDescription.type) {
+                await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+              } else {
+                if (!pendingCandidatesRef.current.has(senderId)) {
+                  pendingCandidatesRef.current.set(senderId, []);
+                }
+                pendingCandidatesRef.current.get(senderId).push(msg.candidate);
+              }
             } catch (e) {}
           }
           break;
@@ -433,6 +451,7 @@ export default function App() {
 
         case 'user-left': {
           const leftId = msg.peerId;
+          pendingCandidatesRef.current.delete(leftId);
           const pc = peerConnectionsRef.current.get(leftId);
           if (pc) {
             try {

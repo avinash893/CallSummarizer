@@ -184,7 +184,7 @@ body {
 }
 
 /* ==========================================================================
-   3. Video Canvas (Zero Overlap Flex Layout)
+   3. Video Canvas (Adaptive Multi-Participant Grid)
    ========================================================================== */
 .video-canvas {
   flex: 1;
@@ -193,30 +193,55 @@ body {
   justify-content: center;
   padding: 16px 20px 88px 20px;
   position: relative;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
-.video-flex-container {
-  display: flex;
-  flex-direction: row;
+.video-grid-container {
+  display: grid;
+  gap: 12px;
+  width: 100%;
+  max-width: 1280px;
+  max-height: 100%;
+  margin: auto;
   align-items: center;
   justify-content: center;
-  gap: 16px;
-  width: 100%;
+}
+
+.video-grid-container.count-1 {
+  grid-template-columns: 1fr;
+  max-width: 860px;
+}
+
+.video-grid-container.count-2 {
+  grid-template-columns: repeat(2, 1fr);
   max-width: 1200px;
-  height: 100%;
+}
+
+.video-grid-container.count-3,
+.video-grid-container.count-4 {
+  grid-template-columns: repeat(2, 1fr);
+  max-width: 1080px;
+}
+
+.video-grid-container.count-5,
+.video-grid-container.count-6 {
+  grid-template-columns: repeat(3, 1fr);
+  max-width: 1280px;
+}
+
+.video-grid-container.count-many {
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
 }
 
 /* Video Tile */
 .video-tile {
-  flex: 1 1 0;
-  min-width: 0; /* Prevents overflow issues */
   width: 100%;
-  max-width: calc(50% - 8px);
   aspect-ratio: 16 / 9;
-  max-height: calc(100vh - 180px);
+  max-height: calc((100vh - 190px) / 2);
+  min-height: 180px;
   background-color: var(--bg-tile);
-  border-radius: var(--radius-md);
+  border-radius: var(--bs-border-radius-lg);
   overflow: hidden;
   position: relative;
   display: flex;
@@ -226,8 +251,12 @@ body {
   transition: border-color 0.2s ease;
 }
 
+.video-grid-container.count-1 .video-tile {
+  max-height: calc(100vh - 200px);
+}
+
 .video-tile.solo-tile {
-  max-width: 820px;
+  margin: 0 auto;
 }
 
 .participant-count-badge {

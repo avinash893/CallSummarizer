@@ -108,9 +108,12 @@ export default function VideoCanvas({
       ? localUser.initials || localUser.name.slice(0, 2).toUpperCase()
       : 'You';
 
+  const totalParticipants = 1 + remotePeers.length;
+  const countClass = totalParticipants <= 6 ? `count-${totalParticipants}` : 'count-many';
+
   return (
     <div className="video-canvas">
-      <div className={`video-flex-container ${isSingleParticipant ? 'single-participant' : 'multi-participant'}`}>
+      <div className={`video-grid-container ${countClass}`}>
         {/* Local Participant Video Tile */}
         <div className={`video-tile ${isSingleParticipant ? 'solo-tile' : ''}`} data-testid="local-video-tile">
           {showLocalVideo ? (

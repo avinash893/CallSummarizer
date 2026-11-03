@@ -4,9 +4,15 @@
   "private": true,
   "description": "CallSummarizer monorepo containing React frontend and microservices",
   "scripts": {
+    "start": "node server.js",
     "test:client": "npm --prefix client test",
     "test:services": "npm --prefix services/api-gateway test && npm --prefix services/meeting-service test && npm --prefix services/nlp-task-service test && npm --prefix services/signaling-service test",
     "test": "npm run test:client && npm run test:services",
     "build": "npm --prefix client run build"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.3.0",
+    "ws": "^8.22.1"
   }
 }

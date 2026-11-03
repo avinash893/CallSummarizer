@@ -126,7 +126,7 @@ export default function App() {
     setIsExtracting(true);
     try {
       const transcriptText = 'You: Welcome to the meeting. Let\'s discuss today\'s project milestones and action items.\nRohan Sharma: Sounds good, I have the architecture and task breakdown ready for review. Rohan will connect the signaling service by Friday.';
-      const gatewayUrl = import.meta.env.VITE_GATEWAY_URL || 'http://localhost:5000';
+      const gatewayUrl = import.meta.env.VITE_GATEWAY_URL ?? (typeof window !== 'undefined' && window.location.port === '5173' ? 'http://localhost:5000' : '');
       const response = await fetch(`${gatewayUrl}/api/nlp-tasks/extract-tasks`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

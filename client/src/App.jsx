@@ -728,13 +728,21 @@ export default function App() {
   };
 
   const processLiveTranscriptForActions = useCallback(async (speaker, text) => {
-    if (!text || typeof text !== 'string' || text.trim().length < 5) return;
+    if (!text || typeof text !== 'string' || text.trim().length < 4) return;
     try {
       const gatewayUrl = import.meta.env.VITE_GATEWAY_URL || '';
+      // Include recent transcript lines for conversational context
+      const recentLines = (transcript || [])
+        .slice(-5)
+        .filter((item) => item?.text && !item.text.startsWith('[') && item.text.trim())
+        .map((item) => `${item.speaker}: ${item.text.trim()}`);
+      recentLines.push(`${speaker}: ${text}`);
+      const transcriptContext = recentLines.join('\n');
+
       const res = await fetch(`${gatewayUrl}/api/nlp-tasks/extract-tasks`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transcript: `${speaker}: ${text}`, roomId: roomName })
+        body: JSON.stringify({ transcript: transcriptContext, roomId: roomName })
       });
       if (res.ok) {
         const data = await res.json();
@@ -895,7 +903,7 @@ export default function App() {
               const rec = new SpeechRec();
               rec.continuous = true;
               rec.interimResults = false;
-              rec.lang = 'en-US';
+              rec.lang = 'en-IN';
 
               rec.onresult = (event) => {
                 for (let i = event.resultIndex; i < event.results.length; i++) {

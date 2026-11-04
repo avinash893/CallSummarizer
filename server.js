@@ -1059,18 +1059,27 @@ app.post('/api/nlp-tasks/extract-tasks', async (req, res) => {
     const geminiKey = process.env.GEMINI_API_KEY || req.headers['x-gemini-api-key'] || req.body?.geminiApiKey;
 
     if (geminiKey) {
-        const candidateModels = ['gemini-3.5-flash-lite', 'gemini-3.5-flash'];
+        const candidateModels = ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'];
         for (const modelName of candidateModels) {
             try {
                 const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${geminiKey}`;
-                const prompt = `Extract action items from this meeting transcript in JSON format.
+                const prompt = `You are an expert meeting assistant. Extract all action items, commitments, and delegated tasks from the following meeting transcript (which may include Indian names like Sukhman, Avinash, Rohan, and conversational or Hinglish phrasing).
+
 Transcript:
 ${cleanTranscript}
 
-Return JSON structure:
+Guidelines:
+- Identify who is assigned to do what (assignee), the clear action/task (title), and any due date or exact time mentioned (due).
+- If speaker says "Sukman, you have to make notes today itself by 1:00 p.m.", extract task "Make notes" assigned to "Sukhman" with due "Today at 1:00 PM".
+- Infer sensible titles and normalize names (e.g. Sukman -> Sukhman).
+- Return valid JSON matching this schema:
 {
   "tasks": [
-    { "title": "string", "assignee": "string", "due": "string" }
+    {
+      "title": "Clean concise action description",
+      "assignee": "Person name or You",
+      "due": "Due date/time string, e.g. Today at 1:00 PM, Tomorrow, or Upcoming"
+    }
   ]
 }`;
                 const apiRes = await fetch(url, {
@@ -1173,7 +1182,7 @@ async function handleTranscribeAudio(req, res) {
     const geminiKey = process.env.GEMINI_API_KEY || req.headers['x-gemini-api-key'] || req.body?.geminiApiKey;
 
     if (geminiKey) {
-        const candidateModels = ['gemini-3.5-flash-lite', 'gemini-3.5-transcribe', 'gemini-3.5-flash'];
+        const candidateModels = ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'];
         for (const modelName of candidateModels) {
             try {
                 const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${geminiKey}`;
@@ -1188,6 +1197,7 @@ async function handleTranscribeAudio(req, res) {
                                     {
                                         text: `Transcribe the human spoken words in this audio snippet accurately.
 Rules:
+- The speaker may speak English with an Indian accent or mix common conversational Hindi/Hinglish terms (e.g. Sukhman, notes, meeting, presentation).
 - Return ONLY the exact transcribed spoken words as plain text.
 - Do NOT output timestamps, time codes (e.g., 00:00, 00:01), speaker names, quotation marks, or explanations.
 - If there is no audible human speech or only silence/background noise, reply with SILENCE.`

@@ -35,7 +35,7 @@ function extractLocalTasks(text) {
         const trimmed = sentence.trim();
         if (!trimmed) return;
 
-        const commitmentMatch = trimmed.match(/(?:(?:i'll|i will|rohan will|rohan sharma will|avinash will|we will|you will|will|need to|should|must)\s+)([^.,;!?]+)/i);
+        const commitmentMatch = trimmed.match(/(?:(?:i'll|i will|rohan will|rohan sharma will|avinash will|sukhman will|sukman will|we will|you will|will|need to|needs to|have to|has to|should|must|please)\s+)([^.,;!?]+)/i);
         if (commitmentMatch) {
             let taskTitle = commitmentMatch[1].trim();
             // Remove articles (e.g. "connect the signaling service" -> "connect signaling service")
@@ -43,7 +43,9 @@ function extractLocalTasks(text) {
             taskTitle = taskTitle.charAt(0).toUpperCase() + taskTitle.slice(1);
 
             let assignee = 'You';
-            if (/rohan/i.test(trimmed)) {
+            if (/sukhman|sukman/i.test(trimmed)) {
+                assignee = 'Sukhman';
+            } else if (/rohan/i.test(trimmed)) {
                 assignee = 'Rohan Sharma';
             } else if (/avinash/i.test(trimmed)) {
                 assignee = 'Avinash';

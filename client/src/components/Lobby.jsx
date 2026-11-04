@@ -43,7 +43,10 @@ export default function Lobby({
   googleClientId = DEFAULT_GOOGLE_CLIENT_ID,
   turnstileSiteKey,
   isTurnstileVerified = false,
-  onTurnstileVerified
+  onTurnstileVerified,
+  hasSessionNotes = false,
+  isNotesOpen = false,
+  onToggleNotes
 }) {
   const previewRef = useRef(null);
   const [showGoogleModal, setShowGoogleModal] = useState(false);
@@ -440,6 +443,31 @@ export default function Lobby({
             <span>Join now</span>
           </button>
         </form>
+
+        {hasSessionNotes && (
+          <div className="lobby-session-notes-box" style={{ marginTop: '12px', width: '100%' }}>
+            <button
+              type="button"
+              className="btn btn-outline-secondary w-100"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '8px 14px',
+                fontSize: '0.85rem',
+                borderRadius: '8px',
+                borderColor: 'var(--border-subtle)',
+                backgroundColor: 'rgba(255, 255, 255, 0.04)'
+              }}
+              onClick={onToggleNotes}
+              data-testid="lobby-session-notes-btn"
+              title="View notes and action items from this meeting"
+            >
+              <i className="bi bi-card-checklist" style={{ marginRight: '6px', color: 'var(--brand-primary, #6366f1)' }}></i>
+              <span>{isNotesOpen ? 'Hide Meeting Notes & Actions' : 'View Meeting Notes & Actions'}</span>
+            </button>
+          </div>
+        )}
 
         {/* Cloudflare Turnstile Security Verification */}
         <TurnstileWidget

@@ -489,4 +489,29 @@ test('CallSummarizer Unified Server - Google Auth Session & Calendar API', async
         assert.strictEqual(data.speaker, 'Rohan Sharma');
         assert.strictEqual(typeof data.transcript, 'string');
     });
+
+    await t.test('GET /api/rooms/:id returns session notes and actions while active', async () => {
+        // Create a room
+        const roomCode = `test-room-${Date.now()}`;
+        const createRes = await fetch(`${baseUrl}/api/rooms`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                roomId: roomCode,
+                host: 'Tester',
+                turnstileToken: 'turnstile_fallback_token'
+            })
+        });
+        assert.strictEqual(createRes.status, 201);
+
+        // Fetch room
+        const getRes = await fetch(`${baseUrl}/api/rooms/${roomCode}`);
+        assert.strictEqual(getRes.status, 200);
+        const data = await getRes.json();
+        assert.strictEqual(data.roomId, roomCode);
+        assert.ok(Array.isArray(data.transcript));
+        assert.ok(Array.isArray(data.tasks));
+    });
 });

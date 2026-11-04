@@ -51,6 +51,7 @@ function isValidSpeechTranscript(text, speaker = '') {
   const cleanSpk = String(speaker || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
   const cleanTxt = trimmed.toLowerCase().replace(/[^a-z0-9]/g, '');
   if (cleanSpk && cleanTxt === cleanSpk) return false;
+  if (cleanSpk && (cleanSpk.includes(cleanTxt) || cleanTxt.includes(cleanSpk)) && cleanTxt.length <= cleanSpk.length + 3) return false;
   return true;
 }
 
@@ -898,20 +899,21 @@ export default function App() {
 
               rec.onresult = (event) => {
                 for (let i = event.resultIndex; i < event.results.length; i++) {
-                  const text = event.results[i][0]?.transcript?.trim();
-                  if (text) {
+                  const rawText = event.results[i][0]?.transcript?.trim();
+                  if (rawText && isValidSpeechTranscript(rawText, speakerName)) {
+                    const cleanText = rawText.replace(/^["'`«»“”„]+|["'`«»“”„]+$/g, '').trim();
                     const entry = {
                       id: `tr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
                       speaker: speakerName,
                       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                      text
+                      text: cleanText
                     };
                     setTranscript((tPrev) => [...tPrev, entry]);
                     if (wsRef.current && wsRef.current.readyState === 1) {
                       wsRef.current.send(JSON.stringify({ type: 'transcript-entry', entry }));
                     }
                     // Extract action items live from speech recognition
-                    processLiveTranscriptForActions(speakerName, text);
+                    processLiveTranscriptForActions(speakerName, cleanText);
                   }
                 }
               };
@@ -1274,7 +1276,8 @@ export default function App() {
   const handleAddToCalendar = async (task) => {
     // Tasks without explicit time must not be added to calendar
     const taskText = `${task?.due || ''} ${task?.title || ''} ${task?.description || ''}`;
-    const hasTime = task?.startTime || /\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b/i.test(taskText) || /\b(?:at\s+)?([01]?\d|2[0-3]):[0-5]\d\b/i.test(taskText) || /\bat\s+\d{1,2}\b/i.test(taskText);
+    const hasExplicitStartTime = task?.startTime && typeof task.startTime === 'string' && !isNaN(new Date(task.startTime).getTime()) && (new Date(task.startTime).getUTCHours() !== 0 || new Date(task.startTime).getUTCMinutes() !== 0);
+    const hasTime = hasExplicitStartTime || /\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b/i.test(taskText) || /\b(?:at\s+)?([01]?\d|2[0-3]):[0-5]\d\b/i.test(taskText) || /\bat\s+\d{1,2}\b/i.test(taskText);
     if (!hasTime) {
       return {
         success: false,
@@ -1414,7 +1417,8 @@ export default function App() {
   return (
     <div className="app-shell">
       {!isInCall ? (
-        <Lobby
+        <>
+          <Lobby
           roomName={roomName}
           setRoomName={setRoomName}
           onJoinCall={handleJoinCall}
@@ -1429,7 +1433,32 @@ export default function App() {
           turnstileSiteKey={appConfig.turnstileSiteKey}
           isTurnstileVerified={isTurnstileVerified}
           onTurnstileVerified={setIsTurnstileVerified}
+          hasSessionNotes={tasks.length > 0 || transcript.length > 0}
+          isNotesOpen={isNotesOpen}
+          onToggleNotes={() => setIsNotesOpen((prev) => !prev)}
         />
+        {isNotesOpen && (tasks.length > 0 || transcript.length > 0) && (
+          <NotesDrawer
+            isOpen={isNotesOpen}
+            onClose={() => setIsNotesOpen(false)}
+            user={user}
+            tasks={tasks}
+            transcript={transcript}
+            onToggleTask={handleToggleTask}
+            onAddTask={handleAddTask}
+            onAddTranscript={handleAddTranscript}
+            onExportPdf={handleExportPdf}
+            onExtractTasks={handleExtractTasks}
+            isExtracting={isExtracting}
+            onAddToCalendar={handleAddToCalendar}
+            capturedPeerIds={capturedPeerIds}
+            capturedAudioClips={capturedAudioClips}
+            remotePeers={remotePeers}
+            onToggleCapturePeer={handleToggleCapturePeer}
+            onDeleteClip={handleDeleteClip}
+          />
+        )}
+        </>
       ) : (
         <>
           <TopBar

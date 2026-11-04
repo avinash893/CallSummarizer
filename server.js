@@ -118,6 +118,7 @@ function setSessionCookie(res, req, sessionId, expires = null) {
 
 // In-memory store for active rooms
 const rooms = new Map();
+const ROOM_EMPTY_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes before deleting notes & actions of an empty room
 
 function loadSessionsFromDisk() {
     try {
@@ -224,10 +225,18 @@ function getOrCreateRoom(roomId, hostName = 'Host') {
             createdAt: new Date().toISOString(),
             participants: new Map(),
             transcript: [],
-            tasks: []
+            tasks: [],
+            emptySince: null,
+            cleanupTimer: null
         });
     }
-    return rooms.get(normalized);
+    const room = rooms.get(normalized);
+    if (room.cleanupTimer) {
+        clearTimeout(room.cleanupTimer);
+        room.cleanupTimer = null;
+    }
+    room.emptySince = null;
+    return room;
 }
 
 function getInitials(name = 'User') {
@@ -960,6 +969,15 @@ app.get('/api/rooms/:id', (req, res) => {
         return res.status(404).json({ error: 'Room not found' });
     }
     const room = rooms.get(normalized);
+    // If the room has been empty for >= 5 minutes, clear transcript and tasks
+    if (room.participants.size === 0 && room.emptySince && (Date.now() - room.emptySince >= ROOM_EMPTY_EXPIRY_MS)) {
+        room.transcript = [];
+        room.tasks = [];
+        if (room.cleanupTimer) {
+            clearTimeout(room.cleanupTimer);
+            room.cleanupTimer = null;
+        }
+    }
     const activeParticipants = Array.from(room.participants.values());
     res.json({
         roomId: room.roomId,
@@ -1129,13 +1147,14 @@ function isValidSpeechTranscript(text, speakerName = '') {
     // Reject numbers/punctuation only (must have at least one 2+ letter word)
     if (!/[a-zA-Z]{2,}/.test(trimmed)) return false;
 
-    // Reject repetition of speaker name
+    // Reject repetition or echo of speaker name
     const cleanSpeaker = String(speakerName || '').trim();
     if (cleanSpeaker) {
         if (trimmed.toLowerCase() === cleanSpeaker.toLowerCase()) return false;
         const cleanAlpha = cleanSpeaker.toLowerCase().replace(/[^a-z0-9]/g, '');
         const textAlpha = trimmed.toLowerCase().replace(/[^a-z0-9]/g, '');
         if (cleanAlpha && textAlpha === cleanAlpha) return false;
+        if (cleanAlpha && (cleanAlpha.includes(textAlpha) || textAlpha.includes(cleanAlpha)) && textAlpha.length <= cleanAlpha.length + 3) return false;
     }
 
     return true;
@@ -1271,6 +1290,25 @@ function handlePeerLeave(ws) {
             peerId: ws.peerId,
             participants: remaining
         }, ws);
+
+        // When all participants have left, start 5-minute timer to delete session notes & actions
+        if (room.participants.size === 0) {
+            room.emptySince = Date.now();
+            if (room.cleanupTimer) {
+                clearTimeout(room.cleanupTimer);
+            }
+            room.cleanupTimer = setTimeout(() => {
+                if (room.participants.size === 0) {
+                    room.transcript = [];
+                    room.tasks = [];
+                    room.emptySince = null;
+                    room.cleanupTimer = null;
+                }
+            }, ROOM_EMPTY_EXPIRY_MS);
+            if (typeof room.cleanupTimer.unref === 'function') {
+                room.cleanupTimer.unref();
+            }
+        }
     }
     ws.roomId = null;
 }
@@ -1388,11 +1426,16 @@ wss.on('connection', (ws) => {
                 if (!ws.roomId || !data.entry) break;
                 const room = rooms.get(ws.roomId);
                 if (room) {
+                    const rawText = String(data.entry.text || '').trim();
+                    const cleanSpeaker = String(data.entry.speaker || 'Participant').trim();
+                    if (!isValidSpeechTranscript(rawText, cleanSpeaker)) {
+                        break;
+                    }
                     const entry = {
                         id: data.entry.id || crypto.randomUUID(),
-                        speaker: data.entry.speaker || 'Participant',
+                        speaker: cleanSpeaker,
                         time: data.entry.time || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                        text: String(data.entry.text || '').trim()
+                        text: rawText.replace(/^["'`«»“”„]+|["'`«»“”„]+$/g, '').trim()
                     };
                     if (entry.text) {
                         room.transcript.push(entry);

@@ -216,4 +216,32 @@ describe('Lobby Component', () => {
     );
     fetchSpy.mockRestore();
   });
+
+  it('renders View Meeting Notes & Actions button when hasSessionNotes is true and invokes onToggleNotes', () => {
+    const handleToggleNotes = vi.fn();
+
+    render(
+      <Lobby
+        roomName="dev-room"
+        setRoomName={vi.fn()}
+        onJoinCall={vi.fn()}
+        isVideoOn={true}
+        toggleVideo={vi.fn()}
+        isAudioOn={true}
+        toggleAudio={vi.fn()}
+        localStream={null}
+        user={{ name: 'Avinash', email: 'avinash@gmail.com', initials: 'AK' }}
+        hasSessionNotes={true}
+        isNotesOpen={false}
+        onToggleNotes={handleToggleNotes}
+      />
+    );
+
+    const notesBtn = screen.getByTestId('lobby-session-notes-btn');
+    expect(notesBtn).toBeInTheDocument();
+    expect(notesBtn).toHaveTextContent(/View Meeting Notes & Actions/i);
+
+    fireEvent.click(notesBtn);
+    expect(handleToggleNotes).toHaveBeenCalledTimes(1);
+  });
 });

@@ -9,7 +9,10 @@ function getInitials(name = 'User') {
 
 export function taskHasTime(task) {
   if (!task) return false;
-  if (task.startTime) return true;
+  if (task.startTime && typeof task.startTime === 'string' && !isNaN(new Date(task.startTime).getTime()) && task.startTime !== 'null' && task.startTime !== 'undefined') {
+    const d = new Date(task.startTime);
+    if (d.getUTCHours() !== 0 || d.getUTCMinutes() !== 0) return true;
+  }
   const text = `${task.due || ''} ${task.title || ''} ${task.description || ''}`;
   return (
     /\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b/i.test(text) ||

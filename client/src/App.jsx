@@ -36,6 +36,24 @@ function ensureUniqueTaskIds(taskList = []) {
   });
 }
 
+function isValidSpeechTranscript(text, speaker = '') {
+  if (!text || typeof text !== 'string') return false;
+  const trimmed = text.replace(/^["'`«»“”„]+|["'`«»“”„]+$/g, '').trim();
+  if (!trimmed) return false;
+  // Reject pure timestamps (e.g. "00:00", "00:01", "0:01", "00:00:00", "[00:00]")
+  if (/^\[?\s*\d{1,2}:\d{2}(?::\d{2})?\s*\]?$/.test(trimmed)) return false;
+  // Reject silence or non-speech noise tags
+  if (/^(silence|silent|none|empty|null|n\/a|audio|ambient|noise|blank|background noise|cough|throat clearing|applause|music|\.|\.\.\.)$/i.test(trimmed)) return false;
+  if (/^(\[.*\]|\(.*\))$/.test(trimmed)) return false;
+  // Must contain at least two letters (word)
+  if (!/[a-zA-Z]{2,}/.test(trimmed)) return false;
+  // Reject echoing speaker name
+  const cleanSpk = String(speaker || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+  const cleanTxt = trimmed.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (cleanSpk && cleanTxt === cleanSpk) return false;
+  return true;
+}
+
 function getInitialRoomFromUrl() {
   if (typeof window !== 'undefined' && window.location?.search) {
     const params = new URLSearchParams(window.location.search);
@@ -105,6 +123,7 @@ export default function App() {
   const screenStreamRef = useRef(null);
   const capturedAudioClipsRef = useRef(capturedAudioClips);
   const iceServersRef = useRef(DEFAULT_ICE_SERVERS);
+  const utteranceDebounceRef = useRef(new Map());
 
   useEffect(() => {
     localStreamRef.current = localStream;
@@ -561,6 +580,21 @@ export default function App() {
           break;
         }
 
+        case 'transcript-entry-update': {
+          if (msg.entry) {
+            setTranscript((prev) => {
+              const idx = prev.findIndex((item) => item.id === msg.entry.id);
+              if (idx !== -1) {
+                const copy = [...prev];
+                copy[idx] = msg.entry;
+                return copy;
+              }
+              return [...prev, msg.entry];
+            });
+          }
+          break;
+        }
+
         case 'tasks-sync': {
           if (Array.isArray(msg.tasks)) {
             setTasks(ensureUniqueTaskIds(msg.tasks));
@@ -666,6 +700,14 @@ export default function App() {
     }
     remoteStreamsRef.current.clear();
 
+    // Clear any pending debounced utterance timers
+    if (utteranceDebounceRef.current) {
+      utteranceDebounceRef.current.forEach((val) => {
+        if (val && val.timer) clearTimeout(val.timer);
+      });
+      utteranceDebounceRef.current.clear();
+    }
+
     // Revoke object URLs for captured clips
     const clips = capturedAudioClipsRef.current || [];
     if (typeof URL !== 'undefined' && typeof URL.revokeObjectURL === 'function') {
@@ -699,7 +741,19 @@ export default function App() {
           setTasks((prevTasks) => {
             const updated = [...prevTasks];
             for (const t of data.tasks) {
-              if (!updated.some((ex) => ex.title.toLowerCase() === String(t.title).toLowerCase())) {
+              const cleanTaskTitle = String(t.title || '').trim().toLowerCase();
+              const existingIdx = updated.findIndex((ex) => {
+                const exTitle = String(ex.title || '').trim().toLowerCase();
+                return exTitle === cleanTaskTitle || exTitle.includes(cleanTaskTitle) || cleanTaskTitle.includes(exTitle);
+              });
+              if (existingIdx !== -1) {
+                // Update existing action with more specific due date or assignee
+                updated[existingIdx] = {
+                  ...updated[existingIdx],
+                  due: t.due || updated[existingIdx].due,
+                  assignee: t.assignee || updated[existingIdx].assignee
+                };
+              } else {
                 updated.push({
                   id: (t.id !== undefined && t.id !== null && String(t.id).trim() !== '') ? String(t.id) : `task-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
                   title: t.title,
@@ -748,29 +802,45 @@ export default function App() {
             const trData = await trRes.json();
             let cleanText = trData.transcript ? trData.transcript.trim() : '';
             cleanText = cleanText.replace(/^["'`«»“”„]+|["'`«»“”„]+$/g, '').trim();
-            const cleanSpeakerAlpha = String(speakerName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-            const cleanTextAlpha = cleanText.toLowerCase().replace(/[^a-z0-9]/g, '');
-            if (
-              cleanText &&
-              !cleanText.includes('[Audio') &&
-              !cleanText.includes('Private Capture') &&
-              cleanText.toUpperCase() !== 'SILENCE' &&
-              cleanText !== '""' &&
-              cleanText.toLowerCase() !== speakerName.toLowerCase() &&
-              (!cleanSpeakerAlpha || cleanTextAlpha !== cleanSpeakerAlpha)
-            ) {
-              const entry = {
-                id: `tr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-                speaker: speakerName,
-                time: timeStr,
-                text: cleanText
-              };
-              setTranscript((prevTr) => [...prevTr, entry]);
-              if (wsRef.current && wsRef.current.readyState === 1) {
-                wsRef.current.send(JSON.stringify({ type: 'transcript-entry', entry }));
-              }
-              // Immediately extract personal action items from transcribed speech
-              processLiveTranscriptForActions(speakerName, cleanText);
+
+            if (isValidSpeechTranscript(cleanText, speakerName)) {
+              const now = Date.now();
+              setTranscript((prevTr) => {
+                const last = prevTr[prevTr.length - 1];
+                if (last && last.speaker === speakerName && (now - (last.timestamp || 0) < 8000)) {
+                  const updatedLast = {
+                    ...last,
+                    text: `${last.text} ${cleanText}`,
+                    timestamp: now
+                  };
+                  const nextList = [...prevTr.slice(0, -1), updatedLast];
+                  if (wsRef.current && wsRef.current.readyState === 1) {
+                    wsRef.current.send(JSON.stringify({ type: 'transcript-entry-update', entry: updatedLast }));
+                  }
+                  return nextList;
+                }
+                const entry = {
+                  id: `tr-${now}-${Math.random().toString(36).slice(2, 6)}`,
+                  speaker: speakerName,
+                  time: timeStr,
+                  text: cleanText,
+                  timestamp: now
+                };
+                if (wsRef.current && wsRef.current.readyState === 1) {
+                  wsRef.current.send(JSON.stringify({ type: 'transcript-entry', entry }));
+                }
+                return [...prevTr, entry];
+              });
+
+              // Buffer and debounce action item extraction so 3-4s pauses do not split into multiple actions
+              const existing = utteranceDebounceRef.current.get(speakerName) || { text: '', timer: null };
+              if (existing.timer) clearTimeout(existing.timer);
+              const combinedUtterance = existing.text ? `${existing.text} ${cleanText}` : cleanText;
+              const newTimer = setTimeout(() => {
+                processLiveTranscriptForActions(speakerName, combinedUtterance);
+                utteranceDebounceRef.current.delete(speakerName);
+              }, 4000);
+              utteranceDebounceRef.current.set(speakerName, { text: combinedUtterance, timer: newTimer });
             }
           }
         } catch (e) {}
@@ -950,12 +1020,12 @@ export default function App() {
                 };
                 sessionState.currentRecorder = rec;
                 rec.start();
-                // 3.5-second fast cyclic segment ensuring fresh container headers & live transcription
+                // 7-second cyclic segment ensuring complete sentences and avoiding cutoffs on 3-4s pauses
                 sessionState.timer = setTimeout(() => {
                   if (rec.state === 'recording') {
                     rec.stop();
                   }
-                }, 3500);
+                }, 7000);
               } catch (e) {
                 console.warn('Error in recordSegment:', e);
               }

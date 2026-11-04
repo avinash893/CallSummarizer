@@ -577,8 +577,27 @@ app.get('/api/auth/session', (req, res) => {
     });
 });
 
-// Safely parse event start and end times from startTime, endTime, and natural due strings
-function parseEventDates(startTime, endTime, due) {
+// Safely extract explicit time (e.g. "at 2 pm", "2:30 pm", "14:00")
+function extractTimeDetails(str) {
+    if (!str || typeof str !== 'string') return null;
+    const ampmMatch = str.match(/\b(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i);
+    if (ampmMatch) {
+        let hour = parseInt(ampmMatch[1], 10);
+        const minute = ampmMatch[2] ? parseInt(ampmMatch[2], 10) : 0;
+        const period = ampmMatch[3].toLowerCase();
+        if (period === 'pm' && hour < 12) hour += 12;
+        if (period === 'am' && hour === 12) hour = 0;
+        return { hour, minute };
+    }
+    const milMatch = str.match(/\b(?:at\s+)?([01]?\d|2[0-3]):([0-5]\d)\b/i);
+    if (milMatch) {
+        return { hour: parseInt(milMatch[1], 10), minute: parseInt(milMatch[2], 10) };
+    }
+    return null;
+}
+
+// Safely parse event start and end times from startTime, endTime, natural due strings, title, and description
+function parseEventDates(startTime, endTime, due, title = '', description = '') {
     let startDateTime = null;
     let endDateTime = null;
 
@@ -589,6 +608,9 @@ function parseEventDates(startTime, endTime, due) {
         }
     }
 
+    const combinedText = `${due || ''} ${title || ''} ${description || ''}`.trim();
+    const explicitTime = extractTimeDetails(combinedText);
+
     if (!startDateTime && due) {
         if (typeof due === 'number') {
             const parsedDue = new Date(due);
@@ -597,14 +619,18 @@ function parseEventDates(startTime, endTime, due) {
             const trimmedDue = due.trim();
             const lowerDue = trimmedDue.toLowerCase();
             const directParsed = new Date(trimmedDue);
-            if (!isNaN(directParsed.getTime())) {
+            if (!isNaN(directParsed.getTime()) && !/^\d{1,2}(:\d{2})?\s*(am|pm)?$/i.test(trimmedDue)) {
                 startDateTime = directParsed;
-            } else if (lowerDue === 'today') {
+            } else if (lowerDue.includes('today')) {
                 startDateTime = new Date();
-                startDateTime.setHours(startDateTime.getHours() + 1, 0, 0, 0);
-            } else if (lowerDue === 'tomorrow') {
+                if (!explicitTime) {
+                    startDateTime.setHours(startDateTime.getHours() + 1, 0, 0, 0);
+                }
+            } else if (lowerDue.includes('tomorrow')) {
                 startDateTime = new Date(Date.now() + 24 * 60 * 60 * 1000);
-                startDateTime.setHours(10, 0, 0, 0);
+                if (!explicitTime) {
+                    startDateTime.setHours(10, 0, 0, 0);
+                }
             } else {
                 const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
                 const matchedDay = days.findIndex((d) => lowerDue.includes(d));
@@ -614,16 +640,50 @@ function parseEventDates(startTime, endTime, due) {
                     let diff = (matchedDay - currentDay + 7) % 7;
                     if (diff === 0) diff = 7; // next week if current day
                     startDateTime.setDate(startDateTime.getDate() + diff);
-                    startDateTime.setHours(10, 0, 0, 0);
+                    if (!explicitTime) {
+                        startDateTime.setHours(10, 0, 0, 0);
+                    }
                 }
             }
         }
     }
 
     if (!startDateTime) {
-        // Default: tomorrow at 10:00 AM local time or next available slot
-        startDateTime = new Date(Date.now() + 24 * 60 * 60 * 1000);
-        startDateTime.setHours(10, 0, 0, 0);
+        const lowerCombined = combinedText.toLowerCase();
+        if (lowerCombined.includes('today')) {
+            startDateTime = new Date();
+        } else if (lowerCombined.includes('tomorrow')) {
+            startDateTime = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        } else {
+            const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+            const matchedDay = days.findIndex((d) => lowerCombined.includes(d));
+            if (matchedDay !== -1) {
+                startDateTime = new Date();
+                const currentDay = startDateTime.getDay();
+                let diff = (matchedDay - currentDay + 7) % 7;
+                if (diff === 0) diff = 7;
+                startDateTime.setDate(startDateTime.getDate() + diff);
+            }
+        }
+    }
+
+    if (!startDateTime) {
+        if (explicitTime) {
+            startDateTime = new Date();
+            startDateTime.setHours(explicitTime.hour, explicitTime.minute, 0, 0);
+            if (startDateTime.getTime() <= Date.now()) {
+                startDateTime.setDate(startDateTime.getDate() + 1);
+            }
+        } else {
+            // Default: tomorrow at 10:00 AM local time or next available slot
+            startDateTime = new Date(Date.now() + 24 * 60 * 60 * 1000);
+            startDateTime.setHours(10, 0, 0, 0);
+        }
+    }
+
+    // Apply explicit hour and minute if specified in due or title
+    if (explicitTime && startDateTime) {
+        startDateTime.setHours(explicitTime.hour, explicitTime.minute, 0, 0);
     }
 
     if (endTime) {
@@ -640,7 +700,7 @@ function parseEventDates(startTime, endTime, due) {
     return { startDateTime, endDateTime };
 }
 
-// Google Calendar Event Creation with 15-minute popup notification reminder
+// Google Calendar Event Creation with 5-minute popup notification reminder
 app.post('/api/calendar/events', async (req, res) => {
     try {
         const { title, description, due, startTime, endTime, timeZone: requestedTimeZone } = req.body || {};
@@ -664,7 +724,7 @@ app.post('/api/calendar/events', async (req, res) => {
             });
         }
 
-        const { startDateTime, endDateTime } = parseEventDates(startTime, endTime, due);
+        const { startDateTime, endDateTime } = parseEventDates(startTime, endTime, due, title, description);
 
         const rawTimeZone = (requestedTimeZone && typeof requestedTimeZone === 'string' && requestedTimeZone.trim())
             ? requestedTimeZone.trim()
@@ -695,7 +755,7 @@ app.post('/api/calendar/events', async (req, res) => {
                 overrides: [
                     {
                         method: 'popup',
-                        minutes: 15
+                        minutes: 5
                     }
                 ]
             }
@@ -719,7 +779,7 @@ app.post('/api/calendar/events', async (req, res) => {
         if (accessToken.startsWith('mock-') || accessToken === 'test-access-token') {
             const gcalStart = startDateTime.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
             const gcalEnd = endDateTime.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
-            const templateUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(eventPayload.summary)}&dates=${gcalStart}/${gcalEnd}&details=${encodeURIComponent(eventPayload.description + '\n\nAlarm: 15-minute popup reminder')}`;
+            const templateUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(eventPayload.summary)}&dates=${gcalStart}/${gcalEnd}&details=${encodeURIComponent(eventPayload.description + '\n\nAlarm: 5-minute popup reminder')}`;
             return res.status(201).json({
                 success: true,
                 mode: 'simulated',
@@ -972,6 +1032,34 @@ Return JSON structure:
     res.json({ tasks, source: 'render-server-nlp' });
 });
 
+// Validates whether transcribed text is actual human speech rather than silence, timestamps, or artifacts
+function isValidSpeechTranscript(text, speakerName = '') {
+    if (!text || typeof text !== 'string') return false;
+    const trimmed = text.trim().replace(/^["'`«»“”„]+|["'`«»“”„]+$/g, '').trim();
+    if (!trimmed) return false;
+
+    // Reject pure timestamps (e.g. "00:00", "00:01", "0:01", "00:00:00", "[00:00]")
+    if (/^\[?\s*\d{1,2}:\d{2}(?::\d{2})?\s*\]?$/.test(trimmed)) return false;
+
+    // Reject silence, audio indicators, or non-speech tags
+    if (/^(silence|silent|none|empty|null|n\/a|audio|ambient|noise|blank|background noise|cough|throat clearing|applause|music|\.|\.\.\.)$/i.test(trimmed)) return false;
+    if (/^(\[.*\]|\(.*\))$/.test(trimmed)) return false;
+
+    // Reject numbers/punctuation only (must have at least one 2+ letter word)
+    if (!/[a-zA-Z]{2,}/.test(trimmed)) return false;
+
+    // Reject repetition of speaker name
+    const cleanSpeaker = String(speakerName || '').trim();
+    if (cleanSpeaker) {
+        if (trimmed.toLowerCase() === cleanSpeaker.toLowerCase()) return false;
+        const cleanAlpha = cleanSpeaker.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const textAlpha = trimmed.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (cleanAlpha && textAlpha === cleanAlpha) return false;
+    }
+
+    return true;
+}
+
 // Audio transcription endpoint for captured speech snippets
 async function handleTranscribeAudio(req, res) {
     const { audioData, mimeType, speakerName } = req.body || {};
@@ -998,11 +1086,11 @@ async function handleTranscribeAudio(req, res) {
                             {
                                 parts: [
                                     {
-                                        text: `Transcribe the spoken words in this audio snippet accurately.
+                                        text: `Transcribe the human spoken words in this audio snippet accurately.
 Rules:
-- Return ONLY the exact transcribed words as plain text.
-- Do NOT include speaker labels, timestamps, quotation marks, or explanations.
-- If there is no audible speech or only silence/background noise, reply with SILENCE.`
+- Return ONLY the exact transcribed spoken words as plain text.
+- Do NOT output timestamps, time codes (e.g., 00:00, 00:01), speaker names, quotation marks, or explanations.
+- If there is no audible human speech or only silence/background noise, reply with SILENCE.`
                                     },
                                     {
                                         inlineData: {
@@ -1020,16 +1108,8 @@ Rules:
                     const gData = await gRes.json();
                     const rawText = gData.candidates?.[0]?.content?.parts?.[0]?.text;
                     if (rawText && rawText.trim() && !rawText.includes('[Audio clip recorded]')) {
-                        let trimmed = rawText.trim();
-                        trimmed = trimmed.replace(/^["'`«»“”„]+|["'`«»“”„]+$/g, '').trim();
-                        const cleanAlpha = cleanSpeaker.toLowerCase().replace(/[^a-z0-9]/g, '');
-                        const trimmedAlpha = trimmed.toLowerCase().replace(/[^a-z0-9]/g, '');
-                        if (
-                            !trimmed ||
-                            trimmed.toUpperCase() === 'SILENCE' ||
-                            trimmed.toLowerCase() === cleanSpeaker.toLowerCase() ||
-                            (cleanAlpha && trimmedAlpha === cleanAlpha)
-                        ) {
+                        let trimmed = rawText.trim().replace(/^["'`«»“”„]+|["'`«»“”„]+$/g, '').trim();
+                        if (!isValidSpeechTranscript(trimmed, cleanSpeaker)) {
                             return res.json({
                                 success: true,
                                 transcript: '',

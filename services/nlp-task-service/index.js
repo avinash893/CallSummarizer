@@ -50,10 +50,14 @@ function extractLocalTasks(text) {
             }
 
             let due = 'Tomorrow';
-            if (/\b(?:by|on)?\s*friday\b/i.test(trimmed)) due = 'Friday';
-            else if (/\b(?:by|on)?\s*monday\b/i.test(trimmed)) due = 'Monday';
-            else if (/\b(?:by|on)?\s*today\b/i.test(trimmed)) due = 'Today';
-            else if (/\b(?:by|on)?\s*tomorrow\b/i.test(trimmed)) due = 'Tomorrow';
+            const timeMatch = trimmed.match(/\b(?:at\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i) || trimmed.match(/\b(?:at\s+([01]?\d|2[0-3]):([0-5]\d))\b/i);
+            const timeSuffix = timeMatch ? ` at ${timeMatch[1].toUpperCase()}` : '';
+
+            if (/\b(?:by|on)?\s*friday\b/i.test(trimmed)) due = `Friday${timeSuffix}`;
+            else if (/\b(?:by|on)?\s*monday\b/i.test(trimmed)) due = `Monday${timeSuffix}`;
+            else if (/\b(?:by|on)?\s*today\b/i.test(trimmed)) due = `Today${timeSuffix}`;
+            else if (/\b(?:by|on)?\s*tomorrow\b/i.test(trimmed)) due = `Tomorrow${timeSuffix}`;
+            else if (timeMatch) due = `Today at ${timeMatch[1].toUpperCase()}`;
 
             taskTitle = taskTitle.replace(/\s+(by|on|due)\s+(tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday).*/i, '').trim();
 

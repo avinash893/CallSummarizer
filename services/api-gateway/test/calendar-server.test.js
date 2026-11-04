@@ -91,7 +91,7 @@ test('CallSummarizer Unified Server - Google Auth Session & Calendar API', async
         assert.match(data.error, /title is required/i);
     });
 
-    await t.test('POST /api/calendar/events creates event with 15-minute popup notification reminder', async () => {
+    await t.test('POST /api/calendar/events creates event with 5-minute popup notification reminder', async () => {
         const res = await fetch(`${baseUrl}/api/calendar/events`, {
             method: 'POST',
             headers: {
@@ -99,9 +99,9 @@ test('CallSummarizer Unified Server - Google Auth Session & Calendar API', async
                 'X-Session-ID': testSessionId
             },
             body: JSON.stringify({
-                title: 'Finalize quarterly deliverables and architecture documentation',
-                description: 'Assigned to Rohan Sharma. Due: Tomorrow',
-                due: 'Tomorrow'
+                title: 'Finalize quarterly deliverables and architecture documentation at 2 pm',
+                description: 'Assigned to Rohan Sharma. Due: Tomorrow at 2 pm',
+                due: 'Tomorrow at 2 pm'
             })
         });
 
@@ -109,12 +109,16 @@ test('CallSummarizer Unified Server - Google Auth Session & Calendar API', async
         const data = await res.json();
         assert.strictEqual(data.success, true);
         assert.ok(data.event);
-        // Verify 15-minute popup alarm reminder
+        // Verify 5-minute popup alarm reminder
         assert.ok(data.event.reminders);
         assert.strictEqual(data.event.reminders.useDefault, false);
         assert.deepStrictEqual(data.event.reminders.overrides, [
-            { method: 'popup', minutes: 15 }
+            { method: 'popup', minutes: 5 }
         ]);
+        // Verify exact time parsed (14:00 local)
+        const eventStartDate = new Date(data.event.start.dateTime);
+        assert.strictEqual(eventStartDate.getHours(), 14);
+        assert.strictEqual(eventStartDate.getMinutes(), 0);
     });
 
     await t.test('POST /api/calendar/events handles invalid date strings safely without crashing', async () => {

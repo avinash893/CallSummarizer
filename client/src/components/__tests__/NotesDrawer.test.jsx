@@ -117,7 +117,7 @@ describe('NotesDrawer Component', () => {
     fireEvent.click(addCalButtons[0]);
 
     // Confirmation popover appears
-    expect(screen.getByText(/Add to Google Calendar\? \(15m reminder\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/Add to Google Calendar\? \(5m reminder\)/i)).toBeInTheDocument();
     const confirmBtn = screen.getByRole('button', { name: /Confirm/i });
     const cancelBtn = screen.getByRole('button', { name: /Cancel/i });
     expect(confirmBtn).toBeInTheDocument();

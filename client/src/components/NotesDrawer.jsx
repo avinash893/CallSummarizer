@@ -446,7 +446,7 @@ export default function NotesDrawer({
 
                       <div className="task-calendar-controls">
                         {task.calendarAdded || calendarSuccessIds.includes(task.id) ? (
-                          <span className="calendar-badge-success" title="Added to Google Calendar with 15-minute popup alarm reminder">
+                          <span className="calendar-badge-success" title="Added to Google Calendar with 5-minute popup alarm reminder">
                             <i className="bi bi-calendar-check-fill" style={{ marginRight: '4px' }}></i>
                             In Calendar
                           </span>
@@ -454,7 +454,7 @@ export default function NotesDrawer({
                           <div className="calendar-confirm-box" role="dialog" aria-label="Confirm adding event to Google Calendar">
                             <span className="calendar-confirm-prompt">
                               <i className="bi bi-bell-fill" style={{ marginRight: '4px' }}></i>
-                              Add to Google Calendar? (15m reminder)
+                              Add to Google Calendar? (5m reminder)
                             </span>
                             <div className="calendar-confirm-btns btn-group btn-group-sm">
                               <button

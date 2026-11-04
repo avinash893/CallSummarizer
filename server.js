@@ -49,6 +49,56 @@ app.use(express.json());
 
 const TEN_DAYS_SECONDS = 10 * 24 * 60 * 60; // 10 days in seconds (864,000s)
 const TEN_DAYS_MS = TEN_DAYS_SECONDS * 1000;
+const SESSION_SECRET = process.env.SESSION_SECRET || GOOGLE_CLIENT_SECRET || 'callsummarizer-persistent-session-secret-2026';
+
+// Persistent 10-day server session store: sessionId -> { sessionId, user, tokens, createdAt }
+const sessions = new Map();
+const revokedSessions = new Set();
+const SESSIONS_FILE = path.join(__dirname, '.sessions.json');
+
+function signSessionToken(sessionObj) {
+    try {
+        const payload = JSON.stringify({
+            sessionId: sessionObj.sessionId,
+            user: sessionObj.user,
+            tokens: sessionObj.tokens || {},
+            createdAt: sessionObj.createdAt || new Date().toISOString()
+        });
+        const encoded = Buffer.from(payload, 'utf8').toString('base64url');
+        const sig = crypto.createHmac('sha256', SESSION_SECRET).update(encoded).digest('base64url');
+        return `cs.${encoded}.${sig}`;
+    } catch (e) {
+        return sessionObj.sessionId;
+    }
+}
+
+function verifyAndRestoreSessionToken(tokenStr) {
+    if (!tokenStr || typeof tokenStr !== 'string' || !tokenStr.startsWith('cs.')) {
+        return null;
+    }
+    if (revokedSessions.has(tokenStr)) return null;
+    const parts = tokenStr.split('.');
+    if (parts.length !== 3) return null;
+    const [, encoded, sig] = parts;
+    const expectedSig = crypto.createHmac('sha256', SESSION_SECRET).update(encoded).digest('base64url');
+    if (sig !== expectedSig) return null;
+
+    try {
+        const decoded = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
+        if (!decoded || !decoded.sessionId || !decoded.user) return null;
+        if (revokedSessions.has(decoded.sessionId)) return null;
+        const age = Date.now() - new Date(decoded.createdAt).getTime();
+        if (age >= TEN_DAYS_MS) return null;
+
+        // Restore into active in-memory session map so subsequent requests are fast
+        decoded.token = tokenStr;
+        sessions.set(decoded.sessionId, decoded);
+        sessions.set(tokenStr, decoded);
+        return decoded;
+    } catch (e) {
+        return null;
+    }
+}
 
 function setSessionCookie(res, req, sessionId, expires = null) {
     const isSecure = process.env.NODE_ENV === 'production' || Boolean(req?.secure) || req?.headers?.['x-forwarded-proto'] === 'https';
@@ -57,8 +107,9 @@ function setSessionCookie(res, req, sessionId, expires = null) {
         res.setHeader('Set-Cookie', clearCookie);
         return;
     }
+    const tokenVal = sessions.get(sessionId)?.token || sessionId;
     const expiresDate = expires || new Date(Date.now() + TEN_DAYS_MS).toUTCString();
-    let cookie = `cs_session_id=${sessionId}; Path=/; Max-Age=${TEN_DAYS_SECONDS}; Expires=${expiresDate}; HttpOnly; SameSite=Lax`;
+    let cookie = `cs_session_id=${tokenVal}; Path=/; Max-Age=${TEN_DAYS_SECONDS}; Expires=${expiresDate}; HttpOnly; SameSite=Lax`;
     if (isSecure) {
         cookie += '; Secure';
     }
@@ -67,10 +118,6 @@ function setSessionCookie(res, req, sessionId, expires = null) {
 
 // In-memory store for active rooms
 const rooms = new Map();
-
-// Persistent 10-day server session store: sessionId -> { sessionId, user, tokens, createdAt }
-const sessions = new Map();
-const SESSIONS_FILE = path.join(__dirname, '.sessions.json');
 
 function loadSessionsFromDisk() {
     try {
@@ -84,6 +131,9 @@ function loadSessionsFromDisk() {
                         const age = now - new Date(item.createdAt).getTime();
                         if (age < TEN_DAYS_MS) {
                             sessions.set(item.sessionId, item);
+                            if (item.token) {
+                                sessions.set(item.token, item);
+                            }
                         }
                     }
                 }
@@ -96,7 +146,11 @@ function loadSessionsFromDisk() {
 
 function saveSessionsToDisk() {
     try {
-        const arr = Array.from(sessions.values());
+        const unique = new Map();
+        for (const s of sessions.values()) {
+            if (s && s.sessionId) unique.set(s.sessionId, s);
+        }
+        const arr = Array.from(unique.values());
         fs.writeFileSync(SESSIONS_FILE, JSON.stringify(arr, null, 2), 'utf8');
     } catch (e) {
         // Safe fallback
@@ -107,33 +161,30 @@ loadSessionsFromDisk();
 
 function getSession(req) {
     if (!req) return null;
-    // 1. Check req.body.sessionId
-    if (req.body && req.body.sessionId && sessions.has(req.body.sessionId)) {
-        return sessions.get(req.body.sessionId);
-    }
-    // 2. Check req.query.sessionId
-    if (req.query && req.query.sessionId && sessions.has(req.query.sessionId)) {
-        return sessions.get(req.query.sessionId);
-    }
-    // 3. Check X-Session-ID header
-    const headerSessionId = req.headers ? req.headers['x-session-id'] : null;
-    if (headerSessionId && sessions.has(headerSessionId)) {
-        return sessions.get(headerSessionId);
-    }
-    // 4. Check Authorization header
-    const authHeader = req.headers ? req.headers['authorization'] : null;
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-        const token = authHeader.slice(7).trim();
-        if (sessions.has(token)) {
-            return sessions.get(token);
+
+    const candidates = [
+        req.body?.sessionId,
+        req.query?.sessionId,
+        req.headers ? req.headers['x-session-id'] : null,
+        (req.headers?.authorization?.startsWith('Bearer ')) ? req.headers.authorization.slice(7).trim() : null,
+        req.headers?.cookie ? (req.headers.cookie.match(/cs_session_id=([^;]+)/)?.[1] || null) : null
+    ].filter(Boolean);
+
+    for (const cand of candidates) {
+        if (revokedSessions.has(cand)) continue;
+        if (sessions.has(cand)) {
+            const s = sessions.get(cand);
+            if (revokedSessions.has(s.sessionId) || (s.token && revokedSessions.has(s.token))) {
+                continue;
+            }
+            return s;
         }
-    }
-    // 5. Check Cookie header
-    const cookieHeader = req.headers ? req.headers['cookie'] : null;
-    if (cookieHeader) {
-        const match = cookieHeader.match(/cs_session_id=([^;]+)/);
-        if (match && sessions.has(match[1])) {
-            return sessions.get(match[1]);
+        const restored = verifyAndRestoreSessionToken(cand);
+        if (restored) {
+            if (revokedSessions.has(restored.sessionId) || (restored.token && revokedSessions.has(restored.token))) {
+                continue;
+            }
+            return restored;
         }
     }
     return null;
@@ -348,7 +399,7 @@ app.post('/api/auth/google', async (req, res) => {
                 sessionId
             };
 
-            sessions.set(sessionId, {
+            const sessionObj = {
                 sessionId,
                 user: userObj,
                 tokens: {
@@ -357,14 +408,19 @@ app.post('/api/auth/google', async (req, res) => {
                     scope: 'openid email profile https://www.googleapis.com/auth/calendar.events'
                 },
                 createdAt: existingSession?.createdAt || new Date().toISOString()
-            });
+            };
+            const sessionToken = signSessionToken(sessionObj);
+            sessionObj.token = sessionToken;
+            sessions.set(sessionId, sessionObj);
+            sessions.set(sessionToken, sessionObj);
             saveSessionsToDisk();
 
-            setSessionCookie(res, req, sessionId);
+            setSessionCookie(res, req, sessionToken);
             return res.json({
                 authenticated: true,
                 provider: 'google-oauth',
                 sessionId,
+                sessionToken,
                 user: userObj
             });
         }
@@ -393,7 +449,7 @@ app.post('/api/auth/google', async (req, res) => {
                 sessionId
             };
 
-            sessions.set(sessionId, {
+            const sessionObj = {
                 sessionId,
                 user: userObj,
                 tokens: {
@@ -402,14 +458,19 @@ app.post('/api/auth/google', async (req, res) => {
                     scope: 'openid email profile https://www.googleapis.com/auth/calendar.events'
                 },
                 createdAt: existingSession?.createdAt || new Date().toISOString()
-            });
+            };
+            const sessionToken = signSessionToken(sessionObj);
+            sessionObj.token = sessionToken;
+            sessions.set(sessionId, sessionObj);
+            sessions.set(sessionToken, sessionObj);
             saveSessionsToDisk();
 
-            setSessionCookie(res, req, sessionId);
+            setSessionCookie(res, req, sessionToken);
             return res.json({
                 authenticated: true,
                 provider: 'google-account',
                 sessionId,
+                sessionToken,
                 user: userObj
             });
         }
@@ -530,7 +591,7 @@ app.get('/api/auth/google/callback', async (req, res) => {
                 };
             }
 
-            sessions.set(sessionId, {
+            const sessionObj = {
                 sessionId,
                 user: userObj,
                 tokens: {
@@ -540,10 +601,14 @@ app.get('/api/auth/google/callback', async (req, res) => {
                     scope: tokenData.scope || 'openid email profile https://www.googleapis.com/auth/calendar.events'
                 },
                 createdAt: new Date().toISOString()
-            });
+            };
+            const sessionToken = signSessionToken(sessionObj);
+            sessionObj.token = sessionToken;
+            sessions.set(sessionId, sessionObj);
+            sessions.set(sessionToken, sessionObj);
             saveSessionsToDisk();
-            setSessionCookie(res, req, sessionId);
-            return res.redirect(`/?sessionId=${encodeURIComponent(sessionId)}&googleCredential=${encodeURIComponent(tokenData.id_token || '')}`);
+            setSessionCookie(res, req, sessionToken);
+            return res.redirect(`/?sessionId=${encodeURIComponent(sessionToken)}&googleCredential=${encodeURIComponent(tokenData.id_token || '')}`);
         }
         return res.redirect('/?authError=token_exchange_failed');
     } catch (err) {
@@ -555,10 +620,19 @@ app.get('/api/auth/google/callback', async (req, res) => {
 app.post('/api/auth/logout', (req, res) => {
     const session = getSession(req);
     const targetSessionId = req.body?.sessionId || session?.sessionId;
-    if (targetSessionId && sessions.has(targetSessionId)) {
-        sessions.delete(targetSessionId);
+    if (targetSessionId) {
+        revokedSessions.add(targetSessionId);
+        if (sessions.has(targetSessionId)) {
+            const sess = sessions.get(targetSessionId);
+            if (sess?.token) revokedSessions.add(sess.token);
+            if (sess?.sessionId) revokedSessions.add(sess.sessionId);
+            sessions.delete(targetSessionId);
+            if (sess?.token) sessions.delete(sess.token);
+        }
         saveSessionsToDisk();
     }
+    if (session?.sessionId) revokedSessions.add(session.sessionId);
+    if (session?.token) revokedSessions.add(session.token);
     setSessionCookie(res, req, '', 'Thu, 01 Jan 1970 00:00:00 GMT');
     return res.json({ success: true });
 });

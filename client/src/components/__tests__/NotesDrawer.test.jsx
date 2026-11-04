@@ -353,4 +353,29 @@ describe('NotesDrawer Component', () => {
 
     expect(screen.queryByRole('button', { name: /Add to Google Calendar/i })).not.toBeInTheDocument();
   });
+
+  it('allows a user to add a task to calendar independently even if another user already added it', () => {
+    const tasksWithOtherUser = [
+      {
+        id: 1,
+        title: 'Review microservice signaling service',
+        assignee: 'Avinash',
+        due: 'Tomorrow at 2 pm',
+        completed: false,
+        calendarAddedBy: ['rohan@example.com']
+      }
+    ];
+
+    render(
+      <NotesDrawer
+        isOpen={true}
+        tasks={tasksWithOtherUser}
+        transcript={sampleTranscript}
+        onToggleTask={vi.fn()}
+        user={{ name: 'Avinash', email: 'avinash@example.com' }}
+      />
+    );
+
+    expect(screen.getByRole('button', { name: /Add to Google Calendar/i })).toBeInTheDocument();
+  });
 });

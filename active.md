@@ -1,5 +1,5 @@
 # Repository Lock & Status
 
 **Status:** NOT WORKING
-**Last Updated:** 2026-11-04 10:30 IST
-**Details:** Fixed Google Calendar timezone offset conversion: natural time parsing now calculates and formats RFC3339 timestamps using the client's local timezone offset (e.g. +05:30 for Asia/Kolkata) instead of UTC, eliminating the 5h30m drift. All 83 tests passing.
+**Last Updated:** 2026-11-04 11:02 IST
+**Details:** Made Google Calendar additions per-user independent using `calendarAddedBy` user arrays and per-user calendar state. When one participant adds an event to their calendar, all other participants retain the active "Add to Google Calendar" button and can add it to their own calendar independently. All 85 tests passing.

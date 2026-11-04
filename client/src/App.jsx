@@ -1320,8 +1320,18 @@ export default function App() {
 
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.success) {
+        const userKey = String(user?.email || user?.sessionId || user?.name || 'You').trim().toLowerCase();
         setTasks((prev) => {
-          const next = prev.map((t) => (t.id === task.id ? { ...t, calendarAdded: true } : t));
+          const next = prev.map((t) => {
+            if (t.id === task.id) {
+              const prevAdded = Array.isArray(t.calendarAddedBy) ? t.calendarAddedBy : [];
+              return {
+                ...t,
+                calendarAddedBy: Array.from(new Set([...prevAdded, userKey]))
+              };
+            }
+            return t;
+          });
           if (wsRef.current && wsRef.current.readyState === 1) {
             wsRef.current.send(JSON.stringify({ type: 'tasks-sync', tasks: next }));
           }

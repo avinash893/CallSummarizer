@@ -51,6 +51,17 @@ export default function NotesDrawer({
 
   if (!isOpen) return null;
 
+  const userKey = String(user?.email || user?.sessionId || user?.name || 'You').trim().toLowerCase();
+
+  const isTaskInMyCalendar = (task) => {
+    if (!task) return false;
+    if (calendarSuccessIds.includes(task.id)) return true;
+    if (Array.isArray(task.calendarAddedBy)) {
+      return task.calendarAddedBy.some((k) => String(k).trim().toLowerCase() === userKey);
+    }
+    return false;
+  };
+
   const isTaskMine = (task) => {
     if (!task || !task.assignee) return true;
     const assignee = String(task.assignee).toLowerCase().trim();
@@ -65,7 +76,7 @@ export default function NotesDrawer({
   const handleRequestAddToCalendar = (task) => {
     if (!task || task.id === undefined || task.id === null) return;
     if (!taskHasTime(task)) return;
-    if (calendarLoadingId !== null || calendarSuccessIds.includes(task.id) || task.calendarAdded) {
+    if (calendarLoadingId !== null || isTaskInMyCalendar(task)) {
       return;
     }
     setCalendarError(null);
@@ -75,7 +86,7 @@ export default function NotesDrawer({
   const handleConfirmAddToCalendar = async (task) => {
     if (!task || task.id === undefined || task.id === null) return;
     if (!taskHasTime(task)) return;
-    if (calendarLoadingId !== null || calendarSuccessIds.includes(task.id) || task.calendarAdded) {
+    if (calendarLoadingId !== null || isTaskInMyCalendar(task)) {
       return;
     }
     setCalendarLoadingId(task.id);
@@ -462,7 +473,7 @@ export default function NotesDrawer({
 
                       {taskHasTime(task) && (
                         <div className="task-calendar-controls">
-                          {task.calendarAdded || calendarSuccessIds.includes(task.id) ? (
+                          {isTaskInMyCalendar(task) ? (
                             <span className="calendar-badge-success" title="Added to Google Calendar with 5-minute popup alarm reminder">
                               <i className="bi bi-calendar-check-fill" style={{ marginRight: '4px' }}></i>
                               In Calendar

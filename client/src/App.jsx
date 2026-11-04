@@ -47,13 +47,20 @@ function getInitialRoomFromUrl() {
   return 'strategy-sync';
 }
 
+const TEN_DAYS_MS = 10 * 24 * 60 * 60 * 1000; // 10 days in milliseconds
+
 function getInitialUser() {
   if (typeof window !== 'undefined' && window.localStorage) {
     try {
       const saved = window.localStorage.getItem('cs_google_user');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed && parsed.name && parsed.email) return parsed;
+        if (parsed && parsed.name && parsed.email) {
+          const age = Date.now() - (parsed.savedAt || 0);
+          if (!parsed.savedAt || age < TEN_DAYS_MS) {
+            return parsed;
+          }
+        }
       }
     } catch (e) {}
   }
@@ -149,7 +156,11 @@ export default function App() {
     if (typeof window !== 'undefined' && window.localStorage) {
       try {
         if (nextUser && nextUser.email) {
-          window.localStorage.setItem('cs_google_user', JSON.stringify(nextUser));
+          const userWithTimestamp = {
+            ...nextUser,
+            savedAt: nextUser.savedAt || Date.now()
+          };
+          window.localStorage.setItem('cs_google_user', JSON.stringify(userWithTimestamp));
         } else {
           window.localStorage.removeItem('cs_google_user');
         }
@@ -679,14 +690,18 @@ export default function App() {
       const reader = new FileReader();
       const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       reader.onloadend = async () => {
-        const base64Audio = reader.result;
-        if (!base64Audio) return;
+        const rawResult = reader.result;
+        if (!rawResult) return;
+        const pureBase64 =
+          typeof rawResult === 'string' && rawResult.includes(',')
+            ? rawResult.split(',')[1]
+            : String(rawResult).replace(/^data:[^,]+,/, '');
         try {
           const trRes = await fetch('/api/transcribe-audio', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              audioData: base64Audio,
+              audioData: pureBase64,
               mimeType: mime,
               speakerName
             })
@@ -807,8 +822,13 @@ export default function App() {
         if (isLocal) {
           audioTracks = localStreamRef.current ? localStreamRef.current.getAudioTracks() : [];
         } else {
-          const targetPeer = remotePeers.find((p) => p.peerId === peerId);
-          audioTracks = targetPeer?.stream?.getAudioTracks() || [];
+          const streamFromRef = remoteStreamsRef.current.get(peerId);
+          if (streamFromRef && streamFromRef.getAudioTracks().length > 0) {
+            audioTracks = streamFromRef.getAudioTracks();
+          } else {
+            const targetPeer = remotePeers.find((p) => p.peerId === peerId);
+            audioTracks = targetPeer?.stream?.getAudioTracks() || [];
+          }
           if (audioTracks.length === 0) {
             const pc = peerConnectionsRef.current.get(peerId);
             if (pc && typeof pc.getReceivers === 'function') {
@@ -1302,6 +1322,7 @@ export default function App() {
             <NotesDrawer
               isOpen={isNotesOpen}
               onClose={() => setIsNotesOpen(false)}
+              user={user}
               tasks={tasks}
               transcript={transcript}
               onToggleTask={handleToggleTask}

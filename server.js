@@ -47,12 +47,18 @@ app.use(cors({
 }));
 app.use(express.json());
 
+const TEN_DAYS_SECONDS = 10 * 24 * 60 * 60; // 10 days in seconds (864,000s)
+const TEN_DAYS_MS = TEN_DAYS_SECONDS * 1000;
+
 function setSessionCookie(res, req, sessionId, expires = null) {
     const isSecure = process.env.NODE_ENV === 'production' || Boolean(req?.secure) || req?.headers?.['x-forwarded-proto'] === 'https';
-    let cookie = `cs_session_id=${sessionId}; Path=/; HttpOnly; SameSite=Lax`;
-    if (expires) {
-        cookie += `; Expires=${expires}`;
+    if (!sessionId) {
+        const clearCookie = `cs_session_id=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; SameSite=Lax${isSecure ? '; Secure' : ''}`;
+        res.setHeader('Set-Cookie', clearCookie);
+        return;
     }
+    const expiresDate = expires || new Date(Date.now() + TEN_DAYS_MS).toUTCString();
+    let cookie = `cs_session_id=${sessionId}; Path=/; Max-Age=${TEN_DAYS_SECONDS}; Expires=${expiresDate}; HttpOnly; SameSite=Lax`;
     if (isSecure) {
         cookie += '; Secure';
     }
@@ -62,8 +68,42 @@ function setSessionCookie(res, req, sessionId, expires = null) {
 // In-memory store for active rooms
 const rooms = new Map();
 
-// In-memory server session store: sessionId -> { sessionId, user, tokens, createdAt }
+// Persistent 10-day server session store: sessionId -> { sessionId, user, tokens, createdAt }
 const sessions = new Map();
+const SESSIONS_FILE = path.join(__dirname, '.sessions.json');
+
+function loadSessionsFromDisk() {
+    try {
+        if (fs.existsSync(SESSIONS_FILE)) {
+            const raw = fs.readFileSync(SESSIONS_FILE, 'utf8');
+            const data = JSON.parse(raw);
+            const now = Date.now();
+            if (Array.isArray(data)) {
+                for (const item of data) {
+                    if (item && item.sessionId && item.createdAt) {
+                        const age = now - new Date(item.createdAt).getTime();
+                        if (age < TEN_DAYS_MS) {
+                            sessions.set(item.sessionId, item);
+                        }
+                    }
+                }
+            }
+        }
+    } catch (e) {
+        // Safe fallback
+    }
+}
+
+function saveSessionsToDisk() {
+    try {
+        const arr = Array.from(sessions.values());
+        fs.writeFileSync(SESSIONS_FILE, JSON.stringify(arr, null, 2), 'utf8');
+    } catch (e) {
+        // Safe fallback
+    }
+}
+
+loadSessionsFromDisk();
 
 function getSession(req) {
     if (!req) return null;
@@ -245,6 +285,7 @@ app.post('/api/auth/google', async (req, res) => {
                 },
                 createdAt: existingSession?.createdAt || new Date().toISOString()
             });
+            saveSessionsToDisk();
 
             setSessionCookie(res, req, sessionId);
             return res.json({
@@ -317,6 +358,7 @@ app.post('/api/auth/google', async (req, res) => {
                 },
                 createdAt: existingSession?.createdAt || new Date().toISOString()
             });
+            saveSessionsToDisk();
 
             setSessionCookie(res, req, sessionId);
             return res.json({
@@ -361,6 +403,7 @@ app.post('/api/auth/google', async (req, res) => {
                 },
                 createdAt: existingSession?.createdAt || new Date().toISOString()
             });
+            saveSessionsToDisk();
 
             setSessionCookie(res, req, sessionId);
             return res.json({
@@ -498,6 +541,7 @@ app.get('/api/auth/google/callback', async (req, res) => {
                 },
                 createdAt: new Date().toISOString()
             });
+            saveSessionsToDisk();
             setSessionCookie(res, req, sessionId);
             return res.redirect(`/?sessionId=${encodeURIComponent(sessionId)}&googleCredential=${encodeURIComponent(tokenData.id_token || '')}`);
         }
@@ -513,6 +557,7 @@ app.post('/api/auth/logout', (req, res) => {
     const targetSessionId = req.body?.sessionId || session?.sessionId;
     if (targetSessionId && sessions.has(targetSessionId)) {
         sessions.delete(targetSessionId);
+        saveSessionsToDisk();
     }
     setSessionCookie(res, req, '', 'Thu, 01 Jan 1970 00:00:00 GMT');
     return res.json({ success: true });
@@ -936,6 +981,7 @@ async function handleTranscribeAudio(req, res) {
 
     const cleanSpeaker = String(speakerName || 'Participant').trim();
     const cleanMime = String(mimeType || 'audio/webm').split(';')[0].trim();
+    const pureBase64 = audioData.includes(',') ? audioData.split(',')[1] : audioData.replace(/^data:[^,]+,/, '');
     const geminiKey = process.env.GEMINI_API_KEY || req.headers['x-gemini-api-key'] || req.body?.geminiApiKey;
 
     if (geminiKey) {
@@ -962,7 +1008,7 @@ Rules:
                                     {
                                         inlineData: {
                                             mimeType: cleanMime,
-                                            data: audioData.replace(/^data:audio\/[^;]+;base64,/, '')
+                                            data: pureBase64
                                         }
                                     }
                                 ]

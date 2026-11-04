@@ -23,9 +23,11 @@ export default function NotesDrawer({
   capturedAudioClips = [],
   remotePeers = [],
   onToggleCapturePeer,
-  onDeleteClip
+  onDeleteClip,
+  user = { name: 'You' }
 }) {
   const [activeTab, setActiveTab] = useState('notes');
+  const [actionFilter, setActionFilter] = useState(user?.email ? 'mine' : 'all'); // 'mine' for logged in users, 'all' default for overview
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTranscriptText, setNewTranscriptText] = useState('');
   const [confirmingTaskId, setConfirmingTaskId] = useState(null);
@@ -34,6 +36,17 @@ export default function NotesDrawer({
   const [calendarError, setCalendarError] = useState(null);
 
   if (!isOpen) return null;
+
+  const isTaskMine = (task) => {
+    if (!task || !task.assignee) return true;
+    const assignee = String(task.assignee).toLowerCase().trim();
+    const myName = String(user?.name || 'You').toLowerCase().trim();
+    if (assignee === 'you' || assignee === myName) return true;
+    if (myName !== 'you' && (assignee.includes(myName) || myName.includes(assignee))) return true;
+    return false;
+  };
+
+  const displayedTasks = actionFilter === 'mine' ? tasks.filter(isTaskMine) : tasks;
 
   const handleRequestAddToCalendar = (task) => {
     if (!task || task.id === undefined || task.id === null) return;
@@ -339,9 +352,31 @@ export default function NotesDrawer({
 
             {/* Action Items */}
             <div className="notes-card">
-              <div className="notes-card-title">
-                <i className="bi bi-check2-square" style={{ marginRight: '6px' }}></i>
-                <span>Action Items</span>
+              <div className="notes-card-title d-flex align-items-center justify-content-between" style={{ flexWrap: 'wrap', gap: '6px' }}>
+                <div className="d-flex align-items-center">
+                  <i className="bi bi-check2-square" style={{ marginRight: '6px' }}></i>
+                  <span>Action Items</span>
+                </div>
+                <div className="btn-group btn-group-sm" role="group" aria-label="Action items filter">
+                  <button
+                    type="button"
+                    className={`btn btn-xs ${actionFilter === 'mine' ? 'btn-primary' : 'btn-outline-secondary'}`}
+                    style={{ fontSize: '0.72rem', padding: '2px 8px' }}
+                    onClick={() => setActionFilter('mine')}
+                    data-testid="filter-my-actions"
+                  >
+                    Personal ({tasks.filter(isTaskMine).length})
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn btn-xs ${actionFilter === 'all' ? 'btn-primary' : 'btn-outline-secondary'}`}
+                    style={{ fontSize: '0.72rem', padding: '2px 8px' }}
+                    onClick={() => setActionFilter('all')}
+                    data-testid="filter-all-actions"
+                  >
+                    All ({tasks.length})
+                  </button>
+                </div>
               </div>
 
               {onAddTask && (
@@ -383,12 +418,14 @@ export default function NotesDrawer({
               )}
 
               <div className="list-group" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {tasks.length === 0 ? (
+                {displayedTasks.length === 0 ? (
                   <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                    No action items yet. Add one above or extract from transcript.
+                    {actionFilter === 'mine'
+                      ? 'No personal action items for you yet. Add one above or extract from transcript.'
+                      : 'No action items yet. Add one above or extract from transcript.'}
                   </p>
                 ) : (
-                  tasks.map((task) => (
+                  displayedTasks.map((task) => (
                     <div key={task.id} className="list-group-item task-item-container" data-testid={`task-item-${task.id}`}>
                       <label className="task-row">
                         <input

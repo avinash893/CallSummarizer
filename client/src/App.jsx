@@ -746,14 +746,18 @@ export default function App() {
           });
           if (trRes.ok) {
             const trData = await trRes.json();
-            const cleanText = trData.transcript ? trData.transcript.trim() : '';
+            let cleanText = trData.transcript ? trData.transcript.trim() : '';
+            cleanText = cleanText.replace(/^["'`«»“”„]+|["'`«»“”„]+$/g, '').trim();
+            const cleanSpeakerAlpha = String(speakerName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+            const cleanTextAlpha = cleanText.toLowerCase().replace(/[^a-z0-9]/g, '');
             if (
               cleanText &&
               !cleanText.includes('[Audio') &&
               !cleanText.includes('Private Capture') &&
               cleanText.toUpperCase() !== 'SILENCE' &&
               cleanText !== '""' &&
-              cleanText.toLowerCase() !== speakerName.toLowerCase()
+              cleanText.toLowerCase() !== speakerName.toLowerCase() &&
+              (!cleanSpeakerAlpha || cleanTextAlpha !== cleanSpeakerAlpha)
             ) {
               const entry = {
                 id: `tr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -885,7 +889,24 @@ export default function App() {
 
         if (typeof window !== 'undefined' && typeof window.MediaRecorder !== 'undefined' && audioTracks.length > 0) {
           try {
-            const audioStream = new MediaStream(audioTracks);
+            let audioStream = new MediaStream(audioTracks);
+            let activeAudioCtx = null;
+            try {
+              const AudioCtx = window.AudioContext || window.webkitAudioContext;
+              if (AudioCtx) {
+                activeAudioCtx = new AudioCtx();
+                if (activeAudioCtx.state === 'suspended') {
+                  activeAudioCtx.resume().catch(() => {});
+                }
+                const src = activeAudioCtx.createMediaStreamSource(new MediaStream(audioTracks));
+                const dest = activeAudioCtx.createMediaStreamDestination();
+                src.connect(dest);
+                if (dest.stream && dest.stream.getAudioTracks().length > 0) {
+                  audioStream = dest.stream;
+                }
+              }
+            } catch (e) {}
+
             let mimeType = '';
             if (typeof MediaRecorder.isTypeSupported === 'function') {
               const preferredTypes = [
@@ -949,6 +970,9 @@ export default function App() {
                 if (sessionState.currentRecorder && sessionState.currentRecorder.state !== 'inactive') {
                   sessionState.currentRecorder.stop();
                 }
+                if (activeAudioCtx) {
+                  try { activeAudioCtx.close(); } catch (e) {}
+                }
               },
               recorder: {
                 state: 'recording',
@@ -957,6 +981,9 @@ export default function App() {
                   if (sessionState.timer) clearTimeout(sessionState.timer);
                   if (sessionState.currentRecorder && sessionState.currentRecorder.state !== 'inactive') {
                     sessionState.currentRecorder.stop();
+                  }
+                  if (activeAudioCtx) {
+                    try { activeAudioCtx.close(); } catch (e) {}
                   }
                 }
               },

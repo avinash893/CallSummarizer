@@ -1020,11 +1020,15 @@ Rules:
                     const gData = await gRes.json();
                     const rawText = gData.candidates?.[0]?.content?.parts?.[0]?.text;
                     if (rawText && rawText.trim() && !rawText.includes('[Audio clip recorded]')) {
-                        const trimmed = rawText.trim();
+                        let trimmed = rawText.trim();
+                        trimmed = trimmed.replace(/^["'`«»“”„]+|["'`«»“”„]+$/g, '').trim();
+                        const cleanAlpha = cleanSpeaker.toLowerCase().replace(/[^a-z0-9]/g, '');
+                        const trimmedAlpha = trimmed.toLowerCase().replace(/[^a-z0-9]/g, '');
                         if (
+                            !trimmed ||
                             trimmed.toUpperCase() === 'SILENCE' ||
-                            trimmed === '""' ||
-                            trimmed.toLowerCase() === cleanSpeaker.toLowerCase()
+                            trimmed.toLowerCase() === cleanSpeaker.toLowerCase() ||
+                            (cleanAlpha && trimmedAlpha === cleanAlpha)
                         ) {
                             return res.json({
                                 success: true,

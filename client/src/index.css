@@ -1306,27 +1306,7 @@ body {
 /* ==========================================================================
    6. Responsive Viewport Adaptations
    ========================================================================== */
-@media (max-width: 900px) {
-  .right-drawer {
-    position: absolute;
-    right: 0;
-    top: 52px;
-    bottom: 0;
-    width: 320px;
-    min-width: 320px;
-    box-shadow: -4px 0 20px rgba(0, 0, 0, 0.45);
-  }
-  .video-flex-container {
-    flex-direction: column;
-    gap: 12px;
-  }
-  .video-tile {
-    max-width: 100%;
-    max-height: 38vh;
-  }
-}
-
-@media (max-width: 600px) {
+@media (max-width: 850px) {
   .brand-text-full {
     display: none !important;
   }
@@ -1335,29 +1315,38 @@ body {
   }
   .top-nav {
     padding: 0 8px;
-    gap: 6px;
+    gap: 4px;
+    max-width: 100vw;
+    box-sizing: border-box;
+    overflow-x: hidden;
   }
   .top-nav-left {
-    gap: 6px;
+    gap: 4px;
+    flex-shrink: 1;
+    min-width: 0;
   }
   .room-chip {
-    max-width: 100px;
-    padding: 0.25rem 0.45rem;
+    max-width: 80px;
+    padding: 0.2rem 0.4rem;
     font-size: 0.72rem;
   }
   .room-chip span {
-    max-width: 65px;
+    max-width: 48px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .participant-count-badge {
-    padding: 3px 6px;
+    padding: 2px 5px;
     font-size: 0.7rem;
   }
   .call-timer {
-    padding: 3px 6px;
+    padding: 2px 5px;
     font-size: 0.72rem;
   }
   .top-nav-right {
     gap: 4px;
+    flex-shrink: 0;
   }
   .nav-btn-services {
     display: none !important;
@@ -1370,6 +1359,7 @@ body {
     color: #ffffff !important;
     font-weight: 600 !important;
     display: inline-flex !important;
+    white-space: nowrap;
   }
 
   /* Floating Action Button for Transcript & Actions */
@@ -1380,7 +1370,7 @@ body {
     position: fixed;
     top: 58px;
     right: 10px;
-    z-index: 90;
+    z-index: 900;
     background: #FF4F00;
     color: #ffffff;
     border: 1px solid rgba(255, 255, 255, 0.2);
@@ -1396,21 +1386,32 @@ body {
     transform: scale(0.96);
   }
 
-  .right-drawer {
-    width: 100vw;
-    min-width: 100vw;
-    left: 0;
-    right: 0;
-    top: 50px;
-    bottom: 0;
-    z-index: 150;
+  .video-grid-container.count-2,
+  .video-grid-container.count-3,
+  .video-grid-container.count-4,
+  .video-grid-container.count-many {
+    grid-template-columns: 1fr;
   }
+
+  .video-tile {
+    min-height: 140px;
+    max-height: 34vh;
+    width: 100%;
+  }
+
   .bottom-dock {
-    bottom: max(14px, env(safe-area-inset-bottom, 14px));
-    padding: 6px 8px;
-    gap: 6px;
+    position: fixed;
+    bottom: max(16px, env(safe-area-inset-bottom, 16px));
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000 !important;
+    padding: 6px 10px;
+    gap: 8px;
     max-width: 95vw;
+    background: var(--bg-surface);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.7);
   }
+
   .dock-leave-btn .leave-text {
     display: none;
   }
@@ -1418,22 +1419,25 @@ body {
     padding: 6px 10px;
   }
   .dock-icon-btn {
-    width: 38px;
-    height: 38px;
+    width: 40px;
+    height: 40px;
     font-size: 1.05rem;
   }
-  .video-grid-container.count-many,
-  .video-grid-container.count-3,
-  .video-grid-container.count-4 {
-    grid-template-columns: 1fr;
+
+  .right-drawer {
+    position: absolute;
+    width: 100vw;
+    min-width: 100vw;
+    left: 0;
+    right: 0;
+    top: 52px;
+    bottom: 0;
+    z-index: 1500;
   }
-  .video-tile {
-    min-height: 150px;
-    max-height: 34vh;
-  }
+
   .tile-capture-btn {
-    padding: 4px 8px;
-    font-size: 0.74rem;
+    padding: 5px 10px;
+    font-size: 0.8rem;
   }
   .drawer-close-btn {
     padding: 4px 8px;

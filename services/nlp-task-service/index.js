@@ -117,7 +117,7 @@ Return JSON structure:
                                 completed: Boolean(t.completed)
                             };
                         });
-                        return res.json({ tasks: normalizedTasks, source: 'gemini-1.5-flash' });
+                        return res.json({ tasks: normalizedTasks, source: 'gemini-3.5-flash-lite' });
                     }
                 }
             }

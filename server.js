@@ -939,7 +939,7 @@ async function handleTranscribeAudio(req, res) {
     const geminiKey = process.env.GEMINI_API_KEY || req.headers['x-gemini-api-key'] || req.body?.geminiApiKey;
 
     if (geminiKey) {
-        const candidateModels = ['gemini-3.5-transcribe', 'gemini-3.5-flash-lite', 'gemini-3.5-flash'];
+        const candidateModels = ['gemini-3.5-flash-lite', 'gemini-3.5-transcribe', 'gemini-3.5-flash'];
         for (const modelName of candidateModels) {
             try {
                 const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${geminiKey}`;
@@ -957,7 +957,7 @@ Speaker: ${cleanSpeaker}
 Rules:
 - Return ONLY the exact transcribed text as plain text.
 - Do NOT include markdown formatting, quotation marks, or explanations.
-- If there is no discernible speech, return an empty response.`
+- If there is no discernible speech or only silence, reply with SILENCE.`
                                     },
                                     {
                                         inlineData: {
@@ -975,9 +975,18 @@ Rules:
                     const gData = await gRes.json();
                     const rawText = gData.candidates?.[0]?.content?.parts?.[0]?.text;
                     if (rawText && rawText.trim() && !rawText.includes('[Audio clip recorded]')) {
+                        const trimmed = rawText.trim();
+                        if (trimmed.toUpperCase() === 'SILENCE' || trimmed === '""') {
+                            return res.json({
+                                success: true,
+                                transcript: '',
+                                speaker: cleanSpeaker,
+                                source: modelName
+                            });
+                        }
                         return res.json({
                             success: true,
-                            transcript: rawText.trim(),
+                            transcript: trimmed,
                             speaker: cleanSpeaker,
                             source: modelName
                         });

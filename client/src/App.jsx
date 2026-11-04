@@ -694,7 +694,13 @@ export default function App() {
           if (trRes.ok) {
             const trData = await trRes.json();
             const cleanText = trData.transcript ? trData.transcript.trim() : '';
-            if (cleanText && !cleanText.includes('[Audio') && !cleanText.includes('Private Capture')) {
+            if (
+              cleanText &&
+              !cleanText.includes('[Audio') &&
+              !cleanText.includes('Private Capture') &&
+              cleanText.toUpperCase() !== 'SILENCE' &&
+              cleanText !== '""'
+            ) {
               const entry = {
                 id: `tr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
                 speaker: speakerName,
@@ -734,14 +740,18 @@ export default function App() {
 
         const activeSession = peerAudioRecordersRef.current.get(peerId);
         if (activeSession) {
-          if (activeSession.interval) {
-            clearInterval(activeSession.interval);
-          }
-          try {
-            if (activeSession.recorder && activeSession.recorder.state !== 'inactive') {
-              activeSession.recorder.stop();
+          if (typeof activeSession.stop === 'function') {
+            activeSession.stop();
+          } else {
+            if (activeSession.interval) {
+              clearInterval(activeSession.interval);
             }
-          } catch (e) {}
+            try {
+              if (activeSession.recorder && activeSession.recorder.state !== 'inactive') {
+                activeSession.recorder.stop();
+              }
+            } catch (e) {}
+          }
           peerAudioRecordersRef.current.delete(peerId);
         }
         return prev.filter((id) => id !== peerId);
@@ -830,47 +840,72 @@ export default function App() {
             }
 
             const options = mimeType ? { mimeType } : undefined;
-            const recorder = new MediaRecorder(audioStream, options);
-            const chunks = [];
-            let processedIndex = 0;
+            const sessionState = { active: true, currentRecorder: null, timer: null };
 
-            recorder.ondataavailable = (e) => {
-              if (e.data && e.data.size > 0) {
-                chunks.push(e.data);
+            const recordSegment = () => {
+              if (!sessionState.active) return;
+              try {
+                const rec = new MediaRecorder(audioStream, options);
+                const segChunks = [];
+                rec.ondataavailable = (e) => {
+                  if (e.data && e.data.size > 0) {
+                    segChunks.push(e.data);
+                  }
+                };
+                rec.onstop = () => {
+                  const mime = rec.mimeType || mimeType || 'audio/webm';
+                  if (segChunks.length > 0) {
+                    const blob = new Blob(segChunks, { type: mime });
+                    if (blob.size >= 600) {
+                      sendAudioBlobForTranscription(blob, mime, speakerName);
+                    }
+                  }
+                  if (sessionState.active) {
+                    recordSegment();
+                  }
+                };
+                sessionState.currentRecorder = rec;
+                rec.start();
+                // 5-second complete segment ensuring fresh container headers
+                sessionState.timer = setTimeout(() => {
+                  if (rec.state === 'recording') {
+                    rec.stop();
+                  }
+                }, 5000);
+              } catch (e) {
+                console.warn('Error in recordSegment:', e);
               }
             };
 
-            recorder.onstop = () => {
-              const mime = recorder.mimeType || 'audio/webm';
-              if (chunks.length > processedIndex) {
-                const remaining = chunks.slice(processedIndex);
-                processedIndex = chunks.length;
-                const blob = new Blob(remaining, { type: mime });
-                sendAudioBlobForTranscription(blob, mime, speakerName);
-              }
-            };
+            recordSegment();
 
-            // Periodic slicing every 5 seconds for live real-time transcription
-            const interval = setInterval(() => {
-              if (recorder.state === 'recording' && chunks.length > processedIndex) {
-                const mime = recorder.mimeType || 'audio/webm';
-                const slice = chunks.slice(processedIndex);
-                processedIndex = chunks.length;
-                if (slice.length > 0) {
-                  const sliceBlob = new Blob(slice, { type: mime });
-                  sendAudioBlobForTranscription(sliceBlob, mime, speakerName);
+            peerAudioRecordersRef.current.set(peerId, {
+              stop: () => {
+                sessionState.active = false;
+                if (sessionState.timer) clearTimeout(sessionState.timer);
+                if (sessionState.currentRecorder && sessionState.currentRecorder.state !== 'inactive') {
+                  sessionState.currentRecorder.stop();
                 }
-              }
-            }, 5000);
-
-            recorder.start(1000);
-            peerAudioRecordersRef.current.set(peerId, { recorder, chunks, interval, stream: audioStream });
+              },
+              recorder: {
+                state: 'recording',
+                stop: () => {
+                  sessionState.active = false;
+                  if (sessionState.timer) clearTimeout(sessionState.timer);
+                  if (sessionState.currentRecorder && sessionState.currentRecorder.state !== 'inactive') {
+                    sessionState.currentRecorder.stop();
+                  }
+                }
+              },
+              stream: audioStream
+            });
           } catch (err) {
             console.warn('Failed to start MediaRecorder on audio track:', err);
           }
         } else {
           // Graceful fallback for headless test runners / mock environments
           const mockSession = {
+            stop: () => {},
             recorder: {
               state: 'recording',
               stop: () => {}
@@ -1032,12 +1067,19 @@ export default function App() {
   };
 
   const handleExtractTasks = async () => {
+    // Only extract tasks from real spoken speech lines
+    const speechLines = (transcript || [])
+      .filter((item) => item?.text && !item.text.startsWith('[Private Capture') && !item.text.startsWith('[Audio') && item.text.trim())
+      .map((item) => `${item.speaker}: ${item.text.trim()}`);
+
+    if (speechLines.length === 0) {
+      setIsExtracting(false);
+      return;
+    }
+
     setIsExtracting(true);
     try {
-      const transcriptText =
-        transcript.length > 0
-          ? transcript.map((item) => `${item.speaker}: ${item.text}`).join('\n')
-          : `${user?.name || 'You'}: We will review the meeting deliverables and finalize action items by tomorrow.`;
+      const transcriptText = speechLines.join('\n');
       const gatewayUrl = import.meta.env.VITE_GATEWAY_URL || '';
       const response = await fetch(`${gatewayUrl}/api/nlp-tasks/extract-tasks`, {
         method: 'POST',

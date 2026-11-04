@@ -1120,7 +1120,7 @@ app.post('/api/nlp-tasks/extract-tasks', async (req, res) => {
     const geminiKey = process.env.GEMINI_API_KEY || req.headers['x-gemini-api-key'] || req.body?.geminiApiKey;
 
     if (geminiKey) {
-        const candidateModels = ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'];
+        const candidateModels = ['gemini-3-flash-preview', 'gemini-3.1-flash-lite-preview', 'gemini-3.5-flash-lite'];
         for (const modelName of candidateModels) {
             try {
                 const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${geminiKey}`;
@@ -1207,12 +1207,16 @@ function isValidSpeechTranscript(text, speakerName = '') {
     const trimmed = text.trim().replace(/^["'`«»“”„]+|["'`«»“”„]+$/g, '').trim();
     if (!trimmed) return false;
 
-    // Reject pure timestamps (e.g. "00:00", "00:01", "0:01", "00:00:00", "[00:00]")
+    // Reject pure timestamps or time codes (e.g. "00:00", "00:01", "0:01", "00:00:00", "[00:00]")
     if (/^\[?\s*\d{1,2}:\d{2}(?::\d{2})?\s*\]?$/.test(trimmed)) return false;
 
     // Reject silence, audio indicators, or non-speech tags
     if (/^(silence|silent|none|empty|null|n\/a|audio|ambient|noise|blank|background noise|cough|throat clearing|applause|music|\.|\.\.\.)$/i.test(trimmed)) return false;
+    if (/\bsilence\b/i.test(trimmed) && trimmed.length <= 15) return false;
     if (/^(\[.*\]|\(.*\))$/.test(trimmed)) return false;
+
+    // Reject known hallucination artifacts
+    if (/identify the root cause|first step is to identify|finished the presentation/i.test(trimmed)) return false;
 
     // Reject numbers/punctuation only (must have at least one 2+ letter word)
     if (!/[a-zA-Z]{2,}/.test(trimmed)) return false;
@@ -1243,7 +1247,7 @@ async function handleTranscribeAudio(req, res) {
     const geminiKey = process.env.GEMINI_API_KEY || req.headers['x-gemini-api-key'] || req.body?.geminiApiKey;
 
     if (geminiKey) {
-        const candidateModels = ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'];
+        const candidateModels = ['gemini-3-flash-preview', 'gemini-3.1-flash-lite-preview', 'gemini-3.5-flash-lite'];
         for (const modelName of candidateModels) {
             try {
                 const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${geminiKey}`;
@@ -1256,12 +1260,12 @@ async function handleTranscribeAudio(req, res) {
                             {
                                 parts: [
                                     {
-                                        text: `Transcribe the human spoken words in this audio snippet accurately.
-Rules:
-- The speaker may speak English with an Indian accent or mix common conversational Hindi/Hinglish terms (e.g. Sukhman, notes, meeting, presentation).
-- Return ONLY the exact transcribed spoken words as plain text.
-- Do NOT output timestamps, time codes (e.g., 00:00, 00:01), speaker names, quotation marks, or explanations.
-- If there is no audible human speech or only silence/background noise, reply with SILENCE.`
+                                        text: `You are a speech-to-text transcriber. Transcribe ONLY the human speech actually spoken in this audio snippet as plain text.
+Strict Rules:
+- If there is silence, background noise, breathing, or no clear human speech, you MUST return ONLY: SILENCE
+- Do NOT guess, imagine, fabricate, autocomplete, or invent any words.
+- Do NOT output timestamps, time codes, speaker names, notes, quotation marks, or explanations.
+- Output ONLY the exact transcribed spoken words, or SILENCE.`
                                     },
                                     {
                                         inlineData: {

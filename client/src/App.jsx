@@ -44,7 +44,10 @@ function isValidSpeechTranscript(text, speaker = '') {
   if (/^\[?\s*\d{1,2}:\d{2}(?::\d{2})?\s*\]?$/.test(trimmed)) return false;
   // Reject silence or non-speech noise tags
   if (/^(silence|silent|none|empty|null|n\/a|audio|ambient|noise|blank|background noise|cough|throat clearing|applause|music|\.|\.\.\.)$/i.test(trimmed)) return false;
+  if (/\bsilence\b/i.test(trimmed) && trimmed.length <= 15) return false;
   if (/^(\[.*\]|\(.*\))$/.test(trimmed)) return false;
+  // Reject known hallucination artifacts
+  if (/identify the root cause|first step is to identify|finished the presentation/i.test(trimmed)) return false;
   // Must contain at least two letters (word)
   if (!/[a-zA-Z]{2,}/.test(trimmed)) return false;
   // Reject echoing speaker name
@@ -910,18 +913,47 @@ export default function App() {
                   const rawText = event.results[i][0]?.transcript?.trim();
                   if (rawText && isValidSpeechTranscript(rawText, speakerName)) {
                     const cleanText = rawText.replace(/^["'`«»“”„]+|["'`«»“”„]+$/g, '').trim();
-                    const entry = {
-                      id: `tr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-                      speaker: speakerName,
-                      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                      text: cleanText
-                    };
-                    setTranscript((tPrev) => [...tPrev, entry]);
-                    if (wsRef.current && wsRef.current.readyState === 1) {
-                      wsRef.current.send(JSON.stringify({ type: 'transcript-entry', entry }));
-                    }
-                    // Extract action items live from speech recognition
-                    processLiveTranscriptForActions(speakerName, cleanText);
+                    const now = Date.now();
+                    const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+                    setTranscript((prevTr) => {
+                      const last = prevTr[prevTr.length - 1];
+                      // Merge utterances if same speaker within 7 seconds to keep natural sentences together
+                      if (last && last.speaker === speakerName && (now - (last.timestamp || 0) < 7000)) {
+                        const mergedText = `${last.text} ${cleanText}`.trim();
+                        const updatedLast = {
+                          ...last,
+                          text: mergedText,
+                          timestamp: now
+                        };
+                        const nextList = [...prevTr.slice(0, -1), updatedLast];
+                        if (wsRef.current && wsRef.current.readyState === 1) {
+                          wsRef.current.send(JSON.stringify({ type: 'transcript-entry-update', entry: updatedLast }));
+                        }
+                        return nextList;
+                      }
+                      const entry = {
+                        id: `tr-${now}-${Math.random().toString(36).slice(2, 6)}`,
+                        speaker: speakerName,
+                        time: timeStr,
+                        text: cleanText,
+                        timestamp: now
+                      };
+                      if (wsRef.current && wsRef.current.readyState === 1) {
+                        wsRef.current.send(JSON.stringify({ type: 'transcript-entry', entry }));
+                      }
+                      return [...prevTr, entry];
+                    });
+
+                    // Buffer and debounce live task extraction so pauses do not split into fragmented actions
+                    const existing = utteranceDebounceRef.current.get(speakerName) || { text: '', timer: null };
+                    if (existing.timer) clearTimeout(existing.timer);
+                    const combinedUtterance = existing.text ? `${existing.text} ${cleanText}` : cleanText;
+                    const newTimer = setTimeout(() => {
+                      processLiveTranscriptForActions(speakerName, combinedUtterance);
+                      utteranceDebounceRef.current.delete(speakerName);
+                    }, 4000);
+                    utteranceDebounceRef.current.set(speakerName, { text: combinedUtterance, timer: newTimer });
                   }
                 }
               };
@@ -930,6 +962,15 @@ export default function App() {
               localRecognitionRef.current = rec;
             } catch (e) {}
           }
+        }
+
+        // If native Web Speech Recognition is active for local user, don't run redundant MediaRecorder loop
+        if (isLocal && localRecognitionRef.current) {
+          peerAudioRecordersRef.current.set(peerId, {
+            stop: () => {},
+            recorder: { state: 'recording', stop: () => {} }
+          });
+          return;
         }
 
         // For remote peer: send signaling request
@@ -971,6 +1012,8 @@ export default function App() {
           try {
             let audioStream = new MediaStream(audioTracks);
             let activeAudioCtx = null;
+            let analyser = null;
+            let freqData = null;
             try {
               const AudioCtx = window.AudioContext || window.webkitAudioContext;
               if (AudioCtx) {
@@ -984,6 +1027,10 @@ export default function App() {
                 if (dest.stream && dest.stream.getAudioTracks().length > 0) {
                   audioStream = dest.stream;
                 }
+                analyser = activeAudioCtx.createAnalyser();
+                analyser.fftSize = 256;
+                src.connect(analyser);
+                freqData = new Uint8Array(analyser.frequencyBinCount);
               }
             } catch (e) {}
 
@@ -1011,14 +1058,32 @@ export default function App() {
               try {
                 const rec = new MediaRecorder(audioStream, options);
                 const segChunks = [];
+                let hasAudibleSpeech = !analyser;
+
+                let energyInterval = null;
+                if (analyser && freqData) {
+                  energyInterval = setInterval(() => {
+                    analyser.getByteFrequencyData(freqData);
+                    let sum = 0;
+                    for (let i = 0; i < freqData.length; i++) {
+                      sum += freqData[i];
+                    }
+                    if (sum / freqData.length > 6) {
+                      hasAudibleSpeech = true;
+                    }
+                  }, 200);
+                }
+
                 rec.ondataavailable = (e) => {
                   if (e.data && e.data.size > 0) {
                     segChunks.push(e.data);
                   }
                 };
                 rec.onstop = () => {
+                  if (energyInterval) clearInterval(energyInterval);
                   const mime = rec.mimeType || mimeType || 'audio/webm';
-                  if (segChunks.length > 0) {
+                  // Only send if non-silent audio was recorded
+                  if (segChunks.length > 0 && hasAudibleSpeech) {
                     const blob = new Blob(segChunks, { type: mime });
                     if (blob.size >= 500) {
                       sendAudioBlobForTranscription(blob, mime, speakerName);
@@ -1030,7 +1095,6 @@ export default function App() {
                 };
                 sessionState.currentRecorder = rec;
                 rec.start();
-                // 7-second cyclic segment ensuring complete sentences and avoiding cutoffs on 3-4s pauses
                 sessionState.timer = setTimeout(() => {
                   if (rec.state === 'recording') {
                     rec.stop();
@@ -1312,6 +1376,8 @@ export default function App() {
           title: task.title,
           description: `Action item assigned to ${task.assignee || 'You'}. Due: ${task.due || 'Upcoming'}\nRoom: ${roomName}`,
           due: task.due,
+          startTime: task.startTime,
+          endTime: task.endTime,
           timeZone: userTimeZone,
           sessionId: user?.sessionId,
           requireTime: true

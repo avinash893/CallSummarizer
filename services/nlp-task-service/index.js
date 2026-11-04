@@ -83,7 +83,7 @@ const handleExtractTasks = async (req, res) => {
 
     if (geminiKey && transcript) {
         try {
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${geminiKey}`;
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${geminiKey}`;
             const prompt = `Extract action items from this meeting transcript in JSON format.
 Transcript:
 ${transcript}

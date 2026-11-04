@@ -44,12 +44,14 @@ export default function ControlDock({
           <i className="bi bi-display"></i>
         </button>
 
-        {/* Notes button */}
+        {/* Notes, Transcript & Actions button */}
         <button
           type="button"
           className={`btn btn-outline-secondary dock-icon-btn ${isNotesOpen ? 'active' : ''}`}
           onClick={() => setIsNotesOpen(!isNotesOpen)}
           title="Meeting notes"
+          aria-label="Toggle transcript, notes and action items"
+          data-testid="dock-btn-notes"
         >
           <i className="bi bi-journal-text"></i>
         </button>
@@ -61,9 +63,10 @@ export default function ControlDock({
         className="btn dock-leave-btn"
         onClick={onLeaveCall}
         title="Leave call"
+        aria-label="Leave call"
       >
         <i className="bi bi-telephone-x-fill"></i>
-        <span>Leave call</span>
+        <span className="leave-text">Leave call</span>
       </button>
     </div>
   );

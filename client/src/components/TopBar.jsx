@@ -24,7 +24,8 @@ export default function TopBar({
       <div className="top-nav-left">
         <div className="brand-title">
           <i className="bi bi-terminal-split"></i>
-          <span>CallSummarizer</span>
+          <span className="brand-text-full">CallSummarizer</span>
+          <span className="brand-text-short">CS</span>
         </div>
 
         <button
@@ -34,7 +35,7 @@ export default function TopBar({
           title="Copy meeting link"
         >
           <i className={`bi ${copied ? 'bi-check2' : 'bi-clipboard'}`}></i>
-          <span>{copied ? 'Link copied!' : roomName}</span>
+          <span>{copied ? 'Copied' : roomName}</span>
         </button>
 
         <span className="participant-count-badge" title="Active participants in meeting">
@@ -54,7 +55,7 @@ export default function TopBar({
         <div className="btn-group btn-group-sm" role="group" aria-label="Workspace actions">
           <button
             type="button"
-            className="btn btn-outline-secondary nav-btn"
+            className="btn btn-outline-secondary nav-btn nav-btn-services"
             onClick={onOpenArchModal}
             title="View Services Status"
           >
@@ -64,9 +65,10 @@ export default function TopBar({
 
           <button
             type="button"
-            className={`btn btn-outline-secondary nav-btn ${isNotesOpen ? 'active' : ''}`}
+            className={`btn btn-outline-secondary nav-btn nav-btn-notes ${isNotesOpen ? 'active' : ''}`}
             onClick={() => setIsNotesOpen(!isNotesOpen)}
             title="Toggle Meeting Notes"
+            aria-label="Toggle meeting notes, transcript and action items"
           >
             <i className="bi bi-journal-text"></i>
             <span>{isNotesOpen ? 'Close Notes' : 'Notes'}</span>

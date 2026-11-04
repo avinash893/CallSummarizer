@@ -67,10 +67,19 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  height: 100dvh;
   width: 100vw;
   background-color: var(--bg-app);
   position: relative;
   overflow: hidden;
+}
+
+.brand-text-short {
+  display: none;
+}
+
+.mobile-notes-fab {
+  display: none;
 }
 
 /* ==========================================================================
@@ -500,8 +509,9 @@ body {
    4. Tactile Bottom Control Dock
    ========================================================================== */
 .bottom-dock {
-  position: absolute;
+  position: fixed;
   bottom: 20px;
+  bottom: max(16px, env(safe-area-inset-bottom, 16px));
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -511,7 +521,8 @@ body {
   border: 1px solid var(--border-subtle);
   padding: 6px 10px;
   border-radius: var(--bs-border-radius-lg);
-  z-index: 30;
+  z-index: 100;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
 }
 
 .dock-icon-btn {
@@ -1316,6 +1327,75 @@ body {
 }
 
 @media (max-width: 600px) {
+  .brand-text-full {
+    display: none !important;
+  }
+  .brand-text-short {
+    display: inline !important;
+  }
+  .top-nav {
+    padding: 0 8px;
+    gap: 6px;
+  }
+  .top-nav-left {
+    gap: 6px;
+  }
+  .room-chip {
+    max-width: 100px;
+    padding: 0.25rem 0.45rem;
+    font-size: 0.72rem;
+  }
+  .room-chip span {
+    max-width: 65px;
+  }
+  .participant-count-badge {
+    padding: 3px 6px;
+    font-size: 0.7rem;
+  }
+  .call-timer {
+    padding: 3px 6px;
+    font-size: 0.72rem;
+  }
+  .top-nav-right {
+    gap: 4px;
+  }
+  .nav-btn-services {
+    display: none !important;
+  }
+  .nav-btn-notes {
+    padding: 0.25rem 0.6rem !important;
+    font-size: 0.75rem !important;
+    background: #FF4F00 !important;
+    border-color: #FF4F00 !important;
+    color: #ffffff !important;
+    font-weight: 600 !important;
+    display: inline-flex !important;
+  }
+
+  /* Floating Action Button for Transcript & Actions */
+  .mobile-notes-fab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    position: fixed;
+    top: 58px;
+    right: 10px;
+    z-index: 90;
+    background: #FF4F00;
+    color: #ffffff;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    padding: 6px 12px;
+    border-radius: var(--bs-border-radius-sm);
+    font-size: 0.76rem;
+    font-weight: 600;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.55);
+    cursor: pointer;
+    transition: transform 0.15s ease;
+  }
+  .mobile-notes-fab:active {
+    transform: scale(0.96);
+  }
+
   .right-drawer {
     width: 100vw;
     min-width: 100vw;
@@ -1323,18 +1403,24 @@ body {
     right: 0;
     top: 50px;
     bottom: 0;
-    z-index: 50;
+    z-index: 150;
   }
   .bottom-dock {
-    bottom: 12px;
-    padding: 6px 10px;
+    bottom: max(14px, env(safe-area-inset-bottom, 14px));
+    padding: 6px 8px;
     gap: 6px;
-    max-width: 96vw;
+    max-width: 95vw;
+  }
+  .dock-leave-btn .leave-text {
+    display: none;
+  }
+  .dock-leave-btn {
+    padding: 6px 10px;
   }
   .dock-icon-btn {
-    width: 42px;
-    height: 42px;
-    font-size: 1.15rem;
+    width: 38px;
+    height: 38px;
+    font-size: 1.05rem;
   }
   .video-grid-container.count-many,
   .video-grid-container.count-3,
@@ -1342,13 +1428,12 @@ body {
     grid-template-columns: 1fr;
   }
   .video-tile {
-    min-height: 160px;
-    max-height: 32vh;
+    min-height: 150px;
+    max-height: 34vh;
   }
   .tile-capture-btn {
-    padding: 6px 10px;
-    font-size: 0.78rem;
-    min-height: 32px;
+    padding: 4px 8px;
+    font-size: 0.74rem;
   }
   .drawer-close-btn {
     padding: 4px 8px;

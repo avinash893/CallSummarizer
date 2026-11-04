@@ -1229,6 +1229,20 @@ export default function App() {
           />
 
           <main className="main-stage">
+            {!isNotesOpen && (
+              <button
+                type="button"
+                className="mobile-notes-fab"
+                onClick={() => setIsNotesOpen(true)}
+                title="Open Transcript & Action Items"
+                aria-label="Open transcript and action items"
+                data-testid="mobile-notes-fab"
+              >
+                <i className="bi bi-card-checklist me-1"></i>
+                <span>Notes & Actions</span>
+              </button>
+            )}
+
             <VideoCanvas
               isVideoOn={isVideoOn}
               isAudioOn={isAudioOn}

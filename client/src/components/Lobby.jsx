@@ -266,7 +266,7 @@ export default function Lobby({
   const displayInitials = user?.initials || (user?.name === 'You' ? 'You' : user?.name?.slice(0, 2).toUpperCase() || 'You');
 
   return (
-    <div className="lobby-screen">
+    <main className="lobby-screen">
       <div className="lobby-box">
         <div className="lobby-header-row">
           <div>
@@ -288,6 +288,7 @@ export default function Lobby({
                   className="btn-signout-mini"
                   onClick={handleSignOut}
                   title="Sign out of Google"
+                  aria-label="Sign out of Google"
                 >
                   <i className="bi bi-box-arrow-right"></i>
                 </button>
@@ -323,6 +324,7 @@ export default function Lobby({
               type="text"
               className="lobby-input"
               placeholder="Your Full Name (e.g. Avinash)"
+              aria-label="Your full name"
               value={googleName}
               onChange={(e) => setGoogleName(e.target.value)}
               required
@@ -331,6 +333,7 @@ export default function Lobby({
               type="email"
               className="lobby-input"
               placeholder="Google Email (e.g. name@gmail.com)"
+              aria-label="Google email address"
               value={googleEmail}
               onChange={(e) => setGoogleEmail(e.target.value)}
               required
@@ -377,6 +380,7 @@ export default function Lobby({
               className={`btn btn-outline-secondary dock-icon-btn ${!isAudioOn ? 'muted' : ''}`}
               onClick={toggleAudio}
               title={isAudioOn ? 'Mute microphone' : 'Unmute microphone'}
+              aria-label={isAudioOn ? 'Mute microphone' : 'Unmute microphone'}
             >
               <i className={`bi ${isAudioOn ? 'bi-mic-fill' : 'bi-mic-mute-fill'}`}></i>
             </button>
@@ -385,6 +389,7 @@ export default function Lobby({
               className={`btn btn-outline-secondary dock-icon-btn ${!isVideoOn ? 'muted' : ''}`}
               onClick={toggleVideo}
               title={isVideoOn ? 'Turn off camera' : 'Turn on camera'}
+              aria-label={isVideoOn ? 'Turn off camera' : 'Turn on camera'}
             >
               <i className={`bi ${isVideoOn ? 'bi-camera-video-fill' : 'bi-camera-video-off-fill'}`}></i>
             </button>
@@ -423,6 +428,7 @@ export default function Lobby({
               type="text"
               className="form-control lobby-input"
               placeholder="Meeting name, code, or link (e.g. abc-defg-hij)"
+              aria-label="Meeting name, code, or link"
               value={roomName}
               onChange={handleRoomInputChange}
               required
@@ -445,6 +451,6 @@ export default function Lobby({
           }}
         />
       </div>
-    </div>
+    </main>
   );
 }

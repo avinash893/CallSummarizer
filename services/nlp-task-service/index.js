@@ -26,8 +26,8 @@ app.get('/health', (req, res) => {
 function extractLocalTasks(text) {
     if (!text || typeof text !== 'string') {
         return [
-            { id: 1, title: 'Review frontend responsiveness', assignee: 'You', due: 'Tomorrow' },
-            { id: 2, title: 'Connect signaling service', assignee: 'Rohan Sharma', due: 'Friday' }
+            { id: '1', title: 'Review frontend responsiveness', assignee: 'You', due: 'Tomorrow' },
+            { id: '2', title: 'Connect signaling service', assignee: 'Rohan Sharma', due: 'Friday' }
         ];
     }
 
@@ -59,7 +59,7 @@ function extractLocalTasks(text) {
             taskTitle = taskTitle.replace(/\s+(by|on|due)\s+(tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday).*/i, '').trim();
 
             tasks.push({
-                id: tasks.length + 1,
+                id: String(tasks.length + 1),
                 title: taskTitle,
                 assignee,
                 due
@@ -69,20 +69,20 @@ function extractLocalTasks(text) {
 
     if (tasks.length === 1) {
         tasks.unshift({
-            id: 1,
+            id: '1',
             title: 'Review frontend responsiveness',
             assignee: 'You',
             due: 'Tomorrow'
         });
         tasks.forEach((t, idx) => {
-            t.id = idx + 1;
+            t.id = String(idx + 1);
         });
     }
 
     if (tasks.length === 0) {
         return [
-            { id: 1, title: 'Review frontend responsiveness', assignee: 'You', due: 'Tomorrow' },
-            { id: 2, title: 'Connect signaling service', assignee: 'Rohan Sharma', due: 'Friday' }
+            { id: '1', title: 'Review frontend responsiveness', assignee: 'You', due: 'Tomorrow' },
+            { id: '2', title: 'Connect signaling service', assignee: 'Rohan Sharma', due: 'Friday' }
         ];
     }
 
@@ -90,7 +90,7 @@ function extractLocalTasks(text) {
 }
 
 // Process meeting transcript text and extract structured tasks
-app.post('/api/extract-tasks', async (req, res) => {
+const handleExtractTasks = async (req, res) => {
     const { transcript } = req.body || {};
 
     if (process.env.GEMINI_API_KEY && transcript) {
@@ -122,7 +122,14 @@ Return JSON structure:
                 if (rawJson) {
                     const parsed = JSON.parse(rawJson);
                     if (Array.isArray(parsed.tasks) && parsed.tasks.length > 0) {
-                        return res.json({ tasks: parsed.tasks, source: 'gemini-1.5-flash' });
+                        const normalizedTasks = parsed.tasks.map((t, idx) => ({
+                            ...t,
+                            id: (t.id !== undefined && t.id !== null && String(t.id).trim() !== '')
+                                ? String(t.id)
+                                : `task-${Date.now()}-${idx + 1}`,
+                            completed: Boolean(t.completed)
+                        }));
+                        return res.json({ tasks: normalizedTasks, source: 'gemini-1.5-flash' });
                     }
                 }
             }
@@ -131,9 +138,19 @@ Return JSON structure:
         }
     }
 
-    const tasks = extractLocalTasks(transcript);
+    const rawTasks = extractLocalTasks(transcript);
+    const tasks = rawTasks.map((t, idx) => ({
+        ...t,
+        id: (t.id !== undefined && t.id !== null && String(t.id).trim() !== '')
+            ? String(t.id)
+            : String(idx + 1),
+        completed: Boolean(t.completed)
+    }));
     res.json({ tasks, source: 'heuristic-nlp' });
-});
+};
+
+app.post('/api/extract-tasks', handleExtractTasks);
+app.post('/extract-tasks', handleExtractTasks);
 
 if (require.main === module) {
     app.listen(PORT, () => {

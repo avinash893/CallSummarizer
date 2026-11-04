@@ -1,17 +1,99 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 
 export default function ArchitectureModal({ isOpen, onClose }) {
+  const dialogRef = useRef(null);
+  const previouslyFocusedElementRef = useRef(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    // Save triggering element before modal takes focus
+    previouslyFocusedElementRef.current = document.activeElement;
+
+    const focusableSelector = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+
+    // Move initial focus to first focusable element inside modal
+    const focusTimer = setTimeout(() => {
+      if (dialogRef.current) {
+        const firstFocusable = dialogRef.current.querySelector(focusableSelector);
+        if (firstFocusable && typeof firstFocusable.focus === 'function') {
+          firstFocusable.focus();
+        } else if (typeof dialogRef.current.focus === 'function') {
+          dialogRef.current.focus();
+        }
+      }
+    }, 0);
+
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        if (onClose) onClose();
+        return;
+      }
+
+      if (e.key === 'Tab' && dialogRef.current) {
+        const focusables = Array.from(dialogRef.current.querySelectorAll(focusableSelector)).filter(
+          (el) => !el.hasAttribute('disabled')
+        );
+
+        if (focusables.length === 0) {
+          e.preventDefault();
+          return;
+        }
+
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+
+        if (e.shiftKey) {
+          if (document.activeElement === first || !dialogRef.current.contains(document.activeElement)) {
+            e.preventDefault();
+            last.focus();
+          }
+        } else {
+          if (document.activeElement === last || !dialogRef.current.contains(document.activeElement)) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      clearTimeout(focusTimer);
+      window.removeEventListener('keydown', handleKeyDown);
+      if (previouslyFocusedElementRef.current && typeof previouslyFocusedElementRef.current.focus === 'function') {
+        previouslyFocusedElementRef.current.focus();
+      }
+    };
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-dialog" onClick={(e) => e.stopPropagation()}>
+      <div
+        ref={dialogRef}
+        className="modal-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="architecture-modal-title"
+        tabIndex={-1}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="modal-title-row">
-          <h3>
+          <h3 id="architecture-modal-title">
             <i className="bi bi-diagram-3" style={{ marginRight: '8px' }}></i>
             Services Architecture & Status
           </h3>
-          <button type="button" className="btn btn-outline-secondary btn-sm modal-close" onClick={onClose} title="Close modal">
+          <button
+            type="button"
+            className="btn btn-outline-secondary btn-sm modal-close"
+            onClick={onClose}
+            title="Close modal"
+            aria-label="Close modal"
+          >
             <i className="bi bi-x-lg"></i>
           </button>
         </div>

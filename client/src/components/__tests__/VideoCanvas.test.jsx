@@ -109,4 +109,44 @@ describe('VideoCanvas Component', () => {
     expect(captureBtn).toHaveClass('active');
     expect(captureBtn).toHaveTextContent(/Capturing/i);
   });
+
+  it('renders capture button on local participant tile and triggers toggle callback with local', () => {
+    let capturedId = null;
+    render(
+      <VideoCanvas
+        isVideoOn={true}
+        isAudioOn={true}
+        localStream={null}
+        remotePeers={[]}
+        capturedPeerIds={[]}
+        onToggleCapturePeer={(id) => {
+          capturedId = id;
+        }}
+      />
+    );
+
+    const localCaptureBtn = screen.getByTestId('btn-capture-local');
+    expect(localCaptureBtn).toBeInTheDocument();
+    localCaptureBtn.click();
+    expect(capturedId).toBe('local');
+  });
+
+  it('renders dedicated hidden audio element for remote peers for continuous mobile audio', () => {
+    const remotePeers = [
+      { peerId: 'peer-cathy', name: 'Cathy Lee', initials: 'CL', isAudioOn: true, isVideoOn: false }
+    ];
+
+    const { container } = render(
+      <VideoCanvas
+        isVideoOn={true}
+        isAudioOn={true}
+        localStream={null}
+        remotePeers={remotePeers}
+      />
+    );
+
+    const audioEl = container.querySelector('audio');
+    expect(audioEl).toBeInTheDocument();
+    expect(audioEl).toHaveAttribute('playsinline');
+  });
 });

@@ -9,6 +9,7 @@ function getInitials(name = 'User') {
 
 export default function NotesDrawer({
   isOpen,
+  onClose,
   tasks = [],
   transcript = [],
   onToggleTask,
@@ -92,48 +93,96 @@ export default function NotesDrawer({
   return (
     <aside className="right-drawer">
       <div className="drawer-top">
-        <div className="drawer-tabs nav nav-tabs" role="tablist">
-          <button
-            type="button"
-            className={`nav-link drawer-tab-btn ${activeTab === 'notes' ? 'active' : ''}`}
-            onClick={() => setActiveTab('notes')}
+        <div className="drawer-tabs nav nav-tabs" role="tablist" aria-label="Meeting notes and transcript tabs">
+          <div
+            role="tab"
+            id="tab-notes"
+            aria-selected={activeTab === 'notes'}
+            aria-controls="tabpanel-notes"
+            tabIndex={activeTab === 'notes' ? 0 : -1}
           >
-            <i className="bi bi-card-checklist" style={{ marginRight: '6px' }}></i>
-            <span>Notes</span>
-          </button>
-          <button
-            type="button"
-            className={`nav-link drawer-tab-btn ${activeTab === 'transcript' ? 'active' : ''}`}
-            onClick={() => setActiveTab('transcript')}
+            <button
+              type="button"
+              className={`nav-link drawer-tab-btn ${activeTab === 'notes' ? 'active' : ''}`}
+              onClick={() => setActiveTab('notes')}
+              aria-selected={activeTab === 'notes'}
+              aria-controls="tabpanel-notes"
+            >
+              <i className="bi bi-card-checklist" style={{ marginRight: '6px' }}></i>
+              <span>Notes</span>
+            </button>
+          </div>
+          <div
+            role="tab"
+            id="tab-transcript"
+            aria-selected={activeTab === 'transcript'}
+            aria-controls="tabpanel-transcript"
+            tabIndex={activeTab === 'transcript' ? 0 : -1}
           >
-            <i className="bi bi-chat-left-text" style={{ marginRight: '6px' }}></i>
-            <span>Transcript</span>
-          </button>
-          <button
-            type="button"
-            className={`nav-link drawer-tab-btn ${activeTab === 'captured' ? 'active' : ''}`}
-            onClick={() => setActiveTab('captured')}
-            data-testid="tab-captured-audio"
+            <button
+              type="button"
+              className={`nav-link drawer-tab-btn ${activeTab === 'transcript' ? 'active' : ''}`}
+              onClick={() => setActiveTab('transcript')}
+              aria-selected={activeTab === 'transcript'}
+              aria-controls="tabpanel-transcript"
+            >
+              <i className="bi bi-chat-left-text" style={{ marginRight: '6px' }}></i>
+              <span>Transcript</span>
+            </button>
+          </div>
+          <div
+            role="tab"
+            id="tab-captured"
+            aria-selected={activeTab === 'captured'}
+            aria-controls="tabpanel-captured"
+            tabIndex={activeTab === 'captured' ? 0 : -1}
           >
-            <i className="bi bi-soundwave" style={{ marginRight: '6px' }}></i>
-            <span>Captured</span>
-            {capturedPeerIds.length > 0 && (
-              <span className="badge bg-danger ms-1" style={{ fontSize: '0.6rem', padding: '2px 5px' }}>
-                REC
-              </span>
-            )}
-            {capturedAudioClips.length > 0 && (
-              <span className="badge bg-secondary ms-1" style={{ fontSize: '0.6rem', padding: '2px 5px' }}>
-                {capturedAudioClips.length}
-              </span>
-            )}
-          </button>
+            <button
+              type="button"
+              className={`nav-link drawer-tab-btn ${activeTab === 'captured' ? 'active' : ''}`}
+              onClick={() => setActiveTab('captured')}
+              aria-selected={activeTab === 'captured'}
+              aria-controls="tabpanel-captured"
+              data-testid="tab-captured-audio"
+            >
+              <i className="bi bi-soundwave" style={{ marginRight: '6px' }}></i>
+              <span>Captured</span>
+              {capturedPeerIds.length > 0 && (
+                <span className="badge bg-danger ms-1" style={{ fontSize: '0.6rem', padding: '2px 5px' }}>
+                  REC
+                </span>
+              )}
+              {capturedAudioClips.length > 0 && (
+                <span className="badge bg-secondary ms-1" style={{ fontSize: '0.6rem', padding: '2px 5px' }}>
+                  {capturedAudioClips.length}
+                </span>
+              )}
+            </button>
+          </div>
         </div>
+        {onClose && (
+          <button
+            type="button"
+            className="btn btn-sm btn-outline-secondary drawer-close-btn ms-2"
+            onClick={onClose}
+            title="Close drawer"
+            aria-label="Close notes drawer"
+            data-testid="btn-close-drawer"
+          >
+            <i className="bi bi-x-lg"></i>
+          </button>
+        )}
       </div>
 
       <div className="drawer-body">
         {activeTab === 'captured' ? (
-          <div className="captured-audio-view" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div
+            id="tabpanel-captured"
+            role="tabpanel"
+            aria-labelledby="tab-captured"
+            className="captured-audio-view"
+            style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}
+          >
             {/* Active selective capture status */}
             <div className="notes-card">
               <div className="notes-card-title">
@@ -260,7 +309,12 @@ export default function NotesDrawer({
             </div>
           </div>
         ) : activeTab === 'notes' ? (
-          <>
+          <div
+            id="tabpanel-notes"
+            role="tabpanel"
+            aria-labelledby="tab-notes"
+            style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}
+          >
             {/* Discussion Summary */}
             <div className="notes-card">
               <div className="notes-card-title">
@@ -297,6 +351,7 @@ export default function NotesDrawer({
                     className="form-control lobby-input"
                     style={{ flex: 1, padding: '7px 10px', fontSize: '0.8rem' }}
                     placeholder="Add action item..."
+                    aria-label="Add action item"
                     value={newTaskTitle}
                     onChange={(e) => setNewTaskTitle(e.target.value)}
                   />
@@ -411,9 +466,14 @@ export default function NotesDrawer({
                 <span>Download PDF Summary</span>
               </button>
             </div>
-          </>
+          </div>
         ) : (
-          <div className="transcript-box">
+          <div
+            id="tabpanel-transcript"
+            role="tabpanel"
+            aria-labelledby="tab-transcript"
+            className="transcript-box"
+          >
             {transcript.length === 0 ? (
               <div className="transcript-message">
                 <p className="message-text" style={{ color: 'var(--text-muted)' }}>
@@ -442,6 +502,7 @@ export default function NotesDrawer({
                   className="form-control lobby-input"
                   style={{ flex: 1, padding: '8px 10px', fontSize: '0.8rem' }}
                   placeholder="Type a meeting note or commitment..."
+                  aria-label="Type a meeting note or commitment"
                   value={newTranscriptText}
                   onChange={(e) => setNewTranscriptText(e.target.value)}
                 />

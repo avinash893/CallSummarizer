@@ -380,7 +380,8 @@ body {
   color: var(--text-secondary);
   font-size: 0.72rem;
   font-weight: 500;
-  padding: 4px 9px;
+  padding: 6px 12px;
+  min-height: 28px;
   border-radius: var(--bs-border-radius-sm);
   cursor: pointer;
   transition: all 0.15s ease-in-out;
@@ -886,8 +887,14 @@ body {
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  padding: 4px;
+  padding: 6px 8px;
+  min-width: 28px;
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-size: 0.85rem;
+  border-radius: var(--radius-xs);
 }
 
 .btn-signout-mini:hover {
@@ -1078,7 +1085,12 @@ body {
   color: var(--text-secondary);
   cursor: pointer;
   font-size: 1.1rem;
-  padding: 4px;
+  padding: 6px 10px;
+  min-width: 32px;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: var(--radius-xs);
 }
 
@@ -1266,8 +1278,14 @@ body {
   color: #f87171;
   font-size: 1.1rem;
   cursor: pointer;
-  padding: 0 4px;
+  padding: 4px 8px;
+  min-width: 28px;
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   line-height: 1;
+  border-radius: var(--radius-xs);
 }
 
 .btn-dismiss-alert:hover {
@@ -1295,4 +1313,72 @@ body {
     max-width: 100%;
     max-height: 38vh;
   }
+}
+
+@media (max-width: 600px) {
+  .right-drawer {
+    width: 100vw;
+    min-width: 100vw;
+    left: 0;
+    right: 0;
+    top: 50px;
+    bottom: 0;
+    z-index: 50;
+  }
+  .bottom-dock {
+    bottom: 12px;
+    padding: 6px 10px;
+    gap: 6px;
+    max-width: 96vw;
+  }
+  .dock-icon-btn {
+    width: 42px;
+    height: 42px;
+    font-size: 1.15rem;
+  }
+  .video-grid-container.count-many,
+  .video-grid-container.count-3,
+  .video-grid-container.count-4 {
+    grid-template-columns: 1fr;
+  }
+  .video-tile {
+    min-height: 160px;
+    max-height: 32vh;
+  }
+  .tile-capture-btn {
+    padding: 6px 10px;
+    font-size: 0.78rem;
+    min-height: 32px;
+  }
+  .drawer-close-btn {
+    padding: 4px 8px;
+    font-size: 0.85rem;
+  }
+}
+
+/* ==========================================================================
+   7. Accessibility: High-Contrast Focus Visible Outline
+   ========================================================================== */
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+a:focus-visible,
+.btn:focus-visible,
+.room-chip:focus-visible,
+.modal-dialog:focus-visible,
+.modal-card:focus-visible,
+[role="button"]:focus-visible,
+[role="tab"]:focus-visible,
+[role="dialog"]:focus-visible,
+[tabindex]:focus-visible,
+.tile-capture-btn:focus-visible,
+.btn-signout-mini:focus-visible,
+.btn-dismiss-alert:focus-visible,
+.modal-close:focus-visible,
+.dock-icon-btn:focus-visible,
+.lobby-input:focus-visible,
+.drawer-tab-btn:focus-visible {
+  outline: 2px solid var(--accent-primary) !important;
+  outline-offset: 2px !important;
 }

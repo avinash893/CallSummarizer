@@ -34,11 +34,30 @@ const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
 const TURNSTILE_SITE_KEY = process.env.CLOUDFLARE_TURNSTILE_SITE_KEY || '';
 const TURNSTILE_SECRET_KEY = process.env.CLOUDFLARE_TURNSTILE_SECRET_KEY || '';
 
+app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    next();
+});
+
 app.use(cors({
     origin: true,
     credentials: true
 }));
 app.use(express.json());
+
+function setSessionCookie(res, req, sessionId, expires = null) {
+    const isSecure = process.env.NODE_ENV === 'production' || Boolean(req?.secure) || req?.headers?.['x-forwarded-proto'] === 'https';
+    let cookie = `cs_session_id=${sessionId}; Path=/; HttpOnly; SameSite=Lax`;
+    if (expires) {
+        cookie += `; Expires=${expires}`;
+    }
+    if (isSecure) {
+        cookie += '; Secure';
+    }
+    res.setHeader('Set-Cookie', cookie);
+}
 
 // In-memory store for active rooms
 const rooms = new Map();
@@ -157,11 +176,14 @@ app.get('/api/config', (req, res) => {
 // Cloudflare Turnstile verification endpoint
 app.post('/api/auth/verify-turnstile', async (req, res) => {
     const { token } = req.body || {};
-    if (!token) {
+    if (!token || typeof token !== 'string' || !token.trim()) {
         return res.status(400).json({ verified: false, error: 'Missing Turnstile token' });
     }
 
     if (token === 'turnstile_fallback_token') {
+        if (process.env.NODE_ENV === 'production') {
+            return res.status(400).json({ verified: false, error: 'Fallback token not allowed in production' });
+        }
         return res.json({ verified: true, mode: 'fallback' });
     }
 
@@ -180,10 +202,9 @@ app.post('/api/auth/verify-turnstile', async (req, res) => {
         if (data.success) {
             return res.json({ verified: true, mode: 'cloudflare' });
         }
-        // Graceful fallback if hostname is not yet whitelisted in Cloudflare dashboard
-        return res.json({ verified: true, mode: 'hostname-fallback', details: data['error-codes'] || [] });
+        return res.json({ verified: false, error: 'Invalid Turnstile token' });
     } catch (err) {
-        return res.json({ verified: true, mode: 'network-fallback' });
+        return res.status(502).json({ verified: false, error: 'Turnstile verification network error' });
     }
 });
 
@@ -225,7 +246,7 @@ app.post('/api/auth/google', async (req, res) => {
                 createdAt: existingSession?.createdAt || new Date().toISOString()
             });
 
-            res.setHeader('Set-Cookie', `cs_session_id=${sessionId}; Path=/; HttpOnly; SameSite=Lax`);
+            setSessionCookie(res, req, sessionId);
             return res.json({
                 authenticated: true,
                 provider: 'google-jwt',
@@ -297,7 +318,7 @@ app.post('/api/auth/google', async (req, res) => {
                 createdAt: existingSession?.createdAt || new Date().toISOString()
             });
 
-            res.setHeader('Set-Cookie', `cs_session_id=${sessionId}; Path=/; HttpOnly; SameSite=Lax`);
+            setSessionCookie(res, req, sessionId);
             return res.json({
                 authenticated: true,
                 provider: 'google-oauth',
@@ -341,7 +362,7 @@ app.post('/api/auth/google', async (req, res) => {
                 createdAt: existingSession?.createdAt || new Date().toISOString()
             });
 
-            res.setHeader('Set-Cookie', `cs_session_id=${sessionId}; Path=/; HttpOnly; SameSite=Lax`);
+            setSessionCookie(res, req, sessionId);
             return res.json({
                 authenticated: true,
                 provider: 'google-account',
@@ -477,7 +498,7 @@ app.get('/api/auth/google/callback', async (req, res) => {
                 },
                 createdAt: new Date().toISOString()
             });
-            res.setHeader('Set-Cookie', `cs_session_id=${sessionId}; Path=/; HttpOnly; SameSite=Lax`);
+            setSessionCookie(res, req, sessionId);
             return res.redirect(`/?sessionId=${encodeURIComponent(sessionId)}&googleCredential=${encodeURIComponent(tokenData.id_token || '')}`);
         }
         return res.redirect('/?authError=token_exchange_failed');
@@ -493,7 +514,7 @@ app.post('/api/auth/logout', (req, res) => {
     if (targetSessionId && sessions.has(targetSessionId)) {
         sessions.delete(targetSessionId);
     }
-    res.setHeader('Set-Cookie', 'cs_session_id=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; SameSite=Lax');
+    setSessionCookie(res, req, '', 'Thu, 01 Jan 1970 00:00:00 GMT');
     return res.json({ success: true });
 });
 
@@ -748,7 +769,11 @@ app.post('/api/calendar/events', async (req, res) => {
 
 // Meeting Service routes
 app.get('/api/rooms/:id', (req, res) => {
-    const room = getOrCreateRoom(req.params.id);
+    const normalized = normalizeRoomId(req.params.id);
+    if (!rooms.has(normalized)) {
+        return res.status(404).json({ error: 'Room not found' });
+    }
+    const room = rooms.get(normalized);
     const activeParticipants = Array.from(room.participants.values());
     res.json({
         roomId: room.roomId,
@@ -762,10 +787,46 @@ app.get('/api/rooms/:id', (req, res) => {
     });
 });
 
-app.post('/api/rooms', (req, res) => {
+app.post('/api/rooms', async (req, res) => {
+    const session = getSession(req);
+    const turnstileToken = req.body?.turnstileToken || req.body?.token || req.headers?.['x-turnstile-token'];
+
+    let isTurnstileValid = false;
+    if (turnstileToken && typeof turnstileToken === 'string') {
+        if (turnstileToken === 'turnstile_fallback_token') {
+            if (process.env.NODE_ENV !== 'production') {
+                isTurnstileValid = true;
+            }
+        } else if (TURNSTILE_SECRET_KEY) {
+            try {
+                const params = new URLSearchParams();
+                params.append('secret', TURNSTILE_SECRET_KEY);
+                params.append('response', turnstileToken);
+                const cfRes = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: params.toString()
+                });
+                const data = await cfRes.json();
+                if (data.success) {
+                    isTurnstileValid = true;
+                }
+            } catch (e) {
+                // Ignore verification network error
+            }
+        }
+    }
+
+    if (!session && !isTurnstileValid) {
+        return res.status(401).json({
+            error: 'Authentication or Turnstile verification required to create a room'
+        });
+    }
+
     const { roomId, host } = req.body || {};
+    const hostName = session?.user?.name || host || 'Host';
     const targetCode = roomId ? normalizeRoomId(roomId) : generateMeetingCode();
-    const room = getOrCreateRoom(targetCode, host || 'Host');
+    const room = getOrCreateRoom(targetCode, hostName);
     res.status(201).json({
         roomId: room.roomId,
         host: room.host,
@@ -777,18 +838,27 @@ app.post('/api/rooms', (req, res) => {
 
 // NLP Task Extraction route
 app.post('/api/nlp-tasks/extract-tasks', async (req, res) => {
-    const { transcript, roomId } = req.body || {};
+    if (!req.body || typeof req.body !== 'object') {
+        return res.status(400).json({ error: 'Invalid request body' });
+    }
+    const { transcript, roomId } = req.body;
+
+    if (transcript !== undefined && transcript !== null && typeof transcript !== 'string') {
+        return res.status(400).json({ error: 'Transcript must be a string' });
+    }
 
     if (!transcript || !String(transcript).trim()) {
         return res.json({ tasks: [], source: 'empty-transcript' });
     }
+
+    const cleanTranscript = String(transcript).trim().slice(0, 50000);
 
     if (process.env.GEMINI_API_KEY) {
         try {
             const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`;
             const prompt = `Extract action items from this meeting transcript in JSON format.
 Transcript:
-${transcript}
+${cleanTranscript}
 
 Return JSON structure:
 {
@@ -814,7 +884,9 @@ Return JSON structure:
                     if (Array.isArray(parsed.tasks) && parsed.tasks.length > 0) {
                         const normalizedTasks = parsed.tasks.map((t, idx) => ({
                             ...t,
-                            id: t.id !== undefined && t.id !== null && t.id !== '' ? `${t.id}-${idx + 1}` : `task-${Date.now()}-${idx + 1}`,
+                            id: (t.id !== undefined && t.id !== null && String(t.id).trim() !== '')
+                                ? `${String(t.id)}-${idx + 1}`
+                                : `task-${Date.now()}-${idx + 1}`,
                             completed: Boolean(t.completed)
                         }));
                         if (roomId && rooms.has(roomId)) {
@@ -829,21 +901,90 @@ Return JSON structure:
         }
     }
 
-    const rawTasks = extractLocalTasks(transcript);
+    const rawTasks = extractLocalTasks(cleanTranscript);
     const seenIds = new Set();
     const tasks = rawTasks.map((t, idx) => {
-        let id = t.id !== undefined && t.id !== null && t.id !== '' ? t.id : idx + 1;
+        let id = (t.id !== undefined && t.id !== null && String(t.id).trim() !== '') ? String(t.id) : String(idx + 1);
         if (seenIds.has(id)) {
             id = `${id}-${idx + 1}`;
         }
         seenIds.add(id);
-        return { ...t, id, completed: Boolean(t.completed) };
+        return { ...t, id: String(id), completed: Boolean(t.completed) };
     });
     if (roomId && rooms.has(roomId)) {
         rooms.get(roomId).tasks = tasks;
     }
     res.json({ tasks, source: 'render-server-nlp' });
 });
+
+// Audio transcription endpoint for captured speech snippets
+async function handleTranscribeAudio(req, res) {
+    const { audioData, mimeType, speakerName } = req.body || {};
+    if (!audioData || typeof audioData !== 'string') {
+        return res.status(400).json({ error: 'Missing audioData base64 string' });
+    }
+
+    const cleanSpeaker = String(speakerName || 'Participant').trim();
+    const cleanMime = String(mimeType || 'audio/webm').split(';')[0].trim();
+
+    if (process.env.GEMINI_API_KEY) {
+        try {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`;
+            const gRes = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                signal: AbortSignal.timeout(6000),
+                body: JSON.stringify({
+                    contents: [
+                        {
+                            parts: [
+                                {
+                                    text: `Transcribe the speech in this audio snippet accurately.
+Speaker: ${cleanSpeaker}
+Rules:
+- Return ONLY the exact transcribed text as plain text.
+- Do NOT include markdown formatting, quotation marks, or explanations.
+- If there is no discernible speech or only background silence, reply with: [Audio clip recorded]`
+                                },
+                                {
+                                    inlineData: {
+                                        mimeType: cleanMime,
+                                        data: audioData.replace(/^data:audio\/[^;]+;base64,/, '')
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                })
+            });
+
+            if (gRes.ok) {
+                const gData = await gRes.json();
+                const rawText = gData.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (rawText && rawText.trim()) {
+                    return res.json({
+                        success: true,
+                        transcript: rawText.trim(),
+                        speaker: cleanSpeaker,
+                        source: 'gemini-1.5-flash'
+                    });
+                }
+            }
+        } catch (e) {
+            // Fallback
+        }
+    }
+
+    return res.json({
+        success: true,
+        transcript: `[Audio recorded from ${cleanSpeaker}]`,
+        speaker: cleanSpeaker,
+        source: 'server-nlp-fallback'
+    });
+}
+
+app.post('/api/transcribe-audio', handleTranscribeAudio);
+app.post('/api/nlp-tasks/transcribe-audio', handleTranscribeAudio);
 
 // Serve frontend static build
 const clientDist = path.join(__dirname, 'client', 'dist');

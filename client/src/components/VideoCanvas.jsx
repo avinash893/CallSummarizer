@@ -2,6 +2,7 @@ import React, { useRef, useEffect } from 'react';
 
 function RemotePeerTile({ peer, isCaptured = false, onToggleCapture }) {
   const remoteVideoRef = useRef(null);
+  const remoteAudioRef = useRef(null);
 
   useEffect(() => {
     if (remoteVideoRef.current) {
@@ -18,6 +19,18 @@ function RemotePeerTile({ peer, isCaptured = false, onToggleCapture }) {
       }
     }
   }, [peer.stream, peer.isVideoOn]);
+
+  useEffect(() => {
+    if (remoteAudioRef.current && peer.stream) {
+      remoteAudioRef.current.srcObject = peer.stream;
+      try {
+        const playPromise = remoteAudioRef.current.play?.();
+        if (playPromise && typeof playPromise.catch === 'function') {
+          playPromise.catch(() => {});
+        }
+      } catch (e) {}
+    }
+  }, [peer.stream]);
 
   const initials =
     peer.initials ||
@@ -36,12 +49,22 @@ function RemotePeerTile({ peer, isCaptured = false, onToggleCapture }) {
       className={`video-tile ${peer.speaking ? 'speaking' : ''} ${isCaptured ? 'captured-tile' : ''}`}
       data-testid={`peer-tile-${peer.peerId}`}
     >
+      {/* Hidden dedicated audio element to guarantee remote audio playback on mobile browsers */}
+      <audio
+        ref={remoteAudioRef}
+        autoPlay
+        playsInline
+        style={{ display: 'none' }}
+        aria-hidden="true"
+      />
+
       {peer.stream && peer.isVideoOn !== false ? (
         <video
           ref={remoteVideoRef}
           autoPlay
           playsInline
           className="video-element"
+          aria-label={`${peer.name || 'Participant'} video stream`}
         />
       ) : (
         <div className="avatar-standby">
@@ -156,7 +179,10 @@ export default function VideoCanvas({
     <div className="video-canvas">
       <div className={`video-grid-container ${countClass}`}>
         {/* Local Participant Video Tile */}
-        <div className={`video-tile ${isSingleParticipant ? 'solo-tile' : ''}`} data-testid="local-video-tile">
+        <div
+          className={`video-tile ${isSingleParticipant ? 'solo-tile' : ''} ${capturedPeerIds.includes('local') ? 'captured-tile' : ''}`}
+          data-testid="local-video-tile"
+        >
           {showLocalVideo ? (
             <video
               ref={localVideoRef}
@@ -164,6 +190,7 @@ export default function VideoCanvas({
               muted
               playsInline
               className="video-element"
+              aria-label={isScreenSharing ? 'Your screen share preview' : 'Your video preview'}
             />
           ) : (
             <div className="avatar-standby">
@@ -173,6 +200,42 @@ export default function VideoCanvas({
               </span>
             </div>
           )}
+
+          {/* Local Speech Capture indicator */}
+          {capturedPeerIds.includes('local') && (
+            <div
+              className="tile-capture-badge"
+              title="Speech recognition active"
+              data-testid="capture-badge-local"
+            >
+              <i className="bi bi-disc-fill pulse-record-dot"></i>
+              <span>Recognizing Speech</span>
+            </div>
+          )}
+
+          {/* Selective Speech Capture Toggle on Local Tile */}
+          <button
+            type="button"
+            className={`btn btn-sm tile-capture-btn ${capturedPeerIds.includes('local') ? 'active' : ''}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (onToggleCapturePeer) onToggleCapturePeer('local');
+            }}
+            title={
+              capturedPeerIds.includes('local')
+                ? 'Stop recognizing your speech'
+                : 'Recognize your speech into transcript'
+            }
+            aria-label={
+              capturedPeerIds.includes('local')
+                ? 'Stop recognizing your speech'
+                : 'Recognize your speech'
+            }
+            data-testid="btn-capture-local"
+          >
+            <i className={`bi ${capturedPeerIds.includes('local') ? 'bi-record-circle-fill' : 'bi-soundwave'}`}></i>
+            <span>{capturedPeerIds.includes('local') ? 'Capturing' : 'Capture'}</span>
+          </button>
 
           <div className="tile-footer">
             <span className="user-name-tag">{displayName}</span>

@@ -318,4 +318,21 @@ describe('NotesDrawer Component', () => {
     fireEvent.click(deleteBtn);
     expect(handleDeleteClip).toHaveBeenCalledWith('clip-1');
   });
+
+  it('renders close button in drawer top and triggers onClose when clicked', () => {
+    const handleClose = vi.fn();
+    render(
+      <NotesDrawer
+        isOpen={true}
+        onClose={handleClose}
+        tasks={sampleTasks}
+        transcript={sampleTranscript}
+      />
+    );
+
+    const closeBtn = screen.getByTestId('btn-close-drawer');
+    expect(closeBtn).toBeInTheDocument();
+    fireEvent.click(closeBtn);
+    expect(handleClose).toHaveBeenCalledTimes(1);
+  });
 });

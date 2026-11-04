@@ -11,6 +11,13 @@ const PORT = process.env.PORT || 5000;
 const MEETING_SERVICE_URL = process.env.MEETING_SERVICE_URL;
 const NLP_SERVICE_URL = process.env.NLP_SERVICE_URL;
 
+app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    next();
+});
+
 app.use(cors());
 app.use(express.json());
 

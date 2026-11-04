@@ -91,12 +91,50 @@ export default function App() {
   const peerConnectionsRef = useRef(new Map());
   const pendingCandidatesRef = useRef(new Map());
   const peerAudioRecordersRef = useRef(new Map());
+  const remoteStreamsRef = useRef(new Map());
+  const localRecognitionRef = useRef(null);
   const localStreamRef = useRef(null);
+  const screenStreamRef = useRef(null);
+  const capturedAudioClipsRef = useRef(capturedAudioClips);
   const iceServersRef = useRef(DEFAULT_ICE_SERVERS);
 
   useEffect(() => {
     localStreamRef.current = localStream;
   }, [localStream]);
+
+  useEffect(() => {
+    screenStreamRef.current = screenStream;
+  }, [screenStream]);
+
+  useEffect(() => {
+    capturedAudioClipsRef.current = capturedAudioClips;
+  }, [capturedAudioClips]);
+
+  useEffect(() => {
+    return () => {
+      const clips = capturedAudioClipsRef.current || [];
+      if (typeof URL !== 'undefined' && typeof URL.revokeObjectURL === 'function') {
+        clips.forEach((clip) => {
+          if (clip && clip.url) {
+            try {
+              URL.revokeObjectURL(clip.url);
+            } catch (e) {}
+          }
+        });
+      }
+      peerAudioRecordersRef.current.forEach((session) => {
+        try {
+          if (session.recorder) {
+            session.recorder.onstop = null;
+            if (session.recorder.state !== 'inactive') {
+              session.recorder.stop();
+            }
+          }
+        } catch (e) {}
+      });
+      peerAudioRecordersRef.current.clear();
+    };
+  }, []);
 
   useEffect(() => {
     iceServersRef.current = appConfig.iceServers || DEFAULT_ICE_SERVERS;
@@ -253,6 +291,16 @@ export default function App() {
       localStreamRef.current.getTracks().forEach((track) => {
         pc.addTrack(track, localStreamRef.current);
       });
+      const activeScreenTrack = screenStreamRef.current?.getVideoTracks()[0];
+      if (activeScreenTrack) {
+        try {
+          const senders = typeof pc.getSenders === 'function' ? pc.getSenders() : [];
+          const videoSender = senders.find((s) => s.track?.kind === 'video');
+          if (videoSender && typeof videoSender.replaceTrack === 'function') {
+            videoSender.replaceTrack(activeScreenTrack).catch(() => {});
+          }
+        } catch (e) {}
+      }
     }
 
     pc.onicecandidate = (event) => {
@@ -267,29 +315,43 @@ export default function App() {
       }
     };
 
+    if (!remoteStreamsRef.current.has(remotePeerId)) {
+      remoteStreamsRef.current.set(remotePeerId, new MediaStream());
+    }
+    const peerMediaStream = remoteStreamsRef.current.get(remotePeerId);
+
     pc.ontrack = (event) => {
-      const [remoteStream] = event.streams;
-      if (remoteStream) {
-        setRemotePeers((prev) => {
-          const exists = prev.some((p) => p.peerId === remotePeerId);
-          if (exists) {
-            return prev.map((p) =>
-              p.peerId === remotePeerId ? { ...p, stream: remoteStream } : p
-            );
+      if (event.track) {
+        if (!peerMediaStream.getTracks().some((t) => t.id === event.track.id)) {
+          peerMediaStream.addTrack(event.track);
+        }
+      }
+      if (event.streams && event.streams[0]) {
+        event.streams[0].getTracks().forEach((track) => {
+          if (!peerMediaStream.getTracks().some((t) => t.id === track.id)) {
+            peerMediaStream.addTrack(track);
           }
-          return [
-            ...prev,
-            {
-              peerId: remotePeerId,
-              name: remoteUserInfo?.name || 'Participant',
-              initials: remoteUserInfo?.initials || 'P',
-              isAudioOn: remoteUserInfo?.isAudioOn !== false,
-              isVideoOn: remoteUserInfo?.isVideoOn !== false,
-              stream: remoteStream
-            }
-          ];
         });
       }
+      setRemotePeers((prev) => {
+        const exists = prev.some((p) => p.peerId === remotePeerId);
+        if (exists) {
+          return prev.map((p) =>
+            p.peerId === remotePeerId ? { ...p, stream: peerMediaStream } : p
+          );
+        }
+        return [
+          ...prev,
+          {
+            peerId: remotePeerId,
+            name: remoteUserInfo?.name || 'Participant',
+            initials: remoteUserInfo?.initials || 'P',
+            isAudioOn: remoteUserInfo?.isAudioOn !== false,
+            isVideoOn: remoteUserInfo?.isVideoOn !== false,
+            stream: peerMediaStream
+          }
+        ];
+      });
     };
 
     return pc;
@@ -472,6 +534,7 @@ export default function App() {
             peerAudioRecordersRef.current.delete(leftId);
           }
           setCapturedPeerIds((prev) => prev.filter((id) => id !== leftId));
+          remoteStreamsRef.current.delete(leftId);
           setRemotePeers((prev) => prev.filter((p) => p.peerId !== leftId));
           break;
         }
@@ -516,60 +579,8 @@ export default function App() {
     };
   }, [isInCall, roomName, user?.name, user?.email, user?.initials, getOrCreatePeerConnection]);
 
-  // Web Speech API live transcription while in call and audio is unmuted
-  useEffect(() => {
-    if (!isInCall || !isAudioOn || typeof window === 'undefined') return;
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) return;
-
-    let recognition;
-    let isActive = true;
-    try {
-      recognition = new SpeechRecognition();
-      recognition.continuous = true;
-      recognition.interimResults = false;
-      recognition.lang = 'en-IN';
-
-      recognition.onresult = (event) => {
-        const lastResult = event.results[event.results.length - 1];
-        if (lastResult && lastResult.isFinal) {
-          const spokenText = lastResult[0]?.transcript?.trim();
-          if (spokenText) {
-            const entry = {
-              id: `tr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-              speaker: user?.name || 'You',
-              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              text: spokenText
-            };
-            setTranscript((prev) => [...prev, entry]);
-            if (wsRef.current && wsRef.current.readyState === 1) {
-              wsRef.current.send(JSON.stringify({ type: 'transcript-entry', entry }));
-            }
-          }
-        }
-      };
-
-      recognition.onerror = () => {};
-      recognition.onend = () => {
-        if (isActive) {
-          try {
-            recognition.start();
-          } catch (e) {}
-        }
-      };
-
-      recognition.start();
-    } catch (e) {}
-
-    return () => {
-      isActive = false;
-      if (recognition) {
-        try {
-          recognition.stop();
-        } catch (e) {}
-      }
-    };
-  }, [isInCall, isAudioOn, user?.name]);
+  // Automatic background SpeechRecognition removed to eliminate recurring mobile/Android mic prompt toasts.
+  // Speech recognition is now strictly user-activated on-demand via the "Capture" button.
 
   const formatTimer = (totalSeconds) => {
     const mins = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
@@ -591,21 +602,65 @@ export default function App() {
     setIsInCall(true);
   };
 
+  const revertVideoSendersToCamera = useCallback(() => {
+    const cameraTrack = localStreamRef.current ? localStreamRef.current.getVideoTracks()[0] || null : null;
+    for (const pc of peerConnectionsRef.current.values()) {
+      try {
+        const senders = typeof pc.getSenders === 'function' ? pc.getSenders() : [];
+        const videoSender = senders.find((s) => s.track?.kind === 'video');
+        if (videoSender && typeof videoSender.replaceTrack === 'function') {
+          videoSender.replaceTrack(cameraTrack).catch((err) => {
+            console.warn('Failed to revert video sender to camera:', err);
+          });
+        }
+      } catch (err) {
+        console.warn('Error reverting video sender:', err);
+      }
+    }
+  }, []);
+
   const handleLeaveCall = () => {
+    if (isScreenSharing) {
+      revertVideoSendersToCamera();
+    }
     if (screenStream) {
       screenStream.getTracks().forEach((t) => t.stop());
       setScreenStream(null);
     }
-    // Stop any active selective audio recordings
+    // Cleanly stop all active selective audio recordings
     peerAudioRecordersRef.current.forEach((session) => {
       try {
-        if (session.recorder && session.recorder.state !== 'inactive') {
-          session.recorder.stop();
+        if (session.recorder) {
+          session.recorder.onstop = null;
+          if (session.recorder.state !== 'inactive') {
+            session.recorder.stop();
+          }
         }
       } catch (e) {}
     });
     peerAudioRecordersRef.current.clear();
     setCapturedPeerIds([]);
+
+    if (localRecognitionRef.current) {
+      try {
+        localRecognitionRef.current.stop();
+      } catch (e) {}
+      localRecognitionRef.current = null;
+    }
+    remoteStreamsRef.current.clear();
+
+    // Revoke object URLs for captured clips
+    const clips = capturedAudioClipsRef.current || [];
+    if (typeof URL !== 'undefined' && typeof URL.revokeObjectURL === 'function') {
+      clips.forEach((clip) => {
+        if (clip && clip.url) {
+          try {
+            URL.revokeObjectURL(clip.url);
+          } catch (e) {}
+        }
+      });
+    }
+    setCapturedAudioClips([]);
 
     setIsInCall(false);
     setIsScreenSharing(false);
@@ -614,6 +669,61 @@ export default function App() {
 
   const handleToggleCapturePeer = useCallback((peerId) => {
     if (!peerId) return;
+
+    if (peerId === 'local') {
+      setCapturedPeerIds((prev) => {
+        const isAlreadyCaptured = prev.includes('local');
+        if (isAlreadyCaptured) {
+          if (localRecognitionRef.current) {
+            try {
+              localRecognitionRef.current.stop();
+            } catch (e) {}
+            localRecognitionRef.current = null;
+          }
+          return prev.filter((id) => id !== 'local');
+        } else {
+          // Explicit on-demand speech recognition for user's own speech
+          if (typeof window !== 'undefined') {
+            const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (SpeechRec) {
+              try {
+                const rec = new SpeechRec();
+                rec.continuous = true;
+                rec.interimResults = false;
+                rec.lang = 'en-IN';
+                rec.onresult = (event) => {
+                  const lastResult = event.results[event.results.length - 1];
+                  if (lastResult && lastResult.isFinal) {
+                    const spokenText = lastResult[0]?.transcript?.trim();
+                    if (spokenText) {
+                      const entry = {
+                        id: `tr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                        speaker: user?.name || 'You',
+                        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                        text: spokenText
+                      };
+                      setTranscript((tPrev) => [...tPrev, entry]);
+                      if (wsRef.current && wsRef.current.readyState === 1) {
+                        wsRef.current.send(JSON.stringify({ type: 'transcript-entry', entry }));
+                      }
+                    }
+                  }
+                };
+                rec.onerror = () => {};
+                rec.onend = () => {
+                  localRecognitionRef.current = null;
+                  setCapturedPeerIds((ids) => ids.filter((id) => id !== 'local'));
+                };
+                rec.start();
+                localRecognitionRef.current = rec;
+              } catch (e) {}
+            }
+          }
+          return [...prev, 'local'];
+        }
+      });
+      return;
+    }
 
     setCapturedPeerIds((prev) => {
       const isAlreadyCaptured = prev.includes(peerId);
@@ -634,20 +744,39 @@ export default function App() {
         // Start private capture for this peer
         const targetPeer = remotePeers.find((p) => p.peerId === peerId);
         const peerName = targetPeer?.name || 'Participant';
-        const audioTracks = targetPeer?.stream?.getAudioTracks() || [];
+        let audioTracks = targetPeer?.stream?.getAudioTracks() || [];
+
+        // Android / WebRTC receiver fallback
+        if (audioTracks.length === 0) {
+          const pc = peerConnectionsRef.current.get(peerId);
+          if (pc && typeof pc.getReceivers === 'function') {
+            const receiver = pc.getReceivers().find((r) => r.track && r.track.kind === 'audio');
+            if (receiver && receiver.track) {
+              audioTracks = [receiver.track];
+            }
+          }
+        }
+
         const startTime = Date.now();
         const chunks = [];
 
         if (typeof window !== 'undefined' && typeof window.MediaRecorder !== 'undefined' && audioTracks.length > 0) {
           try {
             const audioStream = new MediaStream(audioTracks);
-            let mimeType = 'audio/webm';
+            let mimeType = '';
             if (typeof MediaRecorder.isTypeSupported === 'function') {
-              if (!MediaRecorder.isTypeSupported('audio/webm')) {
-                mimeType = MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : '';
+              const preferredTypes = [
+                'audio/webm;codecs=opus',
+                'audio/webm',
+                'audio/mp4',
+                'audio/aac'
+              ];
+              for (const pt of preferredTypes) {
+                if (MediaRecorder.isTypeSupported(pt)) {
+                  mimeType = pt;
+                  break;
+                }
               }
-            } else {
-              mimeType = '';
             }
 
             const options = mimeType ? { mimeType } : undefined;
@@ -677,6 +806,45 @@ export default function App() {
                 time: timeStr
               };
               setCapturedAudioClips((prevClips) => [clip, ...prevClips]);
+
+              // Transcribe captured audio via server API
+              if (blob && blob.size > 0 && typeof FileReader !== 'undefined') {
+                try {
+                  const reader = new FileReader();
+                  reader.onloadend = async () => {
+                    const base64Audio = reader.result;
+                    if (base64Audio) {
+                      try {
+                        const trRes = await fetch('/api/transcribe-audio', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            audioData: base64Audio,
+                            mimeType: mime,
+                            speakerName: peerName
+                          })
+                        });
+                        if (trRes.ok) {
+                          const trData = await trRes.json();
+                          if (trData.transcript && !trData.transcript.includes('[Audio clip recorded]')) {
+                            const entry = {
+                              id: `tr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                              speaker: peerName,
+                              time: timeStr,
+                              text: trData.transcript
+                            };
+                            setTranscript((prevTr) => [...prevTr, entry]);
+                            if (wsRef.current && wsRef.current.readyState === 1) {
+                              wsRef.current.send(JSON.stringify({ type: 'transcript-entry', entry }));
+                            }
+                          }
+                        }
+                      } catch (e) {}
+                    }
+                  };
+                  reader.readAsDataURL(blob);
+                } catch (e) {}
+              }
             };
 
             recorder.start(1000);
@@ -713,10 +881,18 @@ export default function App() {
         return [...prev, peerId];
       }
     });
-  }, [remotePeers]);
+  }, [remotePeers, user?.name]);
 
   const handleDeleteClip = (clipId) => {
-    setCapturedAudioClips((prev) => prev.filter((c) => c.id !== clipId));
+    setCapturedAudioClips((prev) => {
+      const clipToDelete = prev.find((c) => c.id === clipId);
+      if (clipToDelete && clipToDelete.url && typeof URL !== 'undefined' && typeof URL.revokeObjectURL === 'function') {
+        try {
+          URL.revokeObjectURL(clipToDelete.url);
+        } catch (e) {}
+      }
+      return prev.filter((c) => c.id !== clipId);
+    });
   };
 
   const toggleVideo = () => {
@@ -747,6 +923,7 @@ export default function App() {
 
   const toggleScreenShare = async () => {
     if (isScreenSharing) {
+      revertVideoSendersToCamera();
       if (screenStream) {
         screenStream.getTracks().forEach((t) => t.stop());
         setScreenStream(null);
@@ -763,11 +940,33 @@ export default function App() {
         const displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
         setScreenStream(displayStream);
         setIsScreenSharing(true);
-        const videoTrack = displayStream.getVideoTracks()[0];
-        if (videoTrack) {
-          videoTrack.onended = () => {
+        if (wsRef.current && wsRef.current.readyState === 1) {
+          wsRef.current.send(JSON.stringify({ type: 'media-state', isScreenSharing: true }));
+        }
+
+        const screenTrack = displayStream.getVideoTracks()[0];
+        if (screenTrack) {
+          for (const pc of peerConnectionsRef.current.values()) {
+            try {
+              const senders = typeof pc.getSenders === 'function' ? pc.getSenders() : [];
+              const videoSender = senders.find((sender) => sender.track?.kind === 'video');
+              if (videoSender && typeof videoSender.replaceTrack === 'function') {
+                videoSender.replaceTrack(screenTrack).catch((err) => {
+                  console.warn('Failed to replace track with screenTrack:', err);
+                });
+              }
+            } catch (err) {
+              console.warn('Error replacing video track on peer connection:', err);
+            }
+          }
+
+          screenTrack.onended = () => {
+            revertVideoSendersToCamera();
             setIsScreenSharing(false);
             setScreenStream(null);
+            if (wsRef.current && wsRef.current.readyState === 1) {
+              wsRef.current.send(JSON.stringify({ type: 'media-state', isScreenSharing: false }));
+            }
           };
         }
       } else {
@@ -1044,6 +1243,7 @@ export default function App() {
 
             <NotesDrawer
               isOpen={isNotesOpen}
+              onClose={() => setIsNotesOpen(false)}
               tasks={tasks}
               transcript={transcript}
               onToggleTask={handleToggleTask}

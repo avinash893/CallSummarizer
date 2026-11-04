@@ -437,4 +437,32 @@ test('CallSummarizer Unified Server - Google Auth Session & Calendar API', async
         const data = await res.json();
         assert.strictEqual(data.user.email, 'avinash.sharma@gmail.com');
     });
+
+    await t.test('POST /api/transcribe-audio rejects missing audioData with 400', async () => {
+        const res = await fetch(`${baseUrl}/api/transcribe-audio`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+        assert.strictEqual(res.status, 400);
+        const data = await res.json();
+        assert.strictEqual(data.error, 'Missing audioData base64 string');
+    });
+
+    await t.test('POST /api/transcribe-audio transcribes speech snippet and attributes speaker', async () => {
+        const res = await fetch(`${baseUrl}/api/transcribe-audio`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                audioData: 'data:audio/webm;base64,GkXfo59ChoEBQveBAULygQRC84EIQoKEd2VibUKHgQRChYECGFOAZwE=',
+                mimeType: 'audio/webm',
+                speakerName: 'Rohan Sharma'
+            })
+        });
+        assert.strictEqual(res.status, 200);
+        const data = await res.json();
+        assert.strictEqual(data.success, true);
+        assert.strictEqual(data.speaker, 'Rohan Sharma');
+        assert.strictEqual(typeof data.transcript, 'string');
+    });
 });

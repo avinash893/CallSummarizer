@@ -684,6 +684,44 @@ export default function App() {
     setRemotePeers([]);
   };
 
+  const processLiveTranscriptForActions = useCallback(async (speaker, text) => {
+    if (!text || typeof text !== 'string' || text.trim().length < 5) return;
+    try {
+      const gatewayUrl = import.meta.env.VITE_GATEWAY_URL || '';
+      const res = await fetch(`${gatewayUrl}/api/nlp-tasks/extract-tasks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transcript: `${speaker}: ${text}`, roomId: roomName })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.tasks) && data.tasks.length > 0) {
+          setTasks((prevTasks) => {
+            const updated = [...prevTasks];
+            for (const t of data.tasks) {
+              if (!updated.some((ex) => ex.title.toLowerCase() === String(t.title).toLowerCase())) {
+                updated.push({
+                  id: (t.id !== undefined && t.id !== null && String(t.id).trim() !== '') ? String(t.id) : `task-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                  title: t.title,
+                  assignee: t.assignee || speaker || user?.name || 'You',
+                  due: t.due || 'Tomorrow',
+                  completed: Boolean(t.completed)
+                });
+              }
+            }
+            const formatted = ensureUniqueTaskIds(updated);
+            if (wsRef.current && wsRef.current.readyState === 1) {
+              wsRef.current.send(JSON.stringify({ type: 'tasks-sync', tasks: formatted }));
+            }
+            return formatted;
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('Error in live action extraction:', e);
+    }
+  }, [roomName, user?.name]);
+
   const sendAudioBlobForTranscription = useCallback((blob, mime, speakerName) => {
     if (!blob || blob.size < 500 || typeof FileReader === 'undefined') return;
     try {
@@ -714,7 +752,8 @@ export default function App() {
               !cleanText.includes('[Audio') &&
               !cleanText.includes('Private Capture') &&
               cleanText.toUpperCase() !== 'SILENCE' &&
-              cleanText !== '""'
+              cleanText !== '""' &&
+              cleanText.toLowerCase() !== speakerName.toLowerCase()
             ) {
               const entry = {
                 id: `tr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -726,13 +765,15 @@ export default function App() {
               if (wsRef.current && wsRef.current.readyState === 1) {
                 wsRef.current.send(JSON.stringify({ type: 'transcript-entry', entry }));
               }
+              // Immediately extract personal action items from transcribed speech
+              processLiveTranscriptForActions(speakerName, cleanText);
             }
           }
         } catch (e) {}
       };
       reader.readAsDataURL(blob);
     } catch (e) {}
-  }, []);
+  }, [processLiveTranscriptForActions]);
 
   const handleToggleCapturePeer = useCallback((peerId) => {
     if (!peerId) return;
@@ -795,6 +836,8 @@ export default function App() {
                     if (wsRef.current && wsRef.current.readyState === 1) {
                       wsRef.current.send(JSON.stringify({ type: 'transcript-entry', entry }));
                     }
+                    // Extract action items live from speech recognition
+                    processLiveTranscriptForActions(speakerName, text);
                   }
                 }
               };
@@ -876,7 +919,7 @@ export default function App() {
                   const mime = rec.mimeType || mimeType || 'audio/webm';
                   if (segChunks.length > 0) {
                     const blob = new Blob(segChunks, { type: mime });
-                    if (blob.size >= 600) {
+                    if (blob.size >= 500) {
                       sendAudioBlobForTranscription(blob, mime, speakerName);
                     }
                   }
@@ -886,12 +929,12 @@ export default function App() {
                 };
                 sessionState.currentRecorder = rec;
                 rec.start();
-                // 5-second complete segment ensuring fresh container headers
+                // 3.5-second fast cyclic segment ensuring fresh container headers & live transcription
                 sessionState.timer = setTimeout(() => {
                   if (rec.state === 'recording') {
                     rec.stop();
                   }
-                }, 5000);
+                }, 3500);
               } catch (e) {
                 console.warn('Error in recordSegment:', e);
               }
@@ -938,7 +981,7 @@ export default function App() {
         return [...prev, peerId];
       }
     });
-  }, [remotePeers, sendAudioBlobForTranscription, user?.name, user?.id]);
+  }, [remotePeers, sendAudioBlobForTranscription, user?.name, user?.id, processLiveTranscriptForActions]);
 
   const handleDeleteClip = (clipId) => {
     setCapturedAudioClips((prev) => {

@@ -998,12 +998,11 @@ async function handleTranscribeAudio(req, res) {
                             {
                                 parts: [
                                     {
-                                        text: `Transcribe the speech in this audio snippet accurately.
-Speaker: ${cleanSpeaker}
+                                        text: `Transcribe the spoken words in this audio snippet accurately.
 Rules:
-- Return ONLY the exact transcribed text as plain text.
-- Do NOT include markdown formatting, quotation marks, or explanations.
-- If there is no discernible speech or only silence, reply with SILENCE.`
+- Return ONLY the exact transcribed words as plain text.
+- Do NOT include speaker labels, timestamps, quotation marks, or explanations.
+- If there is no audible speech or only silence/background noise, reply with SILENCE.`
                                     },
                                     {
                                         inlineData: {
@@ -1022,7 +1021,11 @@ Rules:
                     const rawText = gData.candidates?.[0]?.content?.parts?.[0]?.text;
                     if (rawText && rawText.trim() && !rawText.includes('[Audio clip recorded]')) {
                         const trimmed = rawText.trim();
-                        if (trimmed.toUpperCase() === 'SILENCE' || trimmed === '""') {
+                        if (
+                            trimmed.toUpperCase() === 'SILENCE' ||
+                            trimmed === '""' ||
+                            trimmed.toLowerCase() === cleanSpeaker.toLowerCase()
+                        ) {
                             return res.json({
                                 success: true,
                                 transcript: '',

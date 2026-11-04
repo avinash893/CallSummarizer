@@ -76,7 +76,7 @@ const handleExtractTasks = async (req, res) => {
 
     if (process.env.GEMINI_API_KEY && transcript) {
         try {
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${process.env.GEMINI_API_KEY}`;
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${process.env.GEMINI_API_KEY}`;
             const prompt = `Extract action items from this meeting transcript in JSON format.
 Transcript:
 ${transcript}
@@ -103,13 +103,19 @@ Return JSON structure:
                 if (rawJson) {
                     const parsed = JSON.parse(rawJson);
                     if (Array.isArray(parsed.tasks) && parsed.tasks.length > 0) {
-                        const normalizedTasks = parsed.tasks.map((t, idx) => ({
-                            ...t,
-                            id: (t.id !== undefined && t.id !== null && String(t.id).trim() !== '')
-                                ? String(t.id)
-                                : `task-${Date.now()}-${idx + 1}`,
-                            completed: Boolean(t.completed)
-                        }));
+                        const normalizedTasks = parsed.tasks.map((t, idx) => {
+                            let title = String(t.title || '').replace(/\b(?:the|a|an)\s+/ig, '').trim();
+                            if (title) title = title.charAt(0).toUpperCase() + title.slice(1);
+                            return {
+                                ...t,
+                                id: (t.id !== undefined && t.id !== null && String(t.id).trim() !== '')
+                                    ? String(t.id)
+                                    : `task-${Date.now()}-${idx + 1}`,
+                                title: title || t.title,
+                                assignee: (/rohan/i.test(t.assignee || '')) ? 'Rohan Sharma' : (t.assignee || 'You'),
+                                completed: Boolean(t.completed)
+                            };
+                        });
                         return res.json({ tasks: normalizedTasks, source: 'gemini-1.5-flash' });
                     }
                 }

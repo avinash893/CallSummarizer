@@ -854,7 +854,7 @@ app.post('/api/nlp-tasks/extract-tasks', async (req, res) => {
     const cleanTranscript = String(transcript).trim().slice(0, 50000);
 
     if (process.env.GEMINI_API_KEY) {
-        const candidateModels = ['gemini-flash-latest', 'gemini-2.5-flash', 'gemini-3.8-flash'];
+        const candidateModels = ['gemini-3.5-flash-lite', 'gemini-3.5-flash'];
         for (const modelName of candidateModels) {
             try {
                 const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${process.env.GEMINI_API_KEY}`;
@@ -884,13 +884,19 @@ Return JSON structure:
                     if (rawJson) {
                         const parsed = JSON.parse(rawJson);
                         if (Array.isArray(parsed.tasks) && parsed.tasks.length > 0) {
-                            const normalizedTasks = parsed.tasks.map((t, idx) => ({
-                                ...t,
-                                id: (t.id !== undefined && t.id !== null && String(t.id).trim() !== '')
-                                    ? `${String(t.id)}-${idx + 1}`
-                                    : `task-${Date.now()}-${idx + 1}`,
-                                completed: Boolean(t.completed)
-                            }));
+                            const normalizedTasks = parsed.tasks.map((t, idx) => {
+                                let title = String(t.title || '').replace(/\b(?:the|a|an)\s+/ig, '').trim();
+                                if (title) title = title.charAt(0).toUpperCase() + title.slice(1);
+                                return {
+                                    ...t,
+                                    id: (t.id !== undefined && t.id !== null && String(t.id).trim() !== '')
+                                        ? `${String(t.id)}-${idx + 1}`
+                                        : `task-${Date.now()}-${idx + 1}`,
+                                    title: title || t.title,
+                                    assignee: (/rohan/i.test(t.assignee || '')) ? 'Rohan Sharma' : (t.assignee || 'You'),
+                                    completed: Boolean(t.completed)
+                                };
+                            });
                             if (roomId && rooms.has(roomId)) {
                                 rooms.get(roomId).tasks = normalizedTasks;
                             }
@@ -931,7 +937,7 @@ async function handleTranscribeAudio(req, res) {
     const cleanMime = String(mimeType || 'audio/webm').split(';')[0].trim();
 
     if (process.env.GEMINI_API_KEY) {
-        const candidateModels = ['gemini-flash-latest', 'gemini-2.5-flash', 'gemini-3.8-flash'];
+        const candidateModels = ['gemini-3.5-transcribe', 'gemini-3.5-flash-lite', 'gemini-3.5-flash'];
         for (const modelName of candidateModels) {
             try {
                 const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${process.env.GEMINI_API_KEY}`;

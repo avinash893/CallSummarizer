@@ -334,7 +334,7 @@ app.post('/api/auth/google', async (req, res) => {
                 sessionId
             };
 
-            sessions.set(sessionId, {
+            const sessionObj = {
                 sessionId,
                 user: userObj,
                 tokens: {
@@ -344,14 +344,21 @@ app.post('/api/auth/google', async (req, res) => {
                     scope: existingTokens.scope || 'openid email profile https://www.googleapis.com/auth/calendar.events'
                 },
                 createdAt: existingSession?.createdAt || new Date().toISOString()
-            });
+            };
+            const sessionToken = signSessionToken(sessionObj);
+            sessionObj.token = sessionToken;
+            userObj.sessionId = sessionId;
+            userObj.sessionToken = sessionToken;
+            sessions.set(sessionId, sessionObj);
+            sessions.set(sessionToken, sessionObj);
             saveSessionsToDisk();
 
-            setSessionCookie(res, req, sessionId);
+            setSessionCookie(res, req, sessionToken);
             return res.json({
                 authenticated: true,
                 provider: 'google-jwt',
                 sessionId,
+                sessionToken,
                 user: userObj
             });
         }
@@ -420,6 +427,9 @@ app.post('/api/auth/google', async (req, res) => {
             };
             const sessionToken = signSessionToken(sessionObj);
             sessionObj.token = sessionToken;
+            userObj.sessionId = sessionId;
+            userObj.sessionToken = sessionToken;
+            userObj.accessToken = accessToken;
             sessions.set(sessionId, sessionObj);
             sessions.set(sessionToken, sessionObj);
             saveSessionsToDisk();
@@ -470,6 +480,9 @@ app.post('/api/auth/google', async (req, res) => {
             };
             const sessionToken = signSessionToken(sessionObj);
             sessionObj.token = sessionToken;
+            userObj.sessionId = sessionId;
+            userObj.sessionToken = sessionToken;
+            userObj.accessToken = sessionObj.tokens.accessToken;
             sessions.set(sessionId, sessionObj);
             sessions.set(sessionToken, sessionObj);
             saveSessionsToDisk();
@@ -1052,6 +1065,18 @@ app.get('/api/rooms/:id', (req, res) => {
     });
 });
 
+// Explicit session wipe endpoint to remove older transcripts and tasks for a room
+app.delete('/api/rooms/:id/session', (req, res) => {
+    const normalized = normalizeRoomId(req.params.id);
+    if (rooms.has(normalized)) {
+        const room = rooms.get(normalized);
+        room.transcript = [];
+        room.tasks = [];
+        broadcastToRoom(normalized, { type: 'room-session-cleared' });
+    }
+    res.json({ success: true, message: `Room ${normalized} session cleared` });
+});
+
 app.post('/api/rooms', async (req, res) => {
     const session = getSession(req);
     const turnstileToken = req.body?.turnstileToken || req.body?.token || req.headers?.['x-turnstile-token'];
@@ -1455,6 +1480,19 @@ wss.on('connection', (ws) => {
 
             case 'leave-room': {
                 handlePeerLeave(ws);
+                break;
+            }
+
+            case 'clear-room-session': {
+                if (!ws.roomId) break;
+                const room = rooms.get(ws.roomId);
+                if (room) {
+                    room.transcript = [];
+                    room.tasks = [];
+                    broadcastToRoom(ws.roomId, {
+                        type: 'room-session-cleared'
+                    });
+                }
                 break;
             }
 

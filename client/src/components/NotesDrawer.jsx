@@ -38,6 +38,7 @@ export default function NotesDrawer({
   remotePeers = [],
   onToggleCapturePeer,
   onDeleteClip,
+  onClearSession,
   user = { name: 'You' }
 }) {
   const [activeTab, setActiveTab] = useState('notes');
@@ -200,18 +201,34 @@ export default function NotesDrawer({
             </div>
           )}
         </div>
-        {onClose && (
-          <button
-            type="button"
-            className="btn btn-sm btn-outline-secondary drawer-close-btn ms-2"
-            onClick={onClose}
-            title="Close drawer"
-            aria-label="Close notes drawer"
-            data-testid="btn-close-drawer"
-          >
-            <i className="bi bi-x-lg"></i>
-          </button>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          {onClearSession && (
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-danger btn-clear-session"
+              onClick={onClearSession}
+              title="Clear all transcripts, notes, and actions for this session"
+              aria-label="Clear session notes and transcripts"
+              data-testid="btn-clear-session"
+              style={{ fontSize: '0.72rem', padding: '3px 8px' }}
+            >
+              <i className="bi bi-trash3" style={{ marginRight: '4px' }}></i>
+              <span>Clear</span>
+            </button>
+          )}
+          {onClose && (
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-secondary drawer-close-btn"
+              onClick={onClose}
+              title="Close drawer"
+              aria-label="Close notes drawer"
+              data-testid="btn-close-drawer"
+            >
+              <i className="bi bi-x-lg"></i>
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="drawer-body">

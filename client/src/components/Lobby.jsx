@@ -46,7 +46,8 @@ export default function Lobby({
   onTurnstileVerified,
   hasSessionNotes = false,
   isNotesOpen = false,
-  onToggleNotes
+  onToggleNotes,
+  onClearNotes
 }) {
   const previewRef = useRef(null);
   const [showGoogleModal, setShowGoogleModal] = useState(false);
@@ -110,7 +111,12 @@ export default function Lobby({
                 if (res.ok) {
                   const data = await res.json();
                   if (data.user && onUserChange) {
-                    onUserChange(data.user);
+                    const fullUser = {
+                      ...data.user,
+                      accessToken: response.access_token,
+                      sessionId: data.sessionToken || data.sessionId || data.user.sessionId
+                    };
+                    onUserChange(fullUser);
                     setShowGoogleModal(false);
                     setAuthError('');
                     return;
@@ -210,6 +216,7 @@ export default function Lobby({
     }
     setAuthError('');
     const newCode = generateClientMeetingCode();
+    if (onClearNotes) onClearNotes();
     setRoomName(newCode);
     if (typeof window !== 'undefined' && window.history?.replaceState) {
       const url = new URL(window.location.href);

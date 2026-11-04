@@ -611,6 +611,12 @@ export default function App() {
           break;
         }
 
+        case 'room-session-cleared': {
+          setTranscript([]);
+          setTasks([]);
+          break;
+        }
+
         default:
           break;
       }
@@ -648,6 +654,10 @@ export default function App() {
       return;
     }
     const cleanCode = extractRoomCode(roomName) || 'strategy-sync';
+    if (cleanCode !== roomName) {
+      setTranscript([]);
+      setTasks([]);
+    }
     setRoomName(cleanCode);
     if (typeof window !== 'undefined' && window.history?.replaceState) {
       const url = new URL(window.location.href);
@@ -729,6 +739,19 @@ export default function App() {
     setIsScreenSharing(false);
     setRemotePeers([]);
   };
+
+  const handleClearNotesAndTranscript = useCallback(async () => {
+    setTranscript([]);
+    setTasks([]);
+    try {
+      const cleanRoom = extractRoomCode(roomName) || 'strategy-sync';
+      if (wsRef.current && wsRef.current.readyState === 1) {
+        wsRef.current.send(JSON.stringify({ type: 'clear-room-session' }));
+      }
+      const gatewayUrl = import.meta.env.VITE_GATEWAY_URL || '';
+      await fetch(`${gatewayUrl}/api/rooms/${cleanRoom}/session`, { method: 'DELETE' }).catch(() => {});
+    } catch (e) {}
+  }, [roomName]);
 
   const processLiveTranscriptForActions = useCallback(async (speaker, text) => {
     if (!text || typeof text !== 'string' || text.trim().length < 4) return;
@@ -1365,6 +1388,12 @@ export default function App() {
       if (user?.sessionId) {
         headers['X-Session-ID'] = user.sessionId;
       }
+      if (user?.sessionToken) {
+        headers['X-Session-Token'] = user.sessionToken;
+      }
+      if (user?.accessToken) {
+        headers['Authorization'] = `Bearer ${user.accessToken}`;
+      }
 
       const userTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
@@ -1380,6 +1409,8 @@ export default function App() {
           endTime: task.endTime,
           timeZone: userTimeZone,
           sessionId: user?.sessionId,
+          sessionToken: user?.sessionToken,
+          accessToken: user?.accessToken,
           requireTime: true
         })
       });
@@ -1520,6 +1551,7 @@ export default function App() {
           hasSessionNotes={tasks.length > 0 || transcript.length > 0}
           isNotesOpen={isNotesOpen}
           onToggleNotes={() => setIsNotesOpen((prev) => !prev)}
+          onClearNotes={handleClearNotesAndTranscript}
         />
         {isNotesOpen && (tasks.length > 0 || transcript.length > 0) && (
           <NotesDrawer
@@ -1540,6 +1572,7 @@ export default function App() {
             remotePeers={remotePeers}
             onToggleCapturePeer={handleToggleCapturePeer}
             onDeleteClip={handleDeleteClip}
+            onClearSession={handleClearNotesAndTranscript}
           />
         )}
         </>
@@ -1600,6 +1633,7 @@ export default function App() {
               remotePeers={remotePeers}
               onToggleCapturePeer={handleToggleCapturePeer}
               onDeleteClip={handleDeleteClip}
+              onClearSession={handleClearNotesAndTranscript}
             />
 
             <ControlDock

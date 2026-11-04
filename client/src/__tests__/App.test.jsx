@@ -189,7 +189,7 @@ describe('App Main Flow', () => {
     }
   });
 
-  it('exposes Captured Audio tab in NotesDrawer during active call', async () => {
+  it('exposes Notes and Transcript tabs in NotesDrawer during active call without fake tasks', async () => {
     render(<App />);
 
     await act(async () => {
@@ -200,11 +200,15 @@ describe('App Main Flow', () => {
       fireEvent.click(screen.getByRole('button', { name: /Join now/i }));
     });
 
-    const capturedTab = screen.getByTestId('tab-captured-audio');
-    expect(capturedTab).toBeInTheDocument();
-    fireEvent.click(capturedTab);
+    // Notes tab is visible with Action Items
+    expect(screen.getByText('Action Items')).toBeInTheDocument();
+    // No demo tasks
+    expect(screen.queryByText('Review frontend responsiveness')).not.toBeInTheDocument();
+    expect(screen.queryByText('Connect signaling service')).not.toBeInTheDocument();
 
-    expect(screen.getByText('Active Private Capture')).toBeInTheDocument();
-    expect(screen.getByText(/Captured Audio Library/i)).toBeInTheDocument();
+    // Transcript tab is accessible
+    fireEvent.click(screen.getByRole('button', { name: 'Transcript' }));
+    expect(screen.getByText(/No transcript lines recorded yet/i)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/Type a meeting note or commitment/i)).toBeInTheDocument();
   });
 });

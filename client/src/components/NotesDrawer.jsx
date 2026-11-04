@@ -130,35 +130,35 @@ export default function NotesDrawer({
               <span>Transcript</span>
             </button>
           </div>
-          <div
-            role="tab"
-            id="tab-captured"
-            aria-selected={activeTab === 'captured'}
-            aria-controls="tabpanel-captured"
-            tabIndex={activeTab === 'captured' ? 0 : -1}
-          >
-            <button
-              type="button"
-              className={`nav-link drawer-tab-btn ${activeTab === 'captured' ? 'active' : ''}`}
-              onClick={() => setActiveTab('captured')}
+          {capturedAudioClips && capturedAudioClips.length > 0 && (
+            <div
+              role="tab"
+              id="tab-captured"
               aria-selected={activeTab === 'captured'}
               aria-controls="tabpanel-captured"
-              data-testid="tab-captured-audio"
+              tabIndex={activeTab === 'captured' ? 0 : -1}
             >
-              <i className="bi bi-soundwave" style={{ marginRight: '6px' }}></i>
-              <span>Captured</span>
-              {capturedPeerIds.length > 0 && (
-                <span className="badge bg-danger ms-1" style={{ fontSize: '0.6rem', padding: '2px 5px' }}>
-                  REC
-                </span>
-              )}
-              {capturedAudioClips.length > 0 && (
+              <button
+                type="button"
+                className={`nav-link drawer-tab-btn ${activeTab === 'captured' ? 'active' : ''}`}
+                onClick={() => setActiveTab('captured')}
+                aria-selected={activeTab === 'captured'}
+                aria-controls="tabpanel-captured"
+                data-testid="tab-captured-audio"
+              >
+                <i className="bi bi-soundwave" style={{ marginRight: '6px' }}></i>
+                <span>Captured</span>
+                {capturedPeerIds.length > 0 && (
+                  <span className="badge bg-danger ms-1" style={{ fontSize: '0.6rem', padding: '2px 5px' }}>
+                    REC
+                  </span>
+                )}
                 <span className="badge bg-secondary ms-1" style={{ fontSize: '0.6rem', padding: '2px 5px' }}>
                   {capturedAudioClips.length}
                 </span>
-              )}
-            </button>
-          </div>
+              </button>
+            </div>
+          )}
         </div>
         {onClose && (
           <button

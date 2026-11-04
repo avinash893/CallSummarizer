@@ -93,6 +93,7 @@ export default function App() {
   const peerAudioRecordersRef = useRef(new Map());
   const remoteStreamsRef = useRef(new Map());
   const localRecognitionRef = useRef(null);
+  const isCapturingLocalRef = useRef(false);
   const localStreamRef = useRef(null);
   const screenStreamRef = useRef(null);
   const capturedAudioClipsRef = useRef(capturedAudioClips);
@@ -556,6 +557,11 @@ export default function App() {
           break;
         }
 
+        case 'remote-transcribe-toggle': {
+          startOrStopLocalTranscription();
+          break;
+        }
+
         default:
           break;
       }
@@ -667,61 +673,87 @@ export default function App() {
     setRemotePeers([]);
   };
 
+  const startOrStopLocalTranscription = useCallback((forceEnable = null) => {
+    const shouldEnable = forceEnable !== null ? forceEnable : !isCapturingLocalRef.current;
+    if (!shouldEnable) {
+      isCapturingLocalRef.current = false;
+      if (localRecognitionRef.current) {
+        try {
+          localRecognitionRef.current.onend = null;
+          localRecognitionRef.current.stop();
+        } catch (e) {}
+        localRecognitionRef.current = null;
+      }
+      setCapturedPeerIds((prev) => prev.filter((id) => id !== 'local'));
+      return;
+    }
+
+    isCapturingLocalRef.current = true;
+    setCapturedPeerIds((prev) => (prev.includes('local') ? prev : [...prev, 'local']));
+
+    if (typeof window !== 'undefined') {
+      const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (SpeechRec) {
+        try {
+          const rec = new SpeechRec();
+          rec.continuous = true;
+          rec.interimResults = true;
+          rec.lang = 'en-US';
+
+          rec.onresult = (event) => {
+            let finalSnippet = '';
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+              if (event.results[i].isFinal) {
+                const text = event.results[i][0]?.transcript?.trim();
+                if (text) {
+                  finalSnippet += (finalSnippet ? ' ' : '') + text;
+                }
+              }
+            }
+            if (finalSnippet) {
+              const entry = {
+                id: `tr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                speaker: user?.name || 'You',
+                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                text: finalSnippet
+              };
+              setTranscript((tPrev) => [...tPrev, entry]);
+              if (wsRef.current && wsRef.current.readyState === 1) {
+                wsRef.current.send(JSON.stringify({ type: 'transcript-entry', entry }));
+              }
+            }
+          };
+
+          rec.onerror = () => {};
+
+          rec.onend = () => {
+            if (isCapturingLocalRef.current) {
+              try {
+                rec.start();
+              } catch (e) {
+                setTimeout(() => {
+                  if (isCapturingLocalRef.current) {
+                    try { rec.start(); } catch (err) {}
+                  }
+                }, 300);
+              }
+            } else {
+              localRecognitionRef.current = null;
+            }
+          };
+
+          rec.start();
+          localRecognitionRef.current = rec;
+        } catch (e) {}
+      }
+    }
+  }, [user?.name]);
+
   const handleToggleCapturePeer = useCallback((peerId) => {
     if (!peerId) return;
 
     if (peerId === 'local') {
-      setCapturedPeerIds((prev) => {
-        const isAlreadyCaptured = prev.includes('local');
-        if (isAlreadyCaptured) {
-          if (localRecognitionRef.current) {
-            try {
-              localRecognitionRef.current.stop();
-            } catch (e) {}
-            localRecognitionRef.current = null;
-          }
-          return prev.filter((id) => id !== 'local');
-        } else {
-          // Explicit on-demand speech recognition for user's own speech
-          if (typeof window !== 'undefined') {
-            const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-            if (SpeechRec) {
-              try {
-                const rec = new SpeechRec();
-                rec.continuous = true;
-                rec.interimResults = false;
-                rec.lang = 'en-IN';
-                rec.onresult = (event) => {
-                  const lastResult = event.results[event.results.length - 1];
-                  if (lastResult && lastResult.isFinal) {
-                    const spokenText = lastResult[0]?.transcript?.trim();
-                    if (spokenText) {
-                      const entry = {
-                        id: `tr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-                        speaker: user?.name || 'You',
-                        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                        text: spokenText
-                      };
-                      setTranscript((tPrev) => [...tPrev, entry]);
-                      if (wsRef.current && wsRef.current.readyState === 1) {
-                        wsRef.current.send(JSON.stringify({ type: 'transcript-entry', entry }));
-                      }
-                    }
-                  }
-                };
-                rec.onerror = () => {};
-                rec.onend = () => {
-                  localRecognitionRef.current = null;
-                  setCapturedPeerIds((ids) => ids.filter((id) => id !== 'local'));
-                };
-                rec.start();
-                localRecognitionRef.current = rec;
-              } catch (e) {}
-            }
-          }
-          return [...prev, 'local'];
-        }
-      });
+      startOrStopLocalTranscription();
       return;
     }
 
@@ -741,7 +773,18 @@ export default function App() {
         }
         return prev.filter((id) => id !== peerId);
       } else {
-        // Start private capture for this peer
+        // Request peer via WebSocket to also transcribe their microphone
+        if (wsRef.current && wsRef.current.readyState === 1) {
+          try {
+            wsRef.current.send(
+              JSON.stringify({
+                type: 'remote-transcribe-toggle',
+                targetPeerId: peerId
+              })
+            );
+          } catch (e) {}
+        }
+
         const targetPeer = remotePeers.find((p) => p.peerId === peerId);
         const peerName = targetPeer?.name || 'Participant';
         let audioTracks = targetPeer?.stream?.getAudioTracks() || [];
@@ -791,23 +834,9 @@ export default function App() {
             recorder.onstop = () => {
               const mime = recorder.mimeType || 'audio/webm';
               const blob = new Blob(chunks, { type: mime });
-              const url = typeof URL !== 'undefined' && URL.createObjectURL ? URL.createObjectURL(blob) : '';
-              const durationSec = Math.max(1, Math.round((Date.now() - startTime) / 1000));
-              const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+              const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-              const clip = {
-                id: `clip-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-                peerId,
-                peerName,
-                url,
-                blob,
-                duration: `${durationSec}s`,
-                durationSec,
-                time: timeStr
-              };
-              setCapturedAudioClips((prevClips) => [clip, ...prevClips]);
-
-              // Transcribe captured audio via server API
+              // Transcribe captured audio via server API directly into transcript
               if (blob && blob.size > 0 && typeof FileReader !== 'undefined') {
                 try {
                   const reader = new FileReader();
@@ -826,12 +855,13 @@ export default function App() {
                         });
                         if (trRes.ok) {
                           const trData = await trRes.json();
-                          if (trData.transcript && !trData.transcript.includes('[Audio clip recorded]')) {
+                          const cleanText = trData.transcript ? trData.transcript.trim() : '';
+                          if (cleanText && !cleanText.includes('[Audio') && !cleanText.includes('Private Capture')) {
                             const entry = {
                               id: `tr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
                               speaker: peerName,
                               time: timeStr,
-                              text: trData.transcript
+                              text: cleanText
                             };
                             setTranscript((prevTr) => [...prevTr, entry]);
                             if (wsRef.current && wsRef.current.readyState === 1) {
@@ -857,20 +887,7 @@ export default function App() {
           const mockSession = {
             recorder: {
               state: 'recording',
-              stop: () => {
-                const durationSec = Math.max(1, Math.round((Date.now() - startTime) / 1000));
-                const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-                const clip = {
-                  id: `clip-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-                  peerId,
-                  peerName,
-                  url: 'blob:mock-audio-clip',
-                  duration: `${durationSec}s`,
-                  durationSec,
-                  time: timeStr
-                };
-                setCapturedAudioClips((prevClips) => [clip, ...prevClips]);
-              }
+              stop: () => {}
             },
             chunks: [],
             startTime
@@ -881,7 +898,7 @@ export default function App() {
         return [...prev, peerId];
       }
     });
-  }, [remotePeers, user?.name]);
+  }, [remotePeers, startOrStopLocalTranscription]);
 
   const handleDeleteClip = (clipId) => {
     setCapturedAudioClips((prev) => {

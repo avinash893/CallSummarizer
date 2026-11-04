@@ -28,7 +28,7 @@ test('NLP Task Service - Task Extraction & Indian Participant Naming', async (t)
 
     await t.test('POST /api/extract-tasks extracts action items assigned to Rohan Sharma', async () => {
         const payload = {
-            transcript: 'Rohan will connect the signaling service by Friday.'
+            transcript: 'Rohan will connect the signaling service by Friday. I will review the architecture tomorrow.'
         };
 
         const res = await fetch(`${baseUrl}/api/extract-tasks`, {

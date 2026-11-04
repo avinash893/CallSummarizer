@@ -854,9 +854,11 @@ app.post('/api/nlp-tasks/extract-tasks', async (req, res) => {
     const cleanTranscript = String(transcript).trim().slice(0, 50000);
 
     if (process.env.GEMINI_API_KEY) {
-        try {
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`;
-            const prompt = `Extract action items from this meeting transcript in JSON format.
+        const candidateModels = ['gemini-flash-latest', 'gemini-2.5-flash', 'gemini-3.8-flash'];
+        for (const modelName of candidateModels) {
+            try {
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${process.env.GEMINI_API_KEY}`;
+                const prompt = `Extract action items from this meeting transcript in JSON format.
 Transcript:
 ${cleanTranscript}
 
@@ -866,38 +868,39 @@ Return JSON structure:
     { "title": "string", "assignee": "string", "due": "string" }
   ]
 }`;
-            const apiRes = await fetch(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                signal: AbortSignal.timeout(4000),
-                body: JSON.stringify({
-                    contents: [{ parts: [{ text: prompt }] }],
-                    generationConfig: { responseMimeType: "application/json" }
-                })
-            });
+                const apiRes = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    signal: AbortSignal.timeout(4000),
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: prompt }] }],
+                        generationConfig: { responseMimeType: "application/json" }
+                    })
+                });
 
-            if (apiRes.ok) {
-                const data = await apiRes.json();
-                const rawJson = data.candidates?.[0]?.content?.parts?.[0]?.text;
-                if (rawJson) {
-                    const parsed = JSON.parse(rawJson);
-                    if (Array.isArray(parsed.tasks) && parsed.tasks.length > 0) {
-                        const normalizedTasks = parsed.tasks.map((t, idx) => ({
-                            ...t,
-                            id: (t.id !== undefined && t.id !== null && String(t.id).trim() !== '')
-                                ? `${String(t.id)}-${idx + 1}`
-                                : `task-${Date.now()}-${idx + 1}`,
-                            completed: Boolean(t.completed)
-                        }));
-                        if (roomId && rooms.has(roomId)) {
-                            rooms.get(roomId).tasks = normalizedTasks;
+                if (apiRes.ok) {
+                    const data = await apiRes.json();
+                    const rawJson = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (rawJson) {
+                        const parsed = JSON.parse(rawJson);
+                        if (Array.isArray(parsed.tasks) && parsed.tasks.length > 0) {
+                            const normalizedTasks = parsed.tasks.map((t, idx) => ({
+                                ...t,
+                                id: (t.id !== undefined && t.id !== null && String(t.id).trim() !== '')
+                                    ? `${String(t.id)}-${idx + 1}`
+                                    : `task-${Date.now()}-${idx + 1}`,
+                                completed: Boolean(t.completed)
+                            }));
+                            if (roomId && rooms.has(roomId)) {
+                                rooms.get(roomId).tasks = normalizedTasks;
+                            }
+                            return res.json({ tasks: normalizedTasks, source: modelName });
                         }
-                        return res.json({ tasks: normalizedTasks, source: 'gemini-1.5-flash' });
                     }
                 }
+            } catch (err) {
+                // Try next candidate model
             }
-        } catch (err) {
-            // Gracefully fall back to local heuristic NLP
         }
     }
 
@@ -928,58 +931,61 @@ async function handleTranscribeAudio(req, res) {
     const cleanMime = String(mimeType || 'audio/webm').split(';')[0].trim();
 
     if (process.env.GEMINI_API_KEY) {
-        try {
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`;
-            const gRes = await fetch(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                signal: AbortSignal.timeout(6000),
-                body: JSON.stringify({
-                    contents: [
-                        {
-                            parts: [
-                                {
-                                    text: `Transcribe the speech in this audio snippet accurately.
+        const candidateModels = ['gemini-flash-latest', 'gemini-2.5-flash', 'gemini-3.8-flash'];
+        for (const modelName of candidateModels) {
+            try {
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${process.env.GEMINI_API_KEY}`;
+                const gRes = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    signal: AbortSignal.timeout(6000),
+                    body: JSON.stringify({
+                        contents: [
+                            {
+                                parts: [
+                                    {
+                                        text: `Transcribe the speech in this audio snippet accurately.
 Speaker: ${cleanSpeaker}
 Rules:
 - Return ONLY the exact transcribed text as plain text.
 - Do NOT include markdown formatting, quotation marks, or explanations.
-- If there is no discernible speech or only background silence, reply with: [Audio clip recorded]`
-                                },
-                                {
-                                    inlineData: {
-                                        mimeType: cleanMime,
-                                        data: audioData.replace(/^data:audio\/[^;]+;base64,/, '')
+- If there is no discernible speech, return an empty response.`
+                                    },
+                                    {
+                                        inlineData: {
+                                            mimeType: cleanMime,
+                                            data: audioData.replace(/^data:audio\/[^;]+;base64,/, '')
+                                        }
                                     }
-                                }
-                            ]
-                        }
-                    ]
-                })
-            });
+                                ]
+                            }
+                        ]
+                    })
+                });
 
-            if (gRes.ok) {
-                const gData = await gRes.json();
-                const rawText = gData.candidates?.[0]?.content?.parts?.[0]?.text;
-                if (rawText && rawText.trim()) {
-                    return res.json({
-                        success: true,
-                        transcript: rawText.trim(),
-                        speaker: cleanSpeaker,
-                        source: 'gemini-1.5-flash'
-                    });
+                if (gRes.ok) {
+                    const gData = await gRes.json();
+                    const rawText = gData.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (rawText && rawText.trim() && !rawText.includes('[Audio clip recorded]')) {
+                        return res.json({
+                            success: true,
+                            transcript: rawText.trim(),
+                            speaker: cleanSpeaker,
+                            source: modelName
+                        });
+                    }
                 }
+            } catch (e) {
+                // Try next model
             }
-        } catch (e) {
-            // Fallback
         }
     }
 
     return res.json({
         success: true,
-        transcript: `[Audio recorded from ${cleanSpeaker}]`,
+        transcript: '',
         speaker: cleanSpeaker,
-        source: 'server-nlp-fallback'
+        source: 'server-stt-empty'
     });
 }
 
@@ -1110,7 +1116,8 @@ wss.on('connection', (ws) => {
 
             case 'webrtc-offer':
             case 'webrtc-answer':
-            case 'webrtc-ice-candidate': {
+            case 'webrtc-ice-candidate':
+            case 'remote-transcribe-toggle': {
                 if (!ws.roomId) break;
                 const room = rooms.get(ws.roomId);
                 const sender = room?.participants.get(ws.peerId);

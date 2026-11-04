@@ -16,7 +16,7 @@ app.get('/health', (req, res) => {
         service: 'NLP Task Service',
         status: 'Healthy',
         port: PORT,
-        nlpEngine: process.env.GEMINI_API_KEY ? 'Gemini 1.5 Flash' : 'Deterministic Heuristic NLP'
+        nlpEngine: process.env.GEMINI_API_KEY ? 'Gemini Flash' : 'Deterministic Heuristic NLP'
     });
 });
 
@@ -24,11 +24,8 @@ app.get('/health', (req, res) => {
  * Deterministic local NLP extractor for meeting speech
  */
 function extractLocalTasks(text) {
-    if (!text || typeof text !== 'string') {
-        return [
-            { id: '1', title: 'Review frontend responsiveness', assignee: 'You', due: 'Tomorrow' },
-            { id: '2', title: 'Connect signaling service', assignee: 'Rohan Sharma', due: 'Friday' }
-        ];
+    if (!text || typeof text !== 'string' || !text.trim()) {
+        return [];
     }
 
     const tasks = [];
@@ -38,7 +35,7 @@ function extractLocalTasks(text) {
         const trimmed = sentence.trim();
         if (!trimmed) return;
 
-        const commitmentMatch = trimmed.match(/(?:(?:i'll|i will|rohan will|rohan sharma will|we will|you will|will|need to|should|must)\s+)([^.,;!?]+)/i);
+        const commitmentMatch = trimmed.match(/(?:(?:i'll|i will|rohan will|rohan sharma will|avinash will|we will|you will|will|need to|should|must)\s+)([^.,;!?]+)/i);
         if (commitmentMatch) {
             let taskTitle = commitmentMatch[1].trim();
             // Remove articles (e.g. "connect the signaling service" -> "connect signaling service")
@@ -48,6 +45,8 @@ function extractLocalTasks(text) {
             let assignee = 'You';
             if (/rohan/i.test(trimmed)) {
                 assignee = 'Rohan Sharma';
+            } else if (/avinash/i.test(trimmed)) {
+                assignee = 'Avinash';
             }
 
             let due = 'Tomorrow';
@@ -62,29 +61,11 @@ function extractLocalTasks(text) {
                 id: String(tasks.length + 1),
                 title: taskTitle,
                 assignee,
-                due
+                due,
+                completed: false
             });
         }
     });
-
-    if (tasks.length === 1) {
-        tasks.unshift({
-            id: '1',
-            title: 'Review frontend responsiveness',
-            assignee: 'You',
-            due: 'Tomorrow'
-        });
-        tasks.forEach((t, idx) => {
-            t.id = String(idx + 1);
-        });
-    }
-
-    if (tasks.length === 0) {
-        return [
-            { id: '1', title: 'Review frontend responsiveness', assignee: 'You', due: 'Tomorrow' },
-            { id: '2', title: 'Connect signaling service', assignee: 'Rohan Sharma', due: 'Friday' }
-        ];
-    }
 
     return tasks;
 }
@@ -95,7 +76,7 @@ const handleExtractTasks = async (req, res) => {
 
     if (process.env.GEMINI_API_KEY && transcript) {
         try {
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`;
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${process.env.GEMINI_API_KEY}`;
             const prompt = `Extract action items from this meeting transcript in JSON format.
 Transcript:
 ${transcript}

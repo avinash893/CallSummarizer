@@ -121,6 +121,26 @@ test('CallSummarizer Unified Server - Google Auth Session & Calendar API', async
         assert.strictEqual(eventStartDate.getMinutes(), 0);
     });
 
+    await t.test('POST /api/calendar/events rejects event creation when requireTime is true and no time is specified', async () => {
+        const res = await fetch(`${baseUrl}/api/calendar/events`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Session-ID': testSessionId
+            },
+            body: JSON.stringify({
+                title: 'Review team deliverables without time',
+                due: 'Tomorrow',
+                requireTime: true
+            })
+        });
+
+        assert.strictEqual(res.status, 400);
+        const data = await res.json();
+        assert.strictEqual(data.success, false);
+        assert.match(data.error, /no time specified/i);
+    });
+
     await t.test('POST /api/calendar/events handles invalid date strings safely without crashing', async () => {
         const res = await fetch(`${baseUrl}/api/calendar/events`, {
             method: 'POST',

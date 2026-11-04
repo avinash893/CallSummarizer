@@ -5,8 +5,8 @@ import NotesDrawer from '../NotesDrawer';
 
 describe('NotesDrawer Component', () => {
   const sampleTasks = [
-    { id: 1, title: 'Review microservice signaling service', assignee: 'Rohan', due: 'Tomorrow', completed: false },
-    { id: 2, title: 'Complete frontend usability review', assignee: 'You', due: 'Today', completed: true }
+    { id: 1, title: 'Review microservice signaling service', assignee: 'Rohan', due: 'Tomorrow at 2 pm', completed: false },
+    { id: 2, title: 'Complete frontend usability review', assignee: 'You', due: 'Today at 4 pm', completed: true }
   ];
 
   const sampleTranscript = [
@@ -198,7 +198,7 @@ describe('NotesDrawer Component', () => {
 
   it('handles tasks with id 0 properly without treating them as invalid', async () => {
     const zeroIdTasks = [
-      { id: 0, title: 'Zero id action item', assignee: 'Dev', due: 'Tomorrow', completed: false }
+      { id: 0, title: 'Zero id action item', assignee: 'Dev', due: 'Tomorrow at 10 am', completed: false }
     ];
     const handleAddToCalendar = vi.fn().mockResolvedValue({ success: true, event: { id: 'cal-zero-1' } });
 
@@ -334,5 +334,23 @@ describe('NotesDrawer Component', () => {
     expect(closeBtn).toBeInTheDocument();
     fireEvent.click(closeBtn);
     expect(handleClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not display Add to Google Calendar button when task has no time given', () => {
+    const tasksWithoutTime = [
+      { id: 10, title: 'Review frontend responsiveness', assignee: 'You', due: 'Tomorrow', completed: false },
+      { id: 11, title: 'Connect signaling service', assignee: 'Rohan Sharma', due: 'Friday', completed: false }
+    ];
+
+    render(
+      <NotesDrawer
+        isOpen={true}
+        tasks={tasksWithoutTime}
+        transcript={sampleTranscript}
+        onToggleTask={vi.fn()}
+      />
+    );
+
+    expect(screen.queryByRole('button', { name: /Add to Google Calendar/i })).not.toBeInTheDocument();
   });
 });

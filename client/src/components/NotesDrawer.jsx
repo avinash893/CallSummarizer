@@ -7,6 +7,17 @@ function getInitials(name = 'User') {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
+export function taskHasTime(task) {
+  if (!task) return false;
+  if (task.startTime) return true;
+  const text = `${task.due || ''} ${task.title || ''} ${task.description || ''}`;
+  return (
+    /\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b/i.test(text) ||
+    /\b(?:at\s+)?([01]?\d|2[0-3]):[0-5]\d\b/i.test(text) ||
+    /\bat\s+\d{1,2}\b/i.test(text)
+  );
+}
+
 export default function NotesDrawer({
   isOpen,
   onClose,
@@ -50,6 +61,7 @@ export default function NotesDrawer({
 
   const handleRequestAddToCalendar = (task) => {
     if (!task || task.id === undefined || task.id === null) return;
+    if (!taskHasTime(task)) return;
     if (calendarLoadingId !== null || calendarSuccessIds.includes(task.id) || task.calendarAdded) {
       return;
     }
@@ -59,6 +71,7 @@ export default function NotesDrawer({
 
   const handleConfirmAddToCalendar = async (task) => {
     if (!task || task.id === undefined || task.id === null) return;
+    if (!taskHasTime(task)) return;
     if (calendarLoadingId !== null || calendarSuccessIds.includes(task.id) || task.calendarAdded) {
       return;
     }
@@ -444,53 +457,55 @@ export default function NotesDrawer({
                         </div>
                       </label>
 
-                      <div className="task-calendar-controls">
-                        {task.calendarAdded || calendarSuccessIds.includes(task.id) ? (
-                          <span className="calendar-badge-success" title="Added to Google Calendar with 5-minute popup alarm reminder">
-                            <i className="bi bi-calendar-check-fill" style={{ marginRight: '4px' }}></i>
-                            In Calendar
-                          </span>
-                        ) : confirmingTaskId === task.id ? (
-                          <div className="calendar-confirm-box" role="dialog" aria-label="Confirm adding event to Google Calendar">
-                            <span className="calendar-confirm-prompt">
-                              <i className="bi bi-bell-fill" style={{ marginRight: '4px' }}></i>
-                              Add to Google Calendar? (5m reminder)
+                      {taskHasTime(task) && (
+                        <div className="task-calendar-controls">
+                          {task.calendarAdded || calendarSuccessIds.includes(task.id) ? (
+                            <span className="calendar-badge-success" title="Added to Google Calendar with 5-minute popup alarm reminder">
+                              <i className="bi bi-calendar-check-fill" style={{ marginRight: '4px' }}></i>
+                              In Calendar
                             </span>
-                            <div className="calendar-confirm-btns btn-group btn-group-sm">
-                              <button
-                                type="button"
-                                className="btn btn-calendar-confirm"
-                                onClick={() => handleConfirmAddToCalendar(task)}
-                                disabled={calendarLoadingId !== null}
-                              >
-                                <i className="bi bi-check2" style={{ marginRight: '4px' }}></i>
-                                <span>{calendarLoadingId === task.id ? 'Adding...' : 'Confirm'}</span>
-                              </button>
-                              <button
-                                type="button"
-                                className="btn btn-outline-secondary btn-calendar-cancel"
-                                onClick={() => setConfirmingTaskId(null)}
-                                disabled={calendarLoadingId !== null}
-                              >
-                                <i className="bi bi-x" style={{ marginRight: '4px' }}></i>
-                                <span>Cancel</span>
-                              </button>
+                          ) : confirmingTaskId === task.id ? (
+                            <div className="calendar-confirm-box" role="dialog" aria-label="Confirm adding event to Google Calendar">
+                              <span className="calendar-confirm-prompt">
+                                <i className="bi bi-bell-fill" style={{ marginRight: '4px' }}></i>
+                                Add to Google Calendar? (5m reminder)
+                              </span>
+                              <div className="calendar-confirm-btns btn-group btn-group-sm">
+                                <button
+                                  type="button"
+                                  className="btn btn-calendar-confirm"
+                                  onClick={() => handleConfirmAddToCalendar(task)}
+                                  disabled={calendarLoadingId !== null}
+                                >
+                                  <i className="bi bi-check2" style={{ marginRight: '4px' }}></i>
+                                  <span>{calendarLoadingId === task.id ? 'Adding...' : 'Confirm'}</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-outline-secondary btn-calendar-cancel"
+                                  onClick={() => setConfirmingTaskId(null)}
+                                  disabled={calendarLoadingId !== null}
+                                >
+                                  <i className="bi bi-x" style={{ marginRight: '4px' }}></i>
+                                  <span>Cancel</span>
+                                </button>
+                              </div>
                             </div>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            className="btn btn-outline-secondary btn-sm btn-add-calendar"
-                            title="Add to Google Calendar"
-                            aria-label="Add to Google Calendar"
-                            onClick={() => handleRequestAddToCalendar(task)}
-                            disabled={calendarLoadingId !== null}
-                          >
-                            <i className="bi bi-calendar-plus" style={{ marginRight: '4px' }}></i>
-                            <span>{calendarLoadingId === task.id ? 'Adding...' : 'Add to Google Calendar'}</span>
-                          </button>
-                        )}
-                      </div>
+                          ) : (
+                            <button
+                              type="button"
+                              className="btn btn-outline-secondary btn-sm btn-add-calendar"
+                              title="Add to Google Calendar"
+                              aria-label="Add to Google Calendar"
+                              onClick={() => handleRequestAddToCalendar(task)}
+                              disabled={calendarLoadingId !== null}
+                            >
+                              <i className="bi bi-calendar-plus" style={{ marginRight: '4px' }}></i>
+                              <span>{calendarLoadingId === task.id ? 'Adding...' : 'Add to Google Calendar'}</span>
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
                   ))
                 )}

@@ -1272,6 +1272,15 @@ export default function App() {
   };
 
   const handleAddToCalendar = async (task) => {
+    // Tasks without explicit time must not be added to calendar
+    const taskText = `${task?.due || ''} ${task?.title || ''} ${task?.description || ''}`;
+    const hasTime = task?.startTime || /\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b/i.test(taskText) || /\b(?:at\s+)?([01]?\d|2[0-3]):[0-5]\d\b/i.test(taskText) || /\bat\s+\d{1,2}\b/i.test(taskText);
+    if (!hasTime) {
+      return {
+        success: false,
+        error: 'Cannot add to Google Calendar: No time specified for this task.'
+      };
+    }
     try {
       const gatewayUrl = import.meta.env.VITE_GATEWAY_URL || '';
 
@@ -1293,7 +1302,8 @@ export default function App() {
           description: `Action item assigned to ${task.assignee || 'You'}. Due: ${task.due || 'Upcoming'}\nRoom: ${roomName}`,
           due: task.due,
           timeZone: userTimeZone,
-          sessionId: user?.sessionId
+          sessionId: user?.sessionId,
+          requireTime: true
         })
       });
 

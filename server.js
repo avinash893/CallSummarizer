@@ -697,13 +697,13 @@ function parseEventDates(startTime, endTime, due, title = '', description = '') 
         endDateTime = new Date(startDateTime.getTime() + 60 * 60 * 1000); // 1 hour duration
     }
 
-    return { startDateTime, endDateTime };
+    return { startDateTime, endDateTime, hasExplicitTime: Boolean(startTime || explicitTime) };
 }
 
 // Google Calendar Event Creation with 5-minute popup notification reminder
 app.post('/api/calendar/events', async (req, res) => {
     try {
-        const { title, description, due, startTime, endTime, timeZone: requestedTimeZone } = req.body || {};
+        const { title, description, due, startTime, endTime, timeZone: requestedTimeZone, requireTime } = req.body || {};
 
         if (!title || !String(title).trim()) {
             return res.status(400).json({ success: false, error: 'Event title is required' });
@@ -724,7 +724,14 @@ app.post('/api/calendar/events', async (req, res) => {
             });
         }
 
-        const { startDateTime, endDateTime } = parseEventDates(startTime, endTime, due, title, description);
+        const { startDateTime, endDateTime, hasExplicitTime } = parseEventDates(startTime, endTime, due, title, description);
+
+        if (requireTime && !hasExplicitTime) {
+            return res.status(400).json({
+                success: false,
+                error: 'Cannot add to Google Calendar: No time specified for this task'
+            });
+        }
 
         const rawTimeZone = (requestedTimeZone && typeof requestedTimeZone === 'string' && requestedTimeZone.trim())
             ? requestedTimeZone.trim()

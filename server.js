@@ -679,14 +679,83 @@ function extractTimeDetails(str) {
     return null;
 }
 
+function getTimezoneOffsetString(timeZone, date = new Date()) {
+    try {
+        const parts = new Intl.DateTimeFormat('en-US', {
+            timeZone,
+            timeZoneName: 'shortOffset'
+        }).formatToParts(date);
+        const tzPart = parts.find((p) => p.type === 'timeZoneName')?.value || 'GMT';
+        const match = tzPart.match(/GMT([+-])(\d{1,2})(?::(\d{2}))?/);
+        if (!match) return '+00:00';
+        const sign = match[1];
+        const h = match[2].padStart(2, '0');
+        const m = (match[3] || '00').padStart(2, '0');
+        return `${sign}${h}:${m}`;
+    } catch (e) {
+        return '+00:00';
+    }
+}
+
+function getLocalDateString(timeZone, daysToAdd = 0) {
+    try {
+        const target = new Date(Date.now() + daysToAdd * 24 * 60 * 60 * 1000);
+        const fmt = new Intl.DateTimeFormat('en-CA', {
+            timeZone,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit'
+        });
+        return fmt.format(target);
+    } catch (e) {
+        const d = new Date(Date.now() + daysToAdd * 24 * 60 * 60 * 1000);
+        return d.toISOString().split('T')[0];
+    }
+}
+
+function formatRfc3339(date, timeZone = 'UTC') {
+    if (!date) return new Date().toISOString();
+    const d = (date instanceof Date) ? date : new Date(date);
+    if (isNaN(d.getTime())) return new Date().toISOString();
+    try {
+        const formatter = new Intl.DateTimeFormat('en-CA', {
+            timeZone,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false
+        });
+        const parts = formatter.formatToParts(d);
+        const getPart = (type) => parts.find((p) => p.type === type)?.value || '00';
+        const YYYY = getPart('year').padStart(4, '0');
+        const MM = getPart('month');
+        const DD = getPart('day');
+        let HH = getPart('hour');
+        if (HH === '24') HH = '00';
+        const mm = getPart('minute');
+        const ss = getPart('second');
+        const offset = getTimezoneOffsetString(timeZone, d);
+        return `${YYYY}-${MM}-${DD}T${HH}:${mm}:${ss}${offset}`;
+    } catch (e) {
+        try {
+            return d.toISOString();
+        } catch (err) {
+            return new Date().toISOString();
+        }
+    }
+}
+
 // Safely parse event start and end times from startTime, endTime, natural due strings, title, and description
-function parseEventDates(startTime, endTime, due, title = '', description = '') {
+function parseEventDates(startTime, endTime, due, title = '', description = '', timeZone = 'UTC') {
     let startDateTime = null;
     let endDateTime = null;
 
     if (startTime) {
         const parsedStart = new Date(startTime);
-        if (!isNaN(parsedStart.getTime())) {
+        if (!isNaN(parsedStart.getTime()) && parsedStart.getFullYear() >= 1970 && parsedStart.getFullYear() < 2100) {
             startDateTime = parsedStart;
         }
     }
@@ -697,86 +766,78 @@ function parseEventDates(startTime, endTime, due, title = '', description = '') 
     if (!startDateTime && due) {
         if (typeof due === 'number') {
             const parsedDue = new Date(due);
-            if (!isNaN(parsedDue.getTime())) startDateTime = parsedDue;
+            if (!isNaN(parsedDue.getTime()) && parsedDue.getFullYear() >= 1970 && parsedDue.getFullYear() < 2100) startDateTime = parsedDue;
         } else if (typeof due === 'string') {
             const trimmedDue = due.trim();
             const lowerDue = trimmedDue.toLowerCase();
             const directParsed = new Date(trimmedDue);
-            if (!isNaN(directParsed.getTime()) && !/^\d{1,2}(:\d{2})?\s*(am|pm)?$/i.test(trimmedDue)) {
+            if (!isNaN(directParsed.getTime()) && directParsed.getFullYear() >= 1970 && directParsed.getFullYear() < 2100 && !/^\d{1,2}(:\d{2})?\s*(am|pm)?$/i.test(trimmedDue)) {
                 startDateTime = directParsed;
-            } else if (lowerDue.includes('today')) {
-                startDateTime = new Date();
-                if (!explicitTime) {
-                    startDateTime.setHours(startDateTime.getHours() + 1, 0, 0, 0);
-                }
-            } else if (lowerDue.includes('tomorrow')) {
-                startDateTime = new Date(Date.now() + 24 * 60 * 60 * 1000);
-                if (!explicitTime) {
-                    startDateTime.setHours(10, 0, 0, 0);
-                }
             } else {
-                const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-                const matchedDay = days.findIndex((d) => lowerDue.includes(d));
-                if (matchedDay !== -1) {
-                    startDateTime = new Date();
-                    const currentDay = startDateTime.getDay();
-                    let diff = (matchedDay - currentDay + 7) % 7;
-                    if (diff === 0) diff = 7; // next week if current day
-                    startDateTime.setDate(startDateTime.getDate() + diff);
-                    if (!explicitTime) {
-                        startDateTime.setHours(10, 0, 0, 0);
+                let daysToAdd = 0;
+                let dayMatched = false;
+                if (lowerDue.includes('tomorrow')) {
+                    daysToAdd = 1;
+                    dayMatched = true;
+                } else if (lowerDue.includes('today')) {
+                    daysToAdd = 0;
+                    dayMatched = true;
+                } else {
+                    const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+                    const matchedDay = days.findIndex((d) => lowerDue.includes(d));
+                    if (matchedDay !== -1) {
+                        const nowInTz = new Date();
+                        const currentDay = nowInTz.getDay();
+                        daysToAdd = (matchedDay - currentDay + 7) % 7;
+                        if (daysToAdd === 0) daysToAdd = 7;
+                        dayMatched = true;
                     }
                 }
+
+                if (dayMatched || explicitTime) {
+                    const dateStr = getLocalDateString(timeZone, daysToAdd);
+                    const offsetStr = getTimezoneOffsetString(timeZone);
+                    const pad = (n) => String(n).padStart(2, '0');
+                    const targetHour = explicitTime ? explicitTime.hour : 10;
+                    const targetMinute = explicitTime ? explicitTime.minute : 0;
+                    const rfcString = `${dateStr}T${pad(targetHour)}:${pad(targetMinute)}:00${offsetStr}`;
+                    startDateTime = new Date(rfcString);
+                }
             }
         }
     }
 
-    if (!startDateTime) {
-        const lowerCombined = combinedText.toLowerCase();
-        if (lowerCombined.includes('today')) {
+    if (!startDateTime && explicitTime) {
+        const dateStr = getLocalDateString(timeZone, 0);
+        const offsetStr = getTimezoneOffsetString(timeZone);
+        const pad = (n) => String(n).padStart(2, '0');
+        const rfcString = `${dateStr}T${pad(explicitTime.hour)}:${pad(explicitTime.minute)}:00${offsetStr}`;
+        let parsed = new Date(rfcString);
+        if (parsed.getTime() <= Date.now()) {
+            const tomorrowStr = getLocalDateString(timeZone, 1);
+            parsed = new Date(`${tomorrowStr}T${pad(explicitTime.hour)}:${pad(explicitTime.minute)}:00${offsetStr}`);
+        }
+        startDateTime = parsed;
+    }
+
+    if (!startDateTime || isNaN(startDateTime.getTime())) {
+        const tomorrowStr = getLocalDateString(timeZone, 1);
+        const offsetStr = getTimezoneOffsetString(timeZone);
+        startDateTime = new Date(`${tomorrowStr}T10:00:00${offsetStr}`);
+        if (isNaN(startDateTime.getTime())) {
             startDateTime = new Date();
-        } else if (lowerCombined.includes('tomorrow')) {
-            startDateTime = new Date(Date.now() + 24 * 60 * 60 * 1000);
-        } else {
-            const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-            const matchedDay = days.findIndex((d) => lowerCombined.includes(d));
-            if (matchedDay !== -1) {
-                startDateTime = new Date();
-                const currentDay = startDateTime.getDay();
-                let diff = (matchedDay - currentDay + 7) % 7;
-                if (diff === 0) diff = 7;
-                startDateTime.setDate(startDateTime.getDate() + diff);
-            }
         }
-    }
-
-    if (!startDateTime) {
-        if (explicitTime) {
-            startDateTime = new Date();
-            startDateTime.setHours(explicitTime.hour, explicitTime.minute, 0, 0);
-            if (startDateTime.getTime() <= Date.now()) {
-                startDateTime.setDate(startDateTime.getDate() + 1);
-            }
-        } else {
-            // Default: tomorrow at 10:00 AM local time or next available slot
-            startDateTime = new Date(Date.now() + 24 * 60 * 60 * 1000);
-            startDateTime.setHours(10, 0, 0, 0);
-        }
-    }
-
-    // Apply explicit hour and minute if specified in due or title
-    if (explicitTime && startDateTime) {
-        startDateTime.setHours(explicitTime.hour, explicitTime.minute, 0, 0);
     }
 
     if (endTime) {
         const parsedEnd = new Date(endTime);
-        if (!isNaN(parsedEnd.getTime())) {
+        if (!isNaN(parsedEnd.getTime()) && parsedEnd.getFullYear() >= 1970 && parsedEnd.getFullYear() < 2100) {
             endDateTime = parsedEnd;
         }
     }
+
     // Ensure endDateTime is strictly after startDateTime
-    if (!endDateTime || endDateTime.getTime() <= startDateTime.getTime()) {
+    if (!endDateTime || isNaN(endDateTime.getTime()) || endDateTime.getTime() <= startDateTime.getTime()) {
         endDateTime = new Date(startDateTime.getTime() + 60 * 60 * 1000); // 1 hour duration
     }
 
@@ -807,15 +868,6 @@ app.post('/api/calendar/events', async (req, res) => {
             });
         }
 
-        const { startDateTime, endDateTime, hasExplicitTime } = parseEventDates(startTime, endTime, due, title, description);
-
-        if (requireTime && !hasExplicitTime) {
-            return res.status(400).json({
-                success: false,
-                error: 'Cannot add to Google Calendar: No time specified for this task'
-            });
-        }
-
         const rawTimeZone = (requestedTimeZone && typeof requestedTimeZone === 'string' && requestedTimeZone.trim())
             ? requestedTimeZone.trim()
             : (Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC');
@@ -828,16 +880,25 @@ app.post('/api/calendar/events', async (req, res) => {
             timeZone = 'UTC';
         }
 
+        const { startDateTime, endDateTime, hasExplicitTime } = parseEventDates(startTime, endTime, due, title, description, timeZone);
+
+        if (requireTime && !hasExplicitTime) {
+            return res.status(400).json({
+                success: false,
+                error: 'Cannot add to Google Calendar: No time specified for this task'
+            });
+        }
+
         const cleanSummary = String(title).trim().slice(0, 1000);
         const eventPayload = {
             summary: cleanSummary,
             description: description ? String(description).trim() : `Action item from CallSummarizer meeting: ${cleanSummary}`,
             start: {
-                dateTime: startDateTime.toISOString(),
+                dateTime: formatRfc3339(startDateTime, timeZone),
                 timeZone
             },
             end: {
-                dateTime: endDateTime.toISOString(),
+                dateTime: formatRfc3339(endDateTime, timeZone),
                 timeZone
             },
             reminders: {

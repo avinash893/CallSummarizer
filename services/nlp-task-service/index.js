@@ -73,10 +73,11 @@ function extractLocalTasks(text) {
 // Process meeting transcript text and extract structured tasks
 const handleExtractTasks = async (req, res) => {
     const { transcript } = req.body || {};
+    const geminiKey = process.env.GEMINI_API_KEY || req.headers['x-gemini-api-key'] || req.body?.geminiApiKey;
 
-    if (process.env.GEMINI_API_KEY && transcript) {
+    if (geminiKey && transcript) {
         try {
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${process.env.GEMINI_API_KEY}`;
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${geminiKey}`;
             const prompt = `Extract action items from this meeting transcript in JSON format.
 Transcript:
 ${transcript}

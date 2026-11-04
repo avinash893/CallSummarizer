@@ -852,12 +852,13 @@ app.post('/api/nlp-tasks/extract-tasks', async (req, res) => {
     }
 
     const cleanTranscript = String(transcript).trim().slice(0, 50000);
+    const geminiKey = process.env.GEMINI_API_KEY || req.headers['x-gemini-api-key'] || req.body?.geminiApiKey;
 
-    if (process.env.GEMINI_API_KEY) {
+    if (geminiKey) {
         const candidateModels = ['gemini-3.5-flash-lite', 'gemini-3.5-flash'];
         for (const modelName of candidateModels) {
             try {
-                const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${process.env.GEMINI_API_KEY}`;
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${geminiKey}`;
                 const prompt = `Extract action items from this meeting transcript in JSON format.
 Transcript:
 ${cleanTranscript}
@@ -935,12 +936,13 @@ async function handleTranscribeAudio(req, res) {
 
     const cleanSpeaker = String(speakerName || 'Participant').trim();
     const cleanMime = String(mimeType || 'audio/webm').split(';')[0].trim();
+    const geminiKey = process.env.GEMINI_API_KEY || req.headers['x-gemini-api-key'] || req.body?.geminiApiKey;
 
-    if (process.env.GEMINI_API_KEY) {
+    if (geminiKey) {
         const candidateModels = ['gemini-3.5-transcribe', 'gemini-3.5-flash-lite', 'gemini-3.5-flash'];
         for (const modelName of candidateModels) {
             try {
-                const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${process.env.GEMINI_API_KEY}`;
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${geminiKey}`;
                 const gRes = await fetch(url, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },

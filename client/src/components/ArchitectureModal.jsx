@@ -104,7 +104,7 @@ export default function ArchitectureModal({ isOpen, onClose }) {
               <i className="bi bi-display" style={{ marginRight: '6px' }}></i>
               React Client
             </span>
-            <span className="service-card-port">Port 5173 • Live</span>
+            <span className="service-card-port">Cloud Web App • Live</span>
           </div>
 
           <div className="service-card list-group-item">
@@ -112,7 +112,7 @@ export default function ArchitectureModal({ isOpen, onClose }) {
               <i className="bi bi-router" style={{ marginRight: '6px' }}></i>
               API Gateway
             </span>
-            <span className="service-card-port">Port 5000 • Routing</span>
+            <span className="service-card-port">Render Cloud • Active</span>
           </div>
 
           <div className="service-card list-group-item">
@@ -120,7 +120,7 @@ export default function ArchitectureModal({ isOpen, onClose }) {
               <i className="bi bi-broadcast-pin" style={{ marginRight: '6px' }}></i>
               Signaling Service
             </span>
-            <span className="service-card-port">Port 5002 • WebSockets</span>
+            <span className="service-card-port">Cloud WebSockets • Active</span>
           </div>
 
           <div className="service-card list-group-item">
@@ -128,7 +128,7 @@ export default function ArchitectureModal({ isOpen, onClose }) {
               <i className="bi bi-cpu" style={{ marginRight: '6px' }}></i>
               NLP Task Service
             </span>
-            <span className="service-card-port">Port 5003 • NLP / STT</span>
+            <span className="service-card-port">Gemini Cloud API • Active</span>
           </div>
 
           <div className="service-card list-group-item">
@@ -136,7 +136,7 @@ export default function ArchitectureModal({ isOpen, onClose }) {
               <i className="bi bi-calendar-event" style={{ marginRight: '6px' }}></i>
               Meeting Service
             </span>
-            <span className="service-card-port">Port 5001 • REST API</span>
+            <span className="service-card-port">REST API • Active</span>
           </div>
 
           <div className="service-card list-group-item">
@@ -144,12 +144,12 @@ export default function ArchitectureModal({ isOpen, onClose }) {
               <i className="bi bi-database" style={{ marginRight: '6px' }}></i>
               MongoDB Database
             </span>
-            <span className="service-card-port">Port 27017 • Persistence</span>
+            <span className="service-card-port">Cloud Store • Active</span>
           </div>
         </div>
 
         <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: '1.4', margin: 0 }}>
-          Configured in <code>docker-compose.yml</code>. Each service operates independently with isolated API boundaries.
+          Deployed in cloud on Render. AI NLP and Speech-to-Text powered globally by Google Gemini API.
         </p>
       </div>
     </div>

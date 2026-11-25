@@ -748,18 +748,30 @@ export default function StudioDawView({
           </div>
 
           {comparisonStats ? (
-            <div className="daw-coach-metrics">
+            <div className="daw-coach-metrics" data-testid="daw-coach-metrics">
+              <div className="metric-chip">
+                <small>Overall Score</small>
+                <strong>{comparisonStats.overallScore}/100 ({comparisonStats.overallGrade})</strong>
+              </div>
               <div className="metric-chip">
                 <small>Sur Accuracy</small>
                 <strong>{comparisonStats.inTunePercent}%</strong>
               </div>
               <div className="metric-chip">
-                <small>Mean Offset</small>
-                <strong>{comparisonStats.avgCentsOffset > 0 ? '+' : ''}{comparisonStats.avgCentsOffset}c</strong>
+                <small>Error %</small>
+                <strong style={{ color: comparisonStats.errorPercent > 25 ? '#f87171' : '#fbbf24' }}>{comparisonStats.errorPercent}%</strong>
               </div>
               <div className="metric-chip">
-                <small>Mean Pitch</small>
-                <strong>{comparisonStats.userAvgHz} Hz</strong>
+                <small>Flat / Sharp</small>
+                <strong>{comparisonStats.flatPercent}% / {comparisonStats.sharpPercent}%</strong>
+              </div>
+              <div className="metric-chip">
+                <small>Stability</small>
+                <strong>{comparisonStats.stabilityScore}%</strong>
+              </div>
+              <div className="metric-chip">
+                <small>Mean Offset</small>
+                <strong>{comparisonStats.avgCentsOffset > 0 ? '+' : ''}{comparisonStats.avgCentsOffset}c</strong>
               </div>
             </div>
           ) : (

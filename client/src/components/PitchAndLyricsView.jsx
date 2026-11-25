@@ -5,6 +5,8 @@ import {
   analyzeAudioBufferPitchAsync,
   autoDetectVocalScaleAndRange,
   findNearestSwara,
+  findActiveTargetBar,
+  evaluatePitchMatch,
   autoCorrelate
 } from '../audio/sargamEngine';
 
@@ -36,6 +38,16 @@ export default function PitchAndLyricsView({
   const [showLyricsEditor, setShowLyricsEditor] = useState(false);
   const [lyricsDraft, setLyricsDraft] = useState('');
   const [needsCookieHint, setNeedsCookieHint] = useState(false);
+  const [tolerancePct, setTolerancePct] = useState(0.10);
+  const [sessionStats, setSessionStats] = useState({
+    totalFrames: 0,
+    matchedFrames: 0,
+    flatFrames: 0,
+    sharpFrames: 0,
+    errorSum: 0,
+    streak: 0,
+    bestStreak: 0
+  });
 
   const vocalAudioRef = useRef(null);
   const instAudioRef = useRef(null);
@@ -379,6 +391,51 @@ export default function PitchAndLyricsView({
     setStatusMsg(`Updated ${parsed.length} cue lines for jam room.`);
   };
 
+  const activeTargetBar = findActiveTargetBar(backingState?.noteBars, currentTime);
+  const liveMatch = evaluatePitchMatch(liveMicPitch?.freq, activeTargetBar, tolerancePct);
+
+  useEffect(() => {
+    setSessionStats({
+      totalFrames: 0,
+      matchedFrames: 0,
+      flatFrames: 0,
+      sharpFrames: 0,
+      errorSum: 0,
+      streak: 0,
+      bestStreak: 0
+    });
+  }, [backingState?.title, backingState?.vocalUrl]);
+
+  useEffect(() => {
+    if (!liveMicPitch || liveMicPitch.freq <= 50) return;
+    const bar = findActiveTargetBar(backingState?.noteBars, currentTime);
+    const m = evaluatePitchMatch(liveMicPitch.freq, bar, tolerancePct);
+    if (!m) return;
+    setSessionStats((prev) => {
+      const nextStreak = m.isMatched ? prev.streak + 1 : 0;
+      return {
+        totalFrames: prev.totalFrames + 1,
+        matchedFrames: prev.matchedFrames + (m.isMatched ? 1 : 0),
+        flatFrames: prev.flatFrames + (!m.isMatched && m.direction === 'flat' ? 1 : 0),
+        sharpFrames: prev.sharpFrames + (!m.isMatched && m.direction === 'sharp' ? 1 : 0),
+        errorSum: prev.errorSum + m.errorPct,
+        streak: nextStreak,
+        bestStreak: Math.max(prev.bestStreak, nextStreak)
+      };
+    });
+  }, [liveMicPitch, backingState?.noteBars, tolerancePct]);
+
+  const tolLabel = Math.round(tolerancePct * 100);
+  const sessionAcc = sessionStats.totalFrames > 0
+    ? Math.round((sessionStats.matchedFrames / sessionStats.totalFrames) * 100)
+    : null;
+  const sessionFlatPct = sessionStats.totalFrames > 0
+    ? Math.round((sessionStats.flatFrames / sessionStats.totalFrames) * 100)
+    : 0;
+  const sessionSharpPct = sessionStats.totalFrames > 0
+    ? Math.round((sessionStats.sharpFrames / sessionStats.totalFrames) * 100)
+    : 0;
+
   const activeLyricIndex = (backingState?.lyrics || []).findIndex(
     (l) => currentTime >= (l.start || 0) && currentTime <= (l.end ?? l.start + 6)
   );
@@ -513,6 +570,72 @@ export default function PitchAndLyricsView({
         )}
       </div>
 
+      {/* Real-Time 10% Error Pitch Tolerance Banner */}
+      <div
+        className={`plv-match-banner ${liveMatch ? (liveMatch.isMatched ? 'matched' : 'off-pitch') : ''}`}
+        data-testid="pitch-match-banner"
+      >
+        <div className="plv-match-status">
+          <span className="plv-match-indicator" />
+          <span className="plv-match-text">
+            {liveMatch?.isMatched
+              ? `✨ Sur Mila! Within ${tolLabel}% pitch tolerance (${liveMatch.errorPct}% error)`
+              : liveMatch
+                ? `Adjust pitch: ${liveMatch.direction === 'flat' ? 'Flat (too low)' : 'Sharp (too high)'} (${liveMatch.errorPct}% off, need ≤ ${tolLabel}%)`
+                : liveMicPitch?.freq > 50
+                  ? `Singing at ${liveMicPitch.freq} Hz (No active note bar)`
+                  : `Sing into mic to match the reference vocal (${tolLabel}% tolerance)...`}
+          </span>
+        </div>
+
+        <div className="plv-match-metrics">
+          <span className={`plv-metric-pill ${liveMatch ? (liveMatch.isMatched ? 'ok' : 'warn') : ''}`} data-testid="pitch-diff-badge">
+            {liveMatch ? `Error: ${liveMatch.errorPct}%` : 'Diff: --'}
+          </span>
+          <span className="plv-metric-pill" data-testid="pitch-accuracy-badge">
+            {sessionAcc !== null ? `Accuracy: ${sessionAcc}%` : 'Accuracy: --'}
+          </span>
+          <span className="plv-metric-pill">
+            Flat: {sessionFlatPct}% · Sharp: {sessionSharpPct}%
+          </span>
+          <span className="plv-metric-pill">
+            Streak: {sessionStats.streak}
+          </span>
+          <div className="plv-tolerance-group" role="group" aria-label="Pitch error tolerance">
+            {[0.05, 0.10, 0.15].map((tol) => (
+              <button
+                key={tol}
+                type="button"
+                className={`plv-tol-btn ${tolerancePct === tol ? 'active' : ''}`}
+                onClick={() => setTolerancePct(tol)}
+              >
+                {Math.round(tol * 100)}%
+              </button>
+            ))}
+          </div>
+          {sessionStats.totalFrames > 0 && (
+            <button
+              type="button"
+              className="plv-tol-btn"
+              onClick={() =>
+                setSessionStats({
+                  totalFrames: 0,
+                  matchedFrames: 0,
+                  flatFrames: 0,
+                  sharpFrames: 0,
+                  errorSum: 0,
+                  streak: 0,
+                  bestStreak: 0
+                })
+              }
+              title="Reset pitch accuracy session counters"
+            >
+              Reset
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Main Split: Dual SVG Scale Watchers + Interactive Piano Roll */}
       <div className="plv-stage-grid">
         <div className="plv-dials-col">
@@ -545,6 +668,8 @@ export default function PitchAndLyricsView({
             langMode={jamState.langMode}
             liveMicPitch={liveMicPitch}
             onSeek={handleSeek}
+            tolerancePct={tolerancePct}
+            liveMatch={liveMatch}
           />
         </div>
       </div>

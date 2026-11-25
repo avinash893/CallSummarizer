@@ -470,3 +470,57 @@ export function playReferenceSwaraTone(freq, duration = 0.85) {
     // Ignore audio context errors cleanly
   }
 }
+
+export function findActiveTargetBar(noteBars, currentTime, graceSec = 0.25) {
+  if (!Array.isArray(noteBars) || noteBars.length === 0) return null;
+  let nearestBar = null;
+  let minDist = Infinity;
+
+  for (let i = 0; i < noteBars.length; i++) {
+    const b = noteBars[i];
+    if (!b) continue;
+    const start = Number(b.start) || 0;
+    const end = Number(b.end) || start;
+    if (currentTime >= start && currentTime <= end) {
+      return b;
+    }
+    const dist = Math.abs(currentTime - (start + end) / 2);
+    if (dist < graceSec && dist < minDist) {
+      minDist = dist;
+      nearestBar = b;
+    }
+  }
+  return nearestBar;
+}
+
+export function evaluatePitchMatch(userHz, targetBar, tolerancePct = 0.10) {
+  const hz = Number(userHz) || 0;
+  const rawTargetHz = Number(
+    targetBar?.freq ||
+      targetBar?.avg_hz ||
+      targetBar?.hz ||
+      (targetBar?.midi ? 440 * Math.pow(2, (targetBar.midi - 69) / 12) : 0)
+  );
+  if (hz <= 50 || rawTargetHz <= 50) return null;
+
+  const candidates = [rawTargetHz, rawTargetHz * 0.5, rawTargetHz * 2.0];
+  let minErr = Infinity;
+  let bestCandidate = rawTargetHz;
+
+  for (let i = 0; i < candidates.length; i++) {
+    const c = candidates[i];
+    const err = Math.abs(hz - c) / c;
+    if (err < minErr) {
+      minErr = err;
+      bestCandidate = c;
+    }
+  }
+
+  return {
+    isMatched: minErr <= tolerancePct,
+    errorPct: Number((minErr * 100).toFixed(1)),
+    direction: hz < bestCandidate ? 'flat' : 'sharp',
+    targetHz: Number(rawTargetHz.toFixed(1)),
+    tolerancePct
+  };
+}

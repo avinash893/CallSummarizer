@@ -88,11 +88,30 @@ export function analyzeAndCompareVoices({
     : 0;
   const inTuneCount = cents.filter((c) => Math.abs(c) <= 15).length;
   const inTunePercent = cents.length ? (inTuneCount / count) * 100 : 0;
+  const flatPercent = cents.length
+    ? Math.round((cents.filter((c) => c < -15).length / count) * 100)
+    : 0;
+  const sharpPercent = cents.length
+    ? Math.round((cents.filter((c) => c > 15).length / count) * 100)
+    : 0;
+  const errorPercent = Math.max(0, 100 - Math.round(inTunePercent));
 
   const variance = cents.length
     ? cents.reduce((acc, val) => acc + Math.pow(val - avgCentsOffset, 2), 0) / count
     : 0;
   const stabilityCents = Math.sqrt(variance);
+  const stabilityScore = Math.max(0, Math.min(100, Math.round(100 - stabilityCents * 1.6)));
+  const overallScore = Math.round(inTunePercent * 0.7 + stabilityScore * 0.3);
+  const overallGrade =
+    overallScore >= 90
+      ? 'S · Ustad'
+      : overallScore >= 78
+        ? 'A · Concert'
+        : overallScore >= 65
+          ? 'B · Solid'
+          : overallScore >= 50
+            ? 'C · Practice'
+            : 'D · Warmup';
 
   let verdictTag = 'Sur Locked';
   if (avgCentsOffset > 14) verdictTag = 'Sharp Tendency (+c)';
@@ -104,7 +123,13 @@ export function analyzeAndCompareVoices({
     refAvgHz: Number(refAvgHz.toFixed(1)),
     avgCentsOffset: Number(avgCentsOffset.toFixed(1)),
     inTunePercent: Math.round(inTunePercent),
+    errorPercent,
+    flatPercent,
+    sharpPercent,
     stabilityCents: Number(stabilityCents.toFixed(1)),
+    stabilityScore,
+    overallScore,
+    overallGrade,
     durationSec: Number(userStats.durationSec.toFixed(2)),
     sampleNotes: Array.from(userStats.swaraSet),
     voicedFrames: userStats.voicedCount,

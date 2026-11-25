@@ -2160,6 +2160,188 @@ a:focus-visible,
   color: #fbbf24;
 }
 
+.plv-match-banner {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px;
+  border-radius: 12px;
+  background: rgba(15, 19, 28, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.plv-match-banner.matched {
+  background: rgba(16, 185, 129, 0.14);
+  border-color: rgba(16, 185, 129, 0.65);
+  box-shadow: 0 0 18px rgba(16, 185, 129, 0.15);
+}
+
+.plv-match-banner.off-pitch {
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.45);
+}
+
+.plv-match-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #f8fafc;
+}
+
+.plv-match-indicator {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #64748b;
+  flex-shrink: 0;
+}
+
+.plv-match-banner.matched .plv-match-indicator {
+  background: #10b981;
+  box-shadow: 0 0 8px #10b981;
+}
+
+.plv-match-banner.off-pitch .plv-match-indicator {
+  background: #f59e0b;
+}
+
+.plv-match-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.plv-metric-pill {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #cbd5e1;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.plv-metric-pill.ok {
+  background: rgba(16, 185, 129, 0.22);
+  color: #6ee7b7;
+  border-color: rgba(16, 185, 129, 0.5);
+}
+
+.plv-metric-pill.warn {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fde68a;
+  border-color: rgba(245, 158, 11, 0.45);
+}
+
+.plv-tolerance-group {
+  display: inline-flex;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.plv-tol-btn {
+  background: rgba(255, 255, 255, 0.04);
+  color: #94a3b8;
+  border: none;
+  padding: 3px 7px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.plv-tol-btn.active {
+  background: #ff6f20;
+  color: #ffffff;
+}
+
+.pmc-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.pmc-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #e2e8f0;
+}
+
+.pmc-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pmc-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #cbd5e1;
+}
+
+.pmc-badge.in-tune {
+  background: rgba(16, 185, 129, 0.22);
+  color: #6ee7b7;
+}
+
+.pmc-badge.off-pitch {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fde68a;
+}
+
+.pmc-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  background: rgba(255, 255, 255, 0.025);
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  font-size: 0.7rem;
+  color: #94a3b8;
+}
+
+.pmc-legend-items {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.pmc-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pmc-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  display: inline-block;
+}
+
+.pmc-tol-allowed {
+  font-weight: 700;
+  color: #ff8b3d;
+}
+
 .plv-stage-grid {
   display: grid;
   grid-template-columns: 300px 1fr;

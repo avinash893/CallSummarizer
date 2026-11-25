@@ -21,13 +21,14 @@ app = modal.App("sargam-tuner-backend")
 volume = modal.Volume.from_name("sargam-tuner-cache", create_if_missing=True)
 CACHE_DIR = Path("/cache")
 
-# Debian container image with PyTorch, Demucs, yt-dlp, Node.js EJS, FFmpeg, Whisper + bgutil PO Token Server
+# Debian container image with PyTorch, Demucs, yt-dlp, Deno+Node EJS, FFmpeg, Whisper + bgutil PO Token Server
 image = (
     modal.Image.debian_slim(python_version="3.11")
-    .apt_install("ffmpeg", "nodejs")
+    .apt_install("ffmpeg", "curl", "ca-certificates", "git", "unzip")
     .pip_install(
         "demucs",
         "yt-dlp[default]",
+        "yt-dlp-ejs",
         "curl_cffi",
         "faster-whisper",
         "scipy",
@@ -37,9 +38,9 @@ image = (
         "fastapi[standard]"
     )
     .run_commands(
-        "apt-get update && apt-get install -y curl ca-certificates git && "
         "curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && "
         "apt-get install -y nodejs && "
+        "curl -fsSL https://deno.land/install.sh | DENO_INSTALL=/usr/local sh && "
         "git clone --depth 1 https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git /opt/bgutil && "
         "cd /opt/bgutil/server && npm install && npx tsc && "
         "pip install -U bgutil-ytdlp-pot-provider"
@@ -166,11 +167,11 @@ def transcribe_lyrics(audio_path: Path):
         from faster_whisper import WhisperModel
         has_cuda = has_nvidia_gpu()
         model = WhisperModel(
-            "base",
+            "base" if has_cuda else "tiny",
             device="cuda" if has_cuda else "cpu",
             compute_type="float16" if has_cuda else "int8"
         )
-        segments, _ = model.transcribe(str(audio_path), beam_size=3)
+        segments, _ = model.transcribe(str(audio_path), beam_size=1 if not has_cuda else 3)
         res = []
         for s in segments:
             text = s.text.strip()
@@ -219,6 +220,8 @@ def ensure_bgutil_server() -> bool:
 )
 @modal.asgi_app()
 def fastapi_app():
+    os.environ["TORCH_HOME"] = str(CACHE_DIR / "torch")
+    os.environ["HF_HOME"] = str(CACHE_DIR / "hf")
     ensure_bgutil_server()
     return web_app
 
@@ -399,19 +402,27 @@ async def separate_stems(req: Request):
         cookie_file = CACHE_DIR / "cookies.txt"
 
         client_strategies = [
-            ['mweb', 'tv'],
-            ['android_vr', 'ios'],
+            ['android_vr'],
+            ['ios'],
+            ['mweb'],
+            ['tv'],
             ['web_safari', 'web']
         ]
         info = None
         last_dl_err = None
+        client_errors = []
 
-        for idx, clients in enumerate(client_strategies):
+        for clients in client_strategies:
             ydl_opts = {
-                'format': 'ba/b',
+                'format': 'ba/b/bv*+ba/best',
                 'outtmpl': str(download_base),
                 'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}],
-                'extractor_args': {'youtube': {'player_client': clients}},
+                'extractor_args': {
+                    'youtube': {'player_client': clients},
+                    'youtubepot-bgutilhttp': {'base_url': ['http://127.0.0.1:4416']}
+                },
+                'js_runtimes': {'deno': {}, 'node': {}},
+                'remote_components': ['ejs:github'],
                 'quiet': True,
                 'no_warnings': True,
             }
@@ -423,6 +434,7 @@ async def separate_stems(req: Request):
                     break
             except Exception as dl_err:
                 last_dl_err = dl_err
+                client_errors.append(f"{clients}: {str(dl_err)[:180]}")
                 # Remove partial files before retrying next client strategy
                 for part in out_dir.glob("original*"):
                     try: part.unlink()
@@ -430,22 +442,29 @@ async def separate_stems(req: Request):
 
         if info is None:
             err_msg = str(last_dl_err or "YouTube download failed")
-            if "Sign in to confirm you" in err_msg or "bot" in err_msg.lower():
+            combined_err = " | ".join(client_errors)
+            if "Sign in to confirm you" in combined_err or "bot" in combined_err.lower():
                 return JSONResponse({
                     "success": False,
-                    "error": "YouTube flagged cloud IP for this video. Upload a Netscape cookies.txt or upload an audio file (MP3/WAV) directly."
+                    "error": "YouTube flagged cloud IP for this video. Upload a Netscape cookies.txt or upload an audio file (MP3/WAV) directly.",
+                    "details": combined_err
                 }, status_code=403)
-            raise last_dl_err
+            return JSONResponse({
+                "success": False,
+                "error": err_msg,
+                "details": combined_err
+            }, status_code=500)
 
         title = info.get('title', f"YouTube {vid}")
 
         orig_mp3 = out_dir / "original.mp3"
 
-        # 2. Run Demucs Separation
+        # 2. Run Demucs Separation (multi-threaded CPU)
         subprocess.run([
             sys.executable, "-m", "demucs.separate",
             "--two-stems", "vocals",
             "-n", "htdemucs",
+            "-j", "4",
             "-o", str(out_dir),
             str(orig_mp3)
         ], check=True)

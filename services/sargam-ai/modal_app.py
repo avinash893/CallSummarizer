@@ -246,29 +246,51 @@ def yt_status(url: str = Query("https://www.youtube.com/watch?v=dQw4w9WgXcQ")):
     import yt_dlp
     ensure_bgutil_server()
     cookie_file = CACHE_DIR / "cookies.txt"
+    has_cookies = cookie_file.exists()
+    tmp_cookie = Path(f"/tmp/yt_cookies_{uuid.uuid4().hex}.txt")
+    if has_cookies:
+        shutil.copyfile(cookie_file, tmp_cookie)
+
+    strategies = (
+        [(['mweb'], True), (['web'], True), (['tv'], True), (['android_vr'], False), (['ios'], False)]
+        if has_cookies
+        else [(['android_vr'], False), (['ios'], False), (['mweb'], False), (['tv'], False), (['web_safari', 'web'], False)]
+    )
     last_err = "Unknown error"
-    for clients in [['mweb', 'tv'], ['android_vr', 'ios'], ['web_safari', 'web']]:
-        ydl_opts = {
-            'format': 'ba/b',
-            'extractor_args': {'youtube': {'player_client': clients}},
-            'quiet': True,
-            'no_warnings': True,
-        }
-        if cookie_file.exists():
-            ydl_opts['cookiefile'] = str(cookie_file)
+    try:
+        for clients, use_cookies in strategies:
+            ydl_opts = {
+                'format': 'ba/b/bv*+ba/best',
+                'extractor_args': {
+                    'youtube': {'player_client': clients},
+                    'youtubepot-bgutilhttp': {'base_url': ['http://127.0.0.1:4416']}
+                },
+                'js_runtimes': {'deno': {}, 'node': {}},
+                'remote_components': ['ejs:github'],
+                'quiet': True,
+                'no_warnings': True,
+            }
+            if use_cookies and tmp_cookie.exists():
+                ydl_opts['cookiefile'] = str(tmp_cookie)
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(url, download=False)
+                    return {
+                        "ok": True,
+                        "title": info.get("title"),
+                        "duration": info.get("duration"),
+                        "client": clients,
+                        "usedCookies": use_cookies and has_cookies
+                    }
+            except Exception as err:
+                last_err = str(err)
+    finally:
         try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-                return {
-                    "ok": True,
-                    "title": info.get("title"),
-                    "duration": info.get("duration"),
-                    "client": clients,
-                    "usedCookies": cookie_file.exists()
-                }
-        except Exception as err:
-            last_err = str(err)
-    return JSONResponse({"ok": False, "error": last_err, "usedCookies": cookie_file.exists()}, status_code=403)
+            if tmp_cookie.exists():
+                tmp_cookie.unlink()
+        except Exception:
+            pass
+    return JSONResponse({"ok": False, "error": last_err, "usedCookies": has_cookies}, status_code=403)
 
 @web_app.get("/api/last-session")
 def last_session():
@@ -395,50 +417,72 @@ async def separate_stems(req: Request):
                 "lyrics": cached.get("lyrics", [])
             }
 
-        # 1. Download YouTube Audio with progressive PO-token client strategy & cookie fallback
+        # 1. Download YouTube Audio with progressive PO-token client strategy & read-only temp cookie copy
         import yt_dlp
         ensure_bgutil_server()
         download_base = out_dir / "original"
         cookie_file = CACHE_DIR / "cookies.txt"
+        has_cookies = cookie_file.exists()
+        tmp_cookie = Path(f"/tmp/yt_cookies_{uuid.uuid4().hex}.txt")
+        if has_cookies:
+            shutil.copyfile(cookie_file, tmp_cookie)
 
-        client_strategies = [
-            ['android_vr'],
-            ['ios'],
-            ['mweb'],
-            ['tv'],
-            ['web_safari', 'web']
-        ]
+        client_strategies = (
+            [
+                (['mweb'], True),
+                (['web'], True),
+                (['tv'], True),
+                (['web_safari'], True),
+                (['android_vr'], False),
+                (['ios'], False),
+            ]
+            if has_cookies
+            else [
+                (['android_vr'], False),
+                (['ios'], False),
+                (['mweb'], False),
+                (['tv'], False),
+                (['web_safari', 'web'], False),
+            ]
+        )
         info = None
         last_dl_err = None
         client_errors = []
 
-        for clients in client_strategies:
-            ydl_opts = {
-                'format': 'ba/b/bv*+ba/best',
-                'outtmpl': str(download_base),
-                'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}],
-                'extractor_args': {
-                    'youtube': {'player_client': clients},
-                    'youtubepot-bgutilhttp': {'base_url': ['http://127.0.0.1:4416']}
-                },
-                'js_runtimes': {'deno': {}, 'node': {}},
-                'remote_components': ['ejs:github'],
-                'quiet': True,
-                'no_warnings': True,
-            }
-            if cookie_file.exists():
-                ydl_opts['cookiefile'] = str(cookie_file)
+        try:
+            for clients, use_cookies in client_strategies:
+                ydl_opts = {
+                    'format': 'ba/b/bv*+ba/best',
+                    'outtmpl': str(download_base),
+                    'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}],
+                    'extractor_args': {
+                        'youtube': {'player_client': clients},
+                        'youtubepot-bgutilhttp': {'base_url': ['http://127.0.0.1:4416']}
+                    },
+                    'js_runtimes': {'deno': {}, 'node': {}},
+                    'remote_components': ['ejs:github'],
+                    'quiet': True,
+                    'no_warnings': True,
+                }
+                if use_cookies and tmp_cookie.exists():
+                    ydl_opts['cookiefile'] = str(tmp_cookie)
+                try:
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        info = ydl.extract_info(url, download=True)
+                        break
+                except Exception as dl_err:
+                    last_dl_err = dl_err
+                    client_errors.append(f"{clients}: {str(dl_err)[:180]}")
+                    # Remove partial files before retrying next client strategy
+                    for part in out_dir.glob("original*"):
+                        try: part.unlink()
+                        except Exception: pass
+        finally:
             try:
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info = ydl.extract_info(url, download=True)
-                    break
-            except Exception as dl_err:
-                last_dl_err = dl_err
-                client_errors.append(f"{clients}: {str(dl_err)[:180]}")
-                # Remove partial files before retrying next client strategy
-                for part in out_dir.glob("original*"):
-                    try: part.unlink()
-                    except Exception: pass
+                if tmp_cookie.exists():
+                    tmp_cookie.unlink()
+            except Exception:
+                pass
 
         if info is None:
             err_msg = str(last_dl_err or "YouTube download failed")

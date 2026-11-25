@@ -9,7 +9,7 @@ import ArchitectureModal from './components/ArchitectureModal';
 import MusicalControlStrip from './components/MusicalControlStrip';
 import PitchAndLyricsView from './components/PitchAndLyricsView';
 import StudioDawView from './components/StudioDawView';
-import { autoCorrelate, createPitchSmoother, findNearestSwara, midiToNoteName } from './audio/sargamEngine';
+import { autoCorrelate, findNearestSwara, midiToNoteName } from './audio/sargamEngine';
 import { TanpuraPlayer } from './audio/tanpuraEngine';
 import { TaalSequencer } from './audio/taalEngine';
 import { saveStudioTake } from './audio/studioStorage';
@@ -415,13 +415,13 @@ export default function App() {
       source.connect(analyser);
 
       const buf = new Float32Array(analyser.fftSize);
-      const smoother = createPitchSmoother({ windowSize: 5, alpha: 0.32, silenceHoldFrames: 6 });
+      let silentFrames = 0;
       timer = setInterval(() => {
         if (!analyser) return;
         analyser.getFloatTimeDomainData(buf);
-        const rawHz = autoCorrelate(buf, ctx.sampleRate || 44100);
-        const hz = smoother.push(rawHz);
+        const hz = autoCorrelate(buf, ctx.sampleRate || 44100);
         if (hz > 0) {
+          silentFrames = 0;
           const info = findNearestSwara(hz, jamState.tonicMidi, jamState.tuningMode, jamState.raga);
           setLiveMicPitch(info);
           const now = Date.now();
@@ -448,9 +448,12 @@ export default function App() {
             } catch (e) {}
           }
         } else {
-          setLiveMicPitch((prev) => (prev === null ? null : null));
+          silentFrames += 1;
+          if (silentFrames >= 3) {
+            setLiveMicPitch((prev) => (prev === null ? null : null));
+          }
         }
-      }, 40);
+      }, 30);
     } catch (e) {
       // JSDOM or audio context restriction
     }

@@ -67,8 +67,27 @@ export default function PitchMelodyCanvas({
     ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, width, height);
 
-    const minMidi = tonicMidi - 8;
-    const maxMidi = tonicMidi + 20;
+    let minMidi = tonicMidi - 8;
+    let maxMidi = tonicMidi + 20;
+    if (Array.isArray(noteBars) && noteBars.length > 0) {
+      let barMin = 127;
+      let barMax = 0;
+      for (let i = 0; i < noteBars.length; i++) {
+        const m = Number(noteBars[i]?.midi);
+        if (Number.isFinite(m) && m > 24 && m < 108) {
+          if (m < barMin) barMin = m;
+          if (m > barMax) barMax = m;
+        }
+      }
+      if (barMin <= barMax) {
+        minMidi = Math.max(36, Math.floor(barMin) - 3);
+        maxMidi = Math.min(84, Math.ceil(barMax) + 3);
+        if (maxMidi - minMidi < 12) {
+          minMidi = Math.max(36, minMidi - 3);
+          maxMidi = Math.min(84, maxMidi + 3);
+        }
+      }
+    }
     const midiToY = (midi) => {
       const ratio = (midi - minMidi) / Math.max(1, maxMidi - minMidi);
       return height - 18 - Math.max(0, Math.min(1, ratio)) * (height - 36);

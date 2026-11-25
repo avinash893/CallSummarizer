@@ -93,6 +93,25 @@ describe('Sargam Music Theory & DSP Engine', () => {
     expect(typeof fit.raga).toBe('string');
   });
 
+  it('prioritizes true Sa over its 4th/5th on asymmetric vocal histograms (e.g. A# tonic vs D#)', () => {
+    const sampleBars = [];
+    let t = 0;
+    const addNote = (midi, totalSec) => {
+      sampleBars.push({ start: t, end: t + totalSec, midi, freq: 440 * Math.pow(2, (midi - 69) / 12) });
+      t += totalSec;
+    };
+    addNote(58, 15.22); // A#3 (dominant Sa)
+    addNote(63, 7.37);  // D#4 (Ma of A#)
+    addNote(60, 4.85);  // C4 (Re of A#)
+    addNote(61, 4.39);  // C#4 (Komal Ga of A#)
+    addNote(56, 4.20);  // G#3 (Komal Ni of A#)
+    addNote(65, 0.69);  // F4 (Pa of A#)
+
+    const fit = autoDetectVocalScaleAndRange(sampleBars);
+    expect(fit.tonicMidi % 12).toBe(10); // A#
+    expect(fit.tonicMidi).toBeGreaterThanOrEqual(58 - 1);
+  });
+
   it('maps Tanpura keys, raga voicings, Taal matra roles, and encodes PCM WAV header', () => {
     expect(midiToTanpuraAudioKey(61)).toBe('Cs');
     expect(midiToTanpuraAudioKey(69)).toBe('A');

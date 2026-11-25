@@ -8,7 +8,7 @@ import {
   findActiveTargetBar,
   evaluatePitchMatch,
   autoCorrelate,
-  createPitchSmoother
+  midiToNoteName
 } from '../audio/sargamEngine';
 
 function formatClock(sec) {
@@ -58,7 +58,6 @@ export default function PitchAndLyricsView({
   const audioCtxRef = useRef(null);
   const analyserRef = useRef(null);
   const sourceConnectedRef = useRef(false);
-  const refSmootherRef = useRef(createPitchSmoother({ windowSize: 5, alpha: 0.35, silenceHoldFrames: 6 }));
 
   // Check cloud stem separator availability
   useEffect(() => {
@@ -143,8 +142,7 @@ export default function PitchAndLyricsView({
       let foundRef = null;
       if (analyserRef.current && buf) {
         analyserRef.current.getFloatTimeDomainData(buf);
-        const rawHz = autoCorrelate(buf, audioCtxRef.current?.sampleRate || 44100);
-        const hz = refSmootherRef.current.push(rawHz);
+        const hz = autoCorrelate(buf, audioCtxRef.current?.sampleRate || 44100);
         if (hz > 0) {
           foundRef = findNearestSwara(hz, jamState.tonicMidi, jamState.tuningMode, jamState.raga);
         }
@@ -200,6 +198,16 @@ export default function PitchAndLyricsView({
     setCurrentTime(clamped);
   };
 
+  const applyDetectedScale = (bars) => {
+    if (!Array.isArray(bars) || bars.length === 0) return null;
+    const fit = autoDetectVocalScaleAndRange(bars);
+    if (fit && fit.confidence > 20) {
+      onUpdateJamState({ tonicMidi: fit.tonicMidi, raga: fit.raga });
+      return `${midiToNoteName(fit.tonicMidi)} (${fit.raga})`;
+    }
+    return null;
+  };
+
   const fetchPitchAndLyricsForVocal = async (vocalUrl) => {
     if (!vocalUrl) return;
     setStatusMsg('Extracting Whisper Lyrics & YIN Pitch Contour...');
@@ -223,7 +231,10 @@ export default function PitchAndLyricsView({
         noteBars: bars,
         lyrics
       });
-      setStatusMsg(`Ready: ${bars.length} pitch notes & ${lyrics.length} lyric lines extracted.`);
+      const detectedScale = applyDetectedScale(bars);
+      setStatusMsg(
+        `Ready: ${bars.length} pitch notes & ${lyrics.length} lyric lines${detectedScale ? ` • Scale: ${detectedScale}` : '.'}`
+      );
     } catch (e) {
       setStatusMsg('Stems loaded! (Cloud lyric extractor unavailable — use CPU Pitch Fit if needed.)');
     }
@@ -260,7 +271,10 @@ export default function PitchAndLyricsView({
       });
 
       if (inlineBars.length > 0) {
-        setStatusMsg(`Ready (Cloud AI): ${inlineBars.length} Swara bars & ${inlineLyrics.length} lyric cues.`);
+        const detectedScale = applyDetectedScale(inlineBars);
+        setStatusMsg(
+          `Ready (Cloud AI): ${inlineBars.length} Swara bars & ${inlineLyrics.length} lyric cues${detectedScale ? ` • Scale: ${detectedScale}` : '.'}`
+        );
       } else {
         await fetchPitchAndLyricsForVocal(data.vocalUrl);
       }
@@ -358,7 +372,10 @@ export default function PitchAndLyricsView({
           lyrics: Array.isArray(data.lyrics) ? data.lyrics : []
         });
         if (Array.isArray(data.noteBars) && data.noteBars.length > 0) {
-          setStatusMsg(`Ready (Cloud AI): ${data.noteBars.length} Swara bars & ${(data.lyrics || []).length} lyric cues.`);
+          const detectedScale = applyDetectedScale(data.noteBars);
+          setStatusMsg(
+            `Ready (Cloud AI): ${data.noteBars.length} Swara bars & ${(data.lyrics || []).length} lyric cues${detectedScale ? ` • Scale: ${detectedScale}` : '.'}`
+          );
         } else if (data.vocalUrl) {
           await fetchPitchAndLyricsForVocal(data.vocalUrl);
         }

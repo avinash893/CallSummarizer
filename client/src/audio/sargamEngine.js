@@ -423,55 +423,77 @@ export async function analyzeAudioBufferPitchAsync(audioBuffer, onProgress = nul
 
 export function autoDetectVocalScaleAndRange(bars = []) {
   if (!Array.isArray(bars) || bars.length === 0) {
-    return { tonicMidi: 60, raga: 'Bilawal', confidence: 0 };
+    return { tonicMidi: 60, raga: 'Bilawal', confidence: 0, minMidi: 48, maxMidi: 72 };
   }
-  // Compute weighted histogram of 12 pitch classes (C..B)
+  // Compute duration-weighted histogram of 12 pitch classes (C..B) + vocal min/max range
   const hist = new Array(12).fill(0);
-  let midiSum = 0;
+  let minMidi = 127;
+  let maxMidi = 0;
   let totalDur = 0;
 
-  bars.forEach((b) => {
-    const dur = Math.max(0.05, (b.end || 0) - (b.start || 0));
-    const pc = ((Math.round(b.midi) % 12) + 12) % 12;
-    hist[pc] += dur;
-    midiSum += b.midi * dur;
-    totalDur += dur;
-  });
+  for (let idx = 0; idx < bars.length; idx++) {
+    const b = bars[idx];
+    if (!b || !Number.isFinite(Number(b.midi))) continue;
+    const midi = Number(b.midi);
+    const dur = Math.max(0.05, (Number(b.end) || 0) - (Number(b.start) || 0));
+    const pc = ((Math.round(midi) % 12) + 12) % 12;
+    // Slight cadence bonus on ending sustained notes (melodies resolve onto Sa)
+    const isCadence = idx >= Math.max(0, bars.length - 3) && dur >= 0.25;
+    const weight = dur * (isCadence ? 1.25 : 1.0);
+    hist[pc] += weight;
+    totalDur += weight;
+    if (midi < minMidi) minMidi = midi;
+    if (midi > maxMidi) maxMidi = midi;
+  }
 
-  const avgMidi = totalDur ? midiSum / totalDur : 60;
-  const baseOctave = Math.max(3, Math.min(4, Math.floor(avgMidi / 12) - 1));
+  if (minMidi > maxMidi || totalDur <= 0) {
+    return { tonicMidi: 60, raga: 'Bilawal', confidence: 0, minMidi: 48, maxMidi: 72 };
+  }
 
-  // Score candidate (tonicPc, major-like/minor-like ragas)
+  // Score tonic (Sa) using REAA's Sa-dominant harmonic model + raga scale fit
   const sampleRagas = ['Bilawal', 'Yaman', 'Bhairav', 'Bhairavi', 'Bhimpalasi', 'Kafi', 'Khamaj', 'Des', 'Malkauns', 'Darbari Kanhra'];
-  let bestTonic = 60;
+  let bestPc = 0;
   let bestRaga = 'Bilawal';
   let bestScore = -1;
 
   for (let pc = 0; pc < 12; pc++) {
+    const sa = hist[pc];
+    const pa = hist[(pc + 7) % 12];
+    const ma = hist[(pc + 5) % 12];
+    const ga = Math.max(hist[(pc + 4) % 12], hist[(pc + 3) % 12]);
+    // Sa outweighs Pa (2.5 vs 1.5) so tonic isn't confused with its 4th/5th
+    const harmonicAnchor = (sa * 2.5 + pa * 1.5 + ga * 1.1 + ma * 1.0) / totalDur;
+
     for (const raga of sampleRagas) {
       const semitones = new Set(getRagaSemitones(raga));
       let inScaleDur = 0;
-      let saPaDur = 0;
       for (let i = 0; i < 12; i++) {
         const rel = (i - pc + 12) % 12;
         if (semitones.has(rel)) inScaleDur += hist[i];
-        if (rel === 0 || rel === 7) saPaDur += hist[i];
       }
-      const coverage = totalDur ? (inScaleDur + 0.35 * saPaDur) / totalDur : 0;
-      const simplicityBonus = (12 - semitones.size) * 0.015;
-      const score = coverage + simplicityBonus;
+      const inScaleRatio = inScaleDur / totalDur;
+      // Combine harmonic tonic strength with scale coverage (no pentatonic bias)
+      const score = harmonicAnchor * 0.55 + inScaleRatio * 0.45;
       if (score > bestScore) {
         bestScore = score;
-        bestTonic = (baseOctave + 1) * 12 + pc;
+        bestPc = pc;
         bestRaga = raga;
       }
     }
   }
 
+  // Place Sa cleanly inside the singer's lower-middle vocal octave
+  let targetMidi = 48 + bestPc;
+  while (targetMidi < minMidi - 1) targetMidi += 12;
+  while (targetMidi > minMidi + 8 && targetMidi >= 48) targetMidi -= 12;
+  targetMidi = Math.max(48, Math.min(71, targetMidi));
+
   return {
-    tonicMidi: bestTonic,
+    tonicMidi: targetMidi,
     raga: bestRaga,
-    confidence: Math.min(99, Math.round(bestScore * 80))
+    confidence: Math.min(99, Math.max(30, Math.round((bestScore / 1.8) * 100))),
+    minMidi: Math.round(minMidi),
+    maxMidi: Math.round(maxMidi)
   };
 }
 

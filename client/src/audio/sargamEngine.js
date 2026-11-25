@@ -197,68 +197,133 @@ export function findNearestSwara(freq, tonicMidi = 60, tuningMode = 'ji', ragaNa
  * Ported directly from Sargam Tuner for accurate monophonic vocal & instrument detection.
  */
 export function autoCorrelate(buf, sampleRate = 44100) {
+  if (!buf || !buf.length) return -1;
   const SIZE = buf.length;
   let rms = 0;
   for (let i = 0; i < SIZE; i++) {
     rms += buf[i] * buf[i];
   }
   rms = Math.sqrt(rms / SIZE);
-  if (rms < 0.008) return -1;
+  if (rms < 0.015) return -1;
 
-  let r1 = 0;
-  let r2 = SIZE - 1;
-  const thres = 0.2 * rms;
-  for (let i = 0; i < SIZE / 2; i++) {
-    if (Math.abs(buf[i]) < thres) {
-      r1 = i;
-      break;
-    }
+  const minPeriod = Math.max(2, Math.floor(sampleRate / 1050));
+  const maxPeriod = Math.min(SIZE - 2, Math.floor(sampleRate / 65));
+  if (maxPeriod <= minPeriod + 2) return -1;
+
+  const searchLen = Math.min(SIZE - maxPeriod, 1024);
+  if (searchLen < 32) return -1;
+
+  let energy1 = 0;
+  for (let i = 0; i < searchLen; i++) {
+    energy1 += buf[i] * buf[i];
   }
-  for (let i = 1; i < SIZE / 2; i++) {
-    if (Math.abs(buf[SIZE - i]) < thres) {
-      r2 = SIZE - i;
-      break;
-    }
-  }
+  if (energy1 <= 0) return -1;
 
-  const clipped = buf.slice(r1, r2);
-  const cLen = clipped.length;
-  if (cLen < 32) return -1;
+  const corrs = new Float32Array(maxPeriod + 2);
+  let bestCorr = -1;
 
-  const c = new Float32Array(cLen);
-  for (let i = 0; i < cLen; i++) {
+  for (let lag = minPeriod; lag <= maxPeriod; lag++) {
     let sum = 0;
-    for (let j = 0; j < cLen - i; j++) {
-      sum += clipped[j] * clipped[j + i];
+    let energy2 = 0;
+    for (let i = 0; i < searchLen; i++) {
+      const a = buf[i];
+      const b = buf[i + lag];
+      sum += a * b;
+      energy2 += b * b;
     }
-    c[i] = sum;
-  }
-
-  let d = 0;
-  while (d < cLen - 1 && c[d] > c[d + 1]) d++;
-  let maxval = -1;
-  let maxpos = -1;
-  for (let i = d; i < cLen; i++) {
-    if (c[i] > maxval) {
-      maxval = c[i];
-      maxpos = i;
+    const denom = Math.sqrt(energy1 * energy2);
+    const normCorr = denom > 0 ? sum / denom : 0;
+    corrs[lag] = normCorr;
+    if (normCorr > bestCorr) {
+      bestCorr = normCorr;
     }
   }
-  if (maxpos <= 0 || c[0] <= 0 || maxval / c[0] < 0.25) return -1;
 
-  let T0 = maxpos;
-  if (maxpos > 0 && maxpos < cLen - 1) {
-    const x1 = c[maxpos - 1];
-    const x2 = c[maxpos];
-    const x3 = c[maxpos + 1];
+  if (bestCorr < 0.80) return -1;
+
+  // Pick the first strong local peak (prevents octave-down subharmonic jumps)
+  const peakThreshold = Math.max(0.80, bestCorr * 0.94);
+  let chosenLag = -1;
+  for (let lag = minPeriod + 1; lag < maxPeriod; lag++) {
+    const val = corrs[lag];
+    if (val >= peakThreshold && val >= corrs[lag - 1] && val >= corrs[lag + 1]) {
+      chosenLag = lag;
+      break;
+    }
+  }
+
+  if (chosenLag === -1) {
+    let maxVal = -1;
+    for (let lag = minPeriod; lag <= maxPeriod; lag++) {
+      if (corrs[lag] > maxVal) {
+        maxVal = corrs[lag];
+        chosenLag = lag;
+      }
+    }
+  }
+  if (chosenLag <= 0) return -1;
+
+  // Parabolic interpolation around chosenLag
+  let T0 = chosenLag;
+  if (chosenLag > minPeriod && chosenLag < maxPeriod) {
+    const x1 = corrs[chosenLag - 1];
+    const x2 = corrs[chosenLag];
+    const x3 = corrs[chosenLag + 1];
     const a = (x1 + x3 - 2 * x2) / 2;
     const b = (x3 - x1) / 2;
-    if (a) T0 = T0 - b / (2 * a);
+    if (a !== 0) T0 = chosenLag - b / (2 * a);
   }
 
   const freq = sampleRate / T0;
-  if (freq < 65 || freq > 1150) return -1;
+  if (freq < 65 || freq > 1050 || !Number.isFinite(freq)) return -1;
   return freq;
+}
+
+export function createPitchSmoother({ windowSize = 5, alpha = 0.32, silenceHoldFrames = 6 } = {}) {
+  const history = [];
+  let smoothedHz = -1;
+  let silentFrames = 0;
+
+  const reset = () => {
+    history.length = 0;
+    smoothedHz = -1;
+    silentFrames = 0;
+  };
+
+  const push = (rawHz) => {
+    if (!Number.isFinite(rawHz) || rawHz <= 0) {
+      silentFrames += 1;
+      if (silentFrames >= silenceHoldFrames) {
+        reset();
+        return -1;
+      }
+      return smoothedHz;
+    }
+
+    silentFrames = 0;
+    history.push(rawHz);
+    if (history.length > windowSize) {
+      history.shift();
+    }
+
+    const sorted = [...history].sort((a, b) => a - b);
+    const medianHz = sorted[Math.floor(sorted.length / 2)];
+
+    if (smoothedHz <= 0) {
+      smoothedHz = medianHz;
+    } else {
+      const semiJump = Math.abs(12 * Math.log2(medianHz / smoothedHz));
+      const effAlpha = semiJump > 1.5 ? 0.6 : alpha;
+      const prevMidi = 69 + 12 * Math.log2(smoothedHz / 440);
+      const medMidi = 69 + 12 * Math.log2(medianHz / 440);
+      const nextMidi = prevMidi * (1 - effAlpha) + medMidi * effAlpha;
+      smoothedHz = 440 * Math.pow(2, (nextMidi - 69) / 12);
+    }
+
+    return smoothedHz;
+  };
+
+  return { push, reset };
 }
 
 export function extractBarsFromCurve(pitchCurve, totalDur = 0) {

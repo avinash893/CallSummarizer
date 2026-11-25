@@ -3,6 +3,7 @@ import {
   getSwaraFreq,
   buildScaleNotes,
   autoCorrelate,
+  createPitchSmoother,
   findNearestSwara,
   extractBarsFromCurve,
   autoDetectVocalScaleAndRange,
@@ -56,6 +57,23 @@ describe('Sargam Music Theory & DSP Engine', () => {
 
     const silence = new Float32Array(len);
     expect(autoCorrelate(silence, sampleRate)).toBe(-1);
+  });
+
+  it('rejects single-frame octave spikes and decays cleanly to silence via createPitchSmoother', () => {
+    const smoother = createPitchSmoother({ windowSize: 5, alpha: 0.32, silenceHoldFrames: 4 });
+    const inputs = [261.6, 262.0, 523.2, 261.8, 261.5];
+    let last = -1;
+    for (const hz of inputs) {
+      last = smoother.push(hz);
+    }
+    expect(last).toBeGreaterThan(255);
+    expect(last).toBeLessThan(268);
+
+    // Silence hold for 3 frames, then clears at frame 4
+    expect(smoother.push(-1)).toBeGreaterThan(255);
+    expect(smoother.push(-1)).toBeGreaterThan(255);
+    expect(smoother.push(-1)).toBeGreaterThan(255);
+    expect(smoother.push(-1)).toBe(-1);
   });
 
   it('extracts melody note bars from pitch curve and auto-fits tonic/raga', () => {

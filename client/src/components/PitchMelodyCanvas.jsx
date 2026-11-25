@@ -203,21 +203,46 @@ export default function PitchMelodyCanvas({
       ctx.restore();
     }
 
-    // Live user vocal/instrument trail ribbon + active Sur capsule
+    // Live user vocal/instrument trail ribbon (gap/jump segmented + smooth quadratic Bezier)
     const now = Date.now();
     const recent = trailRef.current.filter((p) => now - p.t <= 3600);
     if (recent.length > 1) {
-      ctx.beginPath();
-      recent.forEach((p, idx) => {
-        const ageSec = (now - p.t) / 1000;
-        const px = Math.max(46, playheadX - ageSec * ((width - 54) / windowSec));
-        const py = midiToY(p.midi);
-        if (idx === 0) ctx.moveTo(px, py);
-        else ctx.lineTo(px, py);
-      });
+      const segments = [];
+      let currentSeg = [recent[0]];
+      for (let i = 1; i < recent.length; i++) {
+        const prev = recent[i - 1];
+        const curr = recent[i];
+        if (curr.t - prev.t > 220 || Math.abs(curr.midi - prev.midi) > 6) {
+          if (currentSeg.length > 1) segments.push(currentSeg);
+          currentSeg = [curr];
+        } else {
+          currentSeg.push(curr);
+        }
+      }
+      if (currentSeg.length > 1) segments.push(currentSeg);
+
       ctx.strokeStyle = '#10b981';
       ctx.lineWidth = 2.5;
-      ctx.stroke();
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      const pxScale = (width - 54) / windowSec;
+      for (const seg of segments) {
+        ctx.beginPath();
+        const pts = seg.map((p) => ({
+          x: Math.max(46, playheadX - ((now - p.t) / 1000) * pxScale),
+          y: midiToY(p.midi)
+        }));
+        ctx.moveTo(pts[0].x, pts[0].y);
+        for (let i = 1; i < pts.length - 1; i++) {
+          const midX = (pts[i].x + pts[i + 1].x) / 2;
+          const midY = (pts[i].y + pts[i + 1].y) / 2;
+          ctx.quadraticCurveTo(pts[i].x, pts[i].y, midX, midY);
+        }
+        const last = pts[pts.length - 1];
+        ctx.lineTo(last.x, last.y);
+        ctx.stroke();
+      }
     }
 
     if (liveMicPitch && liveMicPitch.freq > 0) {

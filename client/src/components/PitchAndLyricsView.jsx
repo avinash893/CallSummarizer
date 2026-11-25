@@ -7,7 +7,8 @@ import {
   findNearestSwara,
   findActiveTargetBar,
   evaluatePitchMatch,
-  autoCorrelate
+  autoCorrelate,
+  createPitchSmoother
 } from '../audio/sargamEngine';
 
 function formatClock(sec) {
@@ -57,6 +58,7 @@ export default function PitchAndLyricsView({
   const audioCtxRef = useRef(null);
   const analyserRef = useRef(null);
   const sourceConnectedRef = useRef(false);
+  const refSmootherRef = useRef(createPitchSmoother({ windowSize: 5, alpha: 0.35, silenceHoldFrames: 6 }));
 
   // Check cloud stem separator availability
   useEffect(() => {
@@ -107,7 +109,7 @@ export default function PitchAndLyricsView({
       const ctx = new Ctx();
       const src = ctx.createMediaElementSource(vocalAudioRef.current);
       const analyser = ctx.createAnalyser();
-      analyser.fftSize = 2048;
+      analyser.fftSize = 4096;
       src.connect(analyser);
       analyser.connect(ctx.destination);
       audioCtxRef.current = ctx;
@@ -141,7 +143,8 @@ export default function PitchAndLyricsView({
       let foundRef = null;
       if (analyserRef.current && buf) {
         analyserRef.current.getFloatTimeDomainData(buf);
-        const hz = autoCorrelate(buf, audioCtxRef.current?.sampleRate || 44100);
+        const rawHz = autoCorrelate(buf, audioCtxRef.current?.sampleRate || 44100);
+        const hz = refSmootherRef.current.push(rawHz);
         if (hz > 0) {
           foundRef = findNearestSwara(hz, jamState.tonicMidi, jamState.tuningMode, jamState.raga);
         }

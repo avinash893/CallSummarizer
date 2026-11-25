@@ -9,7 +9,7 @@ import ArchitectureModal from './components/ArchitectureModal';
 import MusicalControlStrip from './components/MusicalControlStrip';
 import PitchAndLyricsView from './components/PitchAndLyricsView';
 import StudioDawView from './components/StudioDawView';
-import { autoCorrelate, findNearestSwara, midiToNoteName } from './audio/sargamEngine';
+import { autoCorrelate, createPitchSmoother, findNearestSwara, midiToNoteName } from './audio/sargamEngine';
 import { TanpuraPlayer } from './audio/tanpuraEngine';
 import { TaalSequencer } from './audio/taalEngine';
 import { saveStudioTake } from './audio/studioStorage';
@@ -411,14 +411,16 @@ export default function App() {
       const audioOnlyStream = typeof MediaStream !== 'undefined' ? new MediaStream(audioTracks) : localStream;
       source = ctx.createMediaStreamSource(audioOnlyStream);
       analyser = ctx.createAnalyser();
-      analyser.fftSize = 2048;
+      analyser.fftSize = 4096;
       source.connect(analyser);
 
       const buf = new Float32Array(analyser.fftSize);
+      const smoother = createPitchSmoother({ windowSize: 5, alpha: 0.32, silenceHoldFrames: 6 });
       timer = setInterval(() => {
         if (!analyser) return;
         analyser.getFloatTimeDomainData(buf);
-        const hz = autoCorrelate(buf, ctx.sampleRate || 44100);
+        const rawHz = autoCorrelate(buf, ctx.sampleRate || 44100);
+        const hz = smoother.push(rawHz);
         if (hz > 0) {
           const info = findNearestSwara(hz, jamState.tonicMidi, jamState.tuningMode, jamState.raga);
           setLiveMicPitch(info);
@@ -445,8 +447,10 @@ export default function App() {
               );
             } catch (e) {}
           }
+        } else {
+          setLiveMicPitch((prev) => (prev === null ? null : null));
         }
-      }, 55);
+      }, 40);
     } catch (e) {
       // JSDOM or audio context restriction
     }

@@ -1,8 +1,10 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 
-function RemotePeerTile({ peer, isCaptured = false, onToggleCapture }) {
+function RemotePeerTile({ peer, isCaptured = false, onToggleCapture, telemetry = null, langMode = 'en' }) {
   const remoteVideoRef = useRef(null);
   const remoteAudioRef = useRef(null);
+  const [peerGain, setPeerGain] = useState(1);
+  const [isLocalMuted, setIsLocalMuted] = useState(false);
 
   useEffect(() => {
     if (remoteVideoRef.current) {
@@ -32,6 +34,13 @@ function RemotePeerTile({ peer, isCaptured = false, onToggleCapture }) {
     }
   }, [peer.stream]);
 
+  useEffect(() => {
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.volume = isLocalMuted ? 0 : Math.max(0, Math.min(1, peerGain));
+      remoteAudioRef.current.muted = isLocalMuted;
+    }
+  }, [peerGain, isLocalMuted]);
+
   const initials =
     peer.initials ||
     (peer.name
@@ -44,9 +53,17 @@ function RemotePeerTile({ peer, isCaptured = false, onToggleCapture }) {
           .toUpperCase()
       : 'P');
 
+  const pitchActive = Boolean(telemetry && telemetry.note);
+  const inTune = Boolean(pitchActive && telemetry.inTune);
+  const swaraLabel = pitchActive
+    ? langMode === 'hi'
+      ? telemetry.sargamDevanagari || telemetry.sargam || telemetry.note
+      : telemetry.sargam || telemetry.note
+    : '';
+
   return (
     <div
-      className={`video-tile ${peer.speaking ? 'speaking' : ''} ${isCaptured ? 'captured-tile' : ''}`}
+      className={`video-tile ${peer.speaking ? 'speaking' : ''} ${inTune ? 'sur-halo' : ''} ${isCaptured ? 'captured-tile' : ''}`}
       data-testid={`peer-tile-${peer.peerId}`}
     >
       {/* Hidden dedicated audio element to guarantee remote audio playback on mobile browsers */}
@@ -70,6 +87,16 @@ function RemotePeerTile({ peer, isCaptured = false, onToggleCapture }) {
         <div className="avatar-standby">
           <div className="avatar-circle">{initials}</div>
           <span className="standby-text">{peer.name || 'Participant'}</span>
+          {peer.instrument && <span className="tile-role-sub">{peer.instrument}</span>}
+        </div>
+      )}
+
+      {/* Live Jam Pitch Badge */}
+      {pitchActive && (
+        <div className={`tile-pitch-badge ${inTune ? 'in-sur' : ''}`}>
+          <i className="bi bi-music-note-beamed"></i>
+          <span>{swaraLabel} · {telemetry.note}</span>
+          <small>{inTune ? 'SUR' : `${telemetry.cents > 0 ? '+' : ''}${telemetry.cents}c`}</small>
         </div>
       )}
 
@@ -112,14 +139,40 @@ function RemotePeerTile({ peer, isCaptured = false, onToggleCapture }) {
       <div className="tile-footer">
         <span className="user-name-tag">
           {peer.name || 'Participant'}
+          {peer.instrument && <span className="tile-inst-chip">{peer.instrument}</span>}
           {peer.speaking && (
             <i
               className="bi bi-circle-fill"
-              style={{ fontSize: '0.45rem', color: '#5c93e6', marginLeft: '4px' }}
-              title="Speaking"
+              style={{ fontSize: '0.45rem', color: '#ff7b24', marginLeft: '4px' }}
+              title="Playing / Speaking"
             ></i>
           )}
         </span>
+
+        {/* Per-Musician Mix Gain Control */}
+        <div className="tile-peer-mixer" onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            className={`tile-peer-mute ${isLocalMuted ? 'muted' : ''}`}
+            onClick={() => setIsLocalMuted(!isLocalMuted)}
+            title={isLocalMuted ? 'Unmute musician locally' : 'Mute musician locally'}
+          >
+            <i className={`bi ${isLocalMuted ? 'bi-volume-mute-fill' : 'bi-volume-up-fill'}`}></i>
+          </button>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+            value={isLocalMuted ? 0 : peerGain}
+            onChange={(e) => {
+              setIsLocalMuted(false);
+              setPeerGain(Number(e.target.value));
+            }}
+            className="tile-peer-gain"
+            aria-label={`Mix volume for ${peer.name || 'participant'}`}
+          />
+        </div>
       </div>
 
       <div
@@ -138,10 +191,14 @@ export default function VideoCanvas({
   localStream,
   screenStream = null,
   isScreenSharing = false,
-  localUser = { name: 'You', initials: 'You' },
+  localUser = { name: 'You', initials: 'You', instrument: 'Vocalist' },
   remotePeers = [],
   capturedPeerIds = [],
-  onToggleCapturePeer
+  onToggleCapturePeer,
+  localPitchInfo = null,
+  peerTelemetry = {},
+  langMode = 'en',
+  isRawAudio = false
 }) {
   const localVideoRef = useRef(null);
   const activeLocalStream = isScreenSharing && screenStream ? screenStream : localStream;
@@ -175,12 +232,17 @@ export default function VideoCanvas({
   const totalParticipants = 1 + remotePeers.length;
   const countClass = totalParticipants <= 6 ? `count-${totalParticipants}` : 'count-many';
 
+  const localInTune = Boolean(localPitchInfo && localPitchInfo.inTune);
+  const localSwaraText = localPitchInfo
+    ? `${langMode === 'hi' ? localPitchInfo.devanagari : localPitchInfo.sargam} · ${localPitchInfo.noteName}`
+    : '';
+
   return (
     <div className="video-canvas">
       <div className={`video-grid-container ${countClass}`}>
         {/* Local Participant Video Tile */}
         <div
-          className={`video-tile ${isSingleParticipant ? 'solo-tile' : ''} ${capturedPeerIds.includes('local') ? 'captured-tile' : ''}`}
+          className={`video-tile ${isSingleParticipant ? 'solo-tile' : ''} ${localInTune ? 'sur-halo' : ''} ${capturedPeerIds.includes('local') ? 'captured-tile' : ''}`}
           data-testid="local-video-tile"
         >
           {showLocalVideo ? (
@@ -198,6 +260,23 @@ export default function VideoCanvas({
               <span className="standby-text">
                 {isVideoOn ? 'Camera on' : 'Camera off'}
               </span>
+              {localUser?.instrument && <span className="tile-role-sub">{localUser.instrument}</span>}
+            </div>
+          )}
+
+          {/* Local Live Jam Pitch Badge */}
+          {localPitchInfo && (
+            <div className={`tile-pitch-badge ${localInTune ? 'in-sur' : ''}`}>
+              <i className="bi bi-music-note-beamed"></i>
+              <span>{localSwaraText}</span>
+              <small>{localInTune ? 'SUR' : `${localPitchInfo.cents > 0 ? '+' : ''}${localPitchInfo.cents}c`}</small>
+            </div>
+          )}
+
+          {isRawAudio && (
+            <div className="tile-raw-badge" title="Raw Instrument/Vocal mode enabled">
+              <i className="bi bi-stars"></i>
+              <span>Raw Audio</span>
             </div>
           )}
 
@@ -238,7 +317,10 @@ export default function VideoCanvas({
           </button>
 
           <div className="tile-footer">
-            <span className="user-name-tag">{displayName}</span>
+            <span className="user-name-tag">
+              {displayName}
+              {localUser?.instrument && <span className="tile-inst-chip">{localUser.instrument}</span>}
+            </span>
           </div>
 
           <div
@@ -256,6 +338,8 @@ export default function VideoCanvas({
             peer={peer}
             isCaptured={Array.isArray(capturedPeerIds) && capturedPeerIds.includes(peer.peerId)}
             onToggleCapture={onToggleCapturePeer}
+            telemetry={peerTelemetry[peer.peerId] || null}
+            langMode={langMode}
           />
         ))}
       </div>

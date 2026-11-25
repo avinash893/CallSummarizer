@@ -146,10 +146,26 @@ export default function ArchitectureModal({ isOpen, onClose }) {
             </span>
             <span className="service-card-port">Cloud Store • Active</span>
           </div>
+
+          <div className="service-card list-group-item">
+            <span className="service-card-title">
+              <i className="bi bi-soundwave" style={{ marginRight: '6px' }}></i>
+              Sargam DSP & Pitch Engine
+            </span>
+            <span className="service-card-port">Web Audio YIN • 54 Ragas</span>
+          </div>
+
+          <div className="service-card list-group-item">
+            <span className="service-card-title">
+              <i className="bi bi-stars" style={{ marginRight: '6px' }}></i>
+              AI Stem & Vocal Coach
+            </span>
+            <span className="service-card-port">Demucs + Whisper + Gemini</span>
+          </div>
         </div>
 
         <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: '1.4', margin: 0 }}>
-          Deployed in cloud on Render. AI NLP and Speech-to-Text powered globally by Google Gemini API.
+          Unified Jam Studio & Meeting Intelligence on Render. Real-time Sargam F0 detection, Tanpura/Taal synthesis, and Demucs stem separation.
         </p>
       </div>
     </div>

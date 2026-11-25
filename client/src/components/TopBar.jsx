@@ -7,7 +7,10 @@ export default function TopBar({
   setIsNotesOpen,
   onOpenArchModal,
   onCopyRoom,
-  participantCount = 1
+  participantCount = 1,
+  activeTab = 'stage',
+  onChangeTab = null,
+  activeScaleBadge = ''
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -23,9 +26,9 @@ export default function TopBar({
     <header className="top-nav">
       <div className="top-nav-left">
         <div className="brand-title">
-          <i className="bi bi-terminal-split"></i>
-          <span className="brand-text-full">CallSummarizer</span>
-          <span className="brand-text-short">CS</span>
+          <i className="bi bi-music-note-beamed brand-icon-accent"></i>
+          <span className="brand-text-full">SargamJam Studio</span>
+          <span className="brand-text-short">SJ</span>
         </div>
 
         <button
@@ -38,17 +41,62 @@ export default function TopBar({
           <span>{copied ? 'Copied' : roomName}</span>
         </button>
 
-        <span className="participant-count-badge" title="Active participants in meeting">
+        <span className="participant-count-badge" title="Active jammers in room">
           <i className="bi bi-people-fill"></i>
           <span>{participantCount}</span>
         </span>
       </div>
 
       <div className="top-nav-center">
-        <span className="call-timer">
+        {onChangeTab && (
+          <div className="studio-mode-switcher" role="tablist" aria-label="Studio workspace views">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'stage'}
+              className={`studio-mode-tab ${activeTab === 'stage' ? 'active' : ''}`}
+              onClick={() => onChangeTab('stage')}
+              data-testid="tab-studio-stage"
+            >
+              <i className="bi bi-camera-video-fill"></i>
+              <span>Jam Stage</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'pitch'}
+              className={`studio-mode-tab ${activeTab === 'pitch' ? 'active' : ''}`}
+              onClick={() => onChangeTab('pitch')}
+              data-testid="tab-studio-pitch"
+            >
+              <i className="bi bi-soundwave"></i>
+              <span>Pitch & Lyrics</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'daw'}
+              className={`studio-mode-tab ${activeTab === 'daw' ? 'active' : ''}`}
+              onClick={() => onChangeTab('daw')}
+              data-testid="tab-studio-daw"
+            >
+              <i className="bi bi-sliders2"></i>
+              <span>Studio DAW</span>
+            </button>
+          </div>
+        )}
+
+        <span className="call-timer" title="Active Jam Duration">
           <i className="bi bi-clock" style={{ marginRight: '6px' }}></i>
           {callDuration}
         </span>
+
+        {activeScaleBadge && (
+          <span className="top-scale-chip" title="Current Room Sa & Raga">
+            <i className="bi bi-music-note"></i>
+            <span>{activeScaleBadge}</span>
+          </span>
+        )}
       </div>
 
       <div className="top-nav-right">

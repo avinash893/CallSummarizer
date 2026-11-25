@@ -9,7 +9,11 @@ export default function ControlDock({
   toggleScreenShare,
   isNotesOpen,
   setIsNotesOpen,
-  onLeaveCall
+  onLeaveCall,
+  isTanpuraOn = false,
+  onToggleTanpura = null,
+  isMetronomeOn = false,
+  onToggleMetronome = null
 }) {
   return (
     <div className="bottom-dock">
@@ -43,6 +47,30 @@ export default function ControlDock({
         >
           <i className="bi bi-display"></i>
         </button>
+
+        {onToggleTanpura && (
+          <button
+            type="button"
+            className={`btn btn-outline-secondary dock-icon-btn dock-tanpura-btn ${isTanpuraOn ? 'active' : ''}`}
+            onClick={onToggleTanpura}
+            title={isTanpuraOn ? 'Stop Tanpura drone' : 'Start Tanpura drone'}
+            aria-label="Toggle Tanpura drone"
+          >
+            <i className="bi bi-vinyl-fill"></i>
+          </button>
+        )}
+
+        {onToggleMetronome && (
+          <button
+            type="button"
+            className={`btn btn-outline-secondary dock-icon-btn dock-beat-btn ${isMetronomeOn ? 'active' : ''}`}
+            onClick={onToggleMetronome}
+            title={isMetronomeOn ? 'Stop Taal rhythm' : 'Start Taal rhythm'}
+            aria-label="Toggle Taal rhythm"
+          >
+            <i className="bi bi-disc"></i>
+          </button>
+        )}
 
         {/* Notes, Transcript & Actions button */}
         <button

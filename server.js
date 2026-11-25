@@ -45,7 +45,39 @@ app.use(cors({
     origin: true,
     credentials: true
 }));
-app.use(express.json());
+app.use(express.json({ limit: '15mb' }));
+
+const DEFAULT_SARGAM_BACKEND = (
+    process.env.SARGAM_BACKEND_URL ||
+    'https://khurana-aaa3--sargam-tuner-backend-fastapi-app.us-east.modal.run'
+).replace(/\/$/, '');
+
+const ALLOWED_SARGAM_HOSTS = new Set(
+    [
+        DEFAULT_SARGAM_BACKEND,
+        'https://khurana-aaa3--sargam-tuner-backend-fastapi-app.us-east.modal.run'
+    ].map((u) => {
+        try {
+            return new URL(u).origin;
+        } catch (e) {
+            return '';
+        }
+    }).filter(Boolean)
+);
+
+function resolveSargamBackend(requested) {
+    if (requested && typeof requested === 'string') {
+        try {
+            const parsed = new URL(requested.trim());
+            if (ALLOWED_SARGAM_HOSTS.has(parsed.origin)) {
+                return parsed.origin;
+            }
+        } catch (e) {
+            // Fall back to default backend
+        }
+    }
+    return DEFAULT_SARGAM_BACKEND;
+}
 
 const TEN_DAYS_SECONDS = 10 * 24 * 60 * 60; // 10 days in seconds (864,000s)
 const TEN_DAYS_MS = TEN_DAYS_SECONDS * 1000;
@@ -216,6 +248,34 @@ function normalizeRoomId(raw) {
     return cleaned.toLowerCase().replace(/[^a-z0-9-_]/g, '-') || generateMeetingCode();
 }
 
+function createDefaultJamState() {
+    return {
+        tonicMidi: 60, // C4
+        raga: 'Bilawal',
+        tuningMode: 'ji',
+        langMode: 'en',
+        isTanpuraOn: false,
+        tanpuraVol: 0.45,
+        taal: 'Teentaal (16)',
+        bpm: 96,
+        isMetronomeOn: false,
+        updatedAt: Date.now()
+    };
+}
+
+function createDefaultBackingState() {
+    return {
+        title: '',
+        vocalUrl: '',
+        instUrl: '',
+        isPlaying: false,
+        currentTime: 0,
+        noteBars: [],
+        lyrics: [],
+        updatedAt: Date.now()
+    };
+}
+
 function getOrCreateRoom(roomId, hostName = 'Host') {
     const normalized = normalizeRoomId(roomId);
     if (!rooms.has(normalized)) {
@@ -226,6 +286,8 @@ function getOrCreateRoom(roomId, hostName = 'Host') {
             participants: new Map(),
             transcript: [],
             tasks: [],
+            jamState: createDefaultJamState(),
+            backingState: createDefaultBackingState(),
             emptySince: null,
             cleanupTimer: null
         });
@@ -1060,6 +1122,8 @@ app.get('/api/rooms/:id', (req, res) => {
         participantCount: activeParticipants.length,
         transcript: room.transcript,
         tasks: room.tasks,
+        jamState: room.jamState || createDefaultJamState(),
+        backingState: room.backingState || createDefaultBackingState(),
         status: 'active',
         createdAt: room.createdAt
     });
@@ -1342,6 +1406,356 @@ Strict Rules:
 app.post('/api/transcribe-audio', handleTranscribeAudio);
 app.post('/api/nlp-tasks/transcribe-audio', handleTranscribeAudio);
 
+// ============================================================
+// SARGAMJAM STUDIO: AI Stem Separation, Audio Proxy & Vocal Coach
+// ============================================================
+function toProxyAudioUrl(rawUrl, backendBase) {
+    if (!rawUrl || typeof rawUrl !== 'string') return '';
+    try {
+        if (rawUrl.startsWith('/api/audio')) {
+            const u = new URL(rawUrl, backendBase);
+            const file = u.searchParams.get('file');
+            if (file) return `/api/sargam/audio?file=${encodeURIComponent(file)}`;
+        }
+        const parsed = new URL(rawUrl);
+        if (ALLOWED_SARGAM_HOSTS.has(parsed.origin) && parsed.pathname.includes('/api/audio')) {
+            const file = parsed.searchParams.get('file');
+            if (file) return `/api/sargam/audio?file=${encodeURIComponent(file)}`;
+        }
+        return rawUrl;
+    } catch (e) {
+        return rawUrl;
+    }
+}
+
+function toBackendVocalUrl(clientUrl, backendBase) {
+    if (!clientUrl || typeof clientUrl !== 'string') return '';
+    if (clientUrl.startsWith('/api/sargam/audio')) {
+        try {
+            const u = new URL(clientUrl, 'http://localhost');
+            const file = u.searchParams.get('file');
+            if (file) return `${backendBase}/api/audio?file=${encodeURIComponent(file)}`;
+        } catch (e) {}
+    }
+    if (clientUrl.startsWith('/')) {
+        return `${backendBase}${clientUrl}`;
+    }
+    return clientUrl;
+}
+
+function normalizeNoteBars(rawBars) {
+    if (!Array.isArray(rawBars)) return [];
+    return rawBars
+        .map((b) => {
+            const midi = Number(b.midi);
+            const hz = Number(b.freq ?? b.avg_hz ?? (Number.isFinite(midi) ? 440 * Math.pow(2, (midi - 69) / 12) : 0));
+            return {
+                start: Number(b.start) || 0,
+                end: Number(b.end) || 0,
+                midi: Number.isFinite(midi) ? midi : (hz > 0 ? Math.round(69 + 12 * Math.log2(hz / 440)) : 60),
+                freq: Number(hz.toFixed(2)),
+                noteName: b.noteName || ''
+            };
+        })
+        .filter((b) => b.freq > 50);
+}
+
+function normalizeSargamPayload(data, backend, fallbackTitle = 'AI Separated Track') {
+    const rawVocal = data.vocals || data.vocal_url || data.vocalUrl || '';
+    const rawInst = data.instruments || data.inst_url || data.instUrl || '';
+    const noteBars = normalizeNoteBars(data.note_bars || data.noteBars);
+    const pitchCurve = Array.isArray(data.pitch_curve || data.pitchCurve)
+        ? (data.pitch_curve || data.pitchCurve).map((p) => ({
+            time: Number(p.time ?? p.t) || 0,
+            freq: Number(p.freq ?? p.hz) || 0
+        }))
+        : [];
+    return {
+        ...data,
+        title: data.title || fallbackTitle,
+        vocalUrl: toProxyAudioUrl(rawVocal, backend),
+        instUrl: toProxyAudioUrl(rawInst, backend),
+        rawVocalUrl: rawVocal,
+        rawInstUrl: rawInst,
+        noteBars,
+        pitchCurve,
+        lyrics: Array.isArray(data.lyrics) ? data.lyrics : []
+    };
+}
+
+app.get('/api/sargam/health', async (req, res) => {
+    const backend = resolveSargamBackend(req.query.backend || req.headers['x-sargam-backend']);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    try {
+        const upRes = await fetch(`${backend}/api/health`, { signal: controller.signal });
+        clearTimeout(timeout);
+        if (upRes.ok) {
+            const details = await upRes.json().catch(() => ({}));
+            return res.json({ ok: true, backend, details });
+        }
+        return res.json({ ok: false, backend, status: upRes.status });
+    } catch (err) {
+        clearTimeout(timeout);
+        return res.json({ ok: false, backend, error: err.message });
+    }
+});
+
+app.post('/api/sargam/separate-stems', async (req, res) => {
+    const { url, sourceUrl, backend: requestedBackend } = req.body || {};
+    const targetUrl = (url || sourceUrl || '').trim();
+    if (!targetUrl) {
+        return res.status(400).json({ error: 'Please provide a YouTube or audio URL.' });
+    }
+    const backend = resolveSargamBackend(requestedBackend || req.headers['x-sargam-backend']);
+    try {
+        const upRes = await fetch(`${backend}/api/separate-stems`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: targetUrl }),
+            signal: AbortSignal.timeout(240000)
+        });
+        const data = await upRes.json().catch(() => ({}));
+        if (!upRes.ok || data.success === false) {
+            return res.status(upRes.ok ? 422 : upRes.status).json({ error: data.detail || data.error || 'Stem separation failed.' });
+        }
+        return res.json(normalizeSargamPayload(data, backend, 'AI Separated Track'));
+    } catch (err) {
+        return res.status(502).json({ error: `Stem backend unreachable: ${err.message}` });
+    }
+});
+
+app.post('/api/sargam/separate-stems-file', express.raw({ type: '*/*', limit: '60mb' }), async (req, res) => {
+    const backend = resolveSargamBackend(req.query.backend || req.headers['x-sargam-backend']);
+    const contentType = req.headers['content-type'] || 'application/octet-stream';
+    if (!req.body || !Buffer.isBuffer(req.body) || req.body.length === 0) {
+        return res.status(400).json({ error: 'Uploaded audio file is empty.' });
+    }
+
+    try {
+        let upRes;
+        if (contentType.includes('multipart/form-data')) {
+            upRes = await fetch(`${backend}/api/separate-stems-file`, {
+                method: 'POST',
+                headers: { 'Content-Type': contentType },
+                body: req.body,
+                signal: AbortSignal.timeout(240000)
+            });
+        } else {
+            const filename = String(req.headers['x-filename'] || req.query.filename || 'upload.mp3').replace(/[^a-zA-Z0-9._-]/g, '_');
+            const formData = new FormData();
+            formData.append('file', new Blob([req.body], { type: contentType }), filename);
+            upRes = await fetch(`${backend}/api/separate-stems-file`, {
+                method: 'POST',
+                body: formData,
+                signal: AbortSignal.timeout(240000)
+            });
+        }
+
+        const data = await upRes.json().catch(() => ({}));
+        if (!upRes.ok || data.success === false) {
+            return res.status(upRes.ok ? 422 : upRes.status).json({ error: data.detail || data.error || 'File stem separation failed.' });
+        }
+        return res.json(normalizeSargamPayload(data, backend, 'Uploaded Song Stems'));
+    } catch (err) {
+        return res.status(502).json({ error: `Stem file backend unreachable: ${err.message}` });
+    }
+});
+
+app.post('/api/sargam/upload-cookies', express.raw({ type: '*/*', limit: '2mb' }), async (req, res) => {
+    const backend = resolveSargamBackend(req.query.backend || req.headers['x-sargam-backend']);
+    if (!req.body || !Buffer.isBuffer(req.body) || req.body.length === 0) {
+        return res.status(400).json({ error: 'Uploaded cookies file is empty.' });
+    }
+    try {
+        const formData = new FormData();
+        formData.append('file', new Blob([req.body], { type: 'text/plain' }), 'cookies.txt');
+        const upRes = await fetch(`${backend}/api/upload-cookies`, {
+            method: 'POST',
+            body: formData,
+            signal: AbortSignal.timeout(15000)
+        });
+        const data = await upRes.json().catch(() => ({}));
+        if (!upRes.ok) {
+            return res.status(upRes.status).json({ error: data.error || 'Cookie upload failed.' });
+        }
+        return res.json(data);
+    } catch (err) {
+        return res.status(502).json({ error: `Cookie upload error: ${err.message}` });
+    }
+});
+
+app.get('/api/sargam/audio', async (req, res) => {
+    const file = String(req.query.file || '').trim();
+    if (!file) {
+        return res.status(400).json({ error: 'Missing file parameter' });
+    }
+    const backend = resolveSargamBackend(req.query.backend);
+    const upstreamUrl = `${backend}/api/audio?file=${encodeURIComponent(file)}`;
+    const headers = {};
+    if (req.headers.range) {
+        headers.Range = req.headers.range;
+    }
+    try {
+        const upRes = await fetch(upstreamUrl, { headers });
+        res.status(upRes.status);
+        ['content-type', 'content-length', 'content-range', 'accept-ranges', 'cache-control'].forEach((h) => {
+            const val = upRes.headers.get(h);
+            if (val) res.setHeader(h, val);
+        });
+        if (!upRes.headers.get('accept-ranges')) {
+            res.setHeader('Accept-Ranges', 'bytes');
+        }
+        const arrayBuf = await upRes.arrayBuffer();
+        return res.send(Buffer.from(arrayBuf));
+    } catch (err) {
+        return res.status(502).json({ error: `Audio stream proxy error: ${err.message}` });
+    }
+});
+
+app.get('/api/sargam/get-pitch-and-lyrics', async (req, res) => {
+    const vocalUrl = String(req.query.vocal_url || '').trim();
+    if (!vocalUrl) {
+        return res.status(400).json({ error: 'Missing vocal_url parameter' });
+    }
+    const backend = resolveSargamBackend(req.query.backend);
+    const normalizedVocalUrl = toBackendVocalUrl(vocalUrl, backend);
+    try {
+        const upRes = await fetch(`${backend}/api/get-pitch-and-lyrics?vocal_url=${encodeURIComponent(normalizedVocalUrl)}`);
+        const data = await upRes.json().catch(() => ({}));
+        if (!upRes.ok) {
+            return res.status(upRes.status).json({ error: data.detail || data.error || 'Pitch/lyrics extraction failed' });
+        }
+        return res.json({
+            ...data,
+            noteBars: normalizeNoteBars(data.note_bars || data.noteBars),
+            lyrics: Array.isArray(data.lyrics) ? data.lyrics : []
+        });
+    } catch (err) {
+        return res.status(502).json({ error: `Pitch backend error: ${err.message}` });
+    }
+});
+
+app.post('/api/ai-vocal-coach', async (req, res) => {
+    const {
+        raga = 'Bilawal (Ionian)',
+        tonicLabel = 'C4',
+        taal = 'Teentaal (16)',
+        bpm = 96,
+        userAvgHz = 0,
+        refAvgHz = 0,
+        avgCentsOffset = 0,
+        inTunePercent = 0,
+        stabilityCents = 0,
+        durationSec = 0,
+        sampleNotes = [],
+        geminiApiKey
+    } = req.body || {};
+
+    if (!userAvgHz && !inTunePercent && (!Array.isArray(sampleNotes) || sampleNotes.length === 0)) {
+        return res.status(400).json({
+            success: false,
+            error: 'Provide pitch metrics (userAvgHz, inTunePercent, or sampleNotes) for analysis.'
+        });
+    }
+
+    const centsAbs = Math.abs(Number(avgCentsOffset) || 0);
+    const computedScore = Math.max(
+        25,
+        Math.min(
+            99,
+            Math.round((Number(inTunePercent) || 65) * 0.65 + Math.max(0, 35 - centsAbs * 0.7))
+        )
+    );
+
+    const apiKey = process.env.GEMINI_API_KEY || geminiApiKey || req.headers['x-gemini-api-key'];
+    if (apiKey) {
+        const prompt = `You are a master Hindustani Classical Vocal Guru & Studio Producer.
+Analyze this musician's riyaz take and give concrete, warm, encouraging technical feedback:
+- Raga: ${raga} | Sa Tonic: ${tonicLabel} | Taal: ${taal} (${bpm} BPM)
+- Musician Mean Pitch: ${Number(userAvgHz || 0).toFixed(1)} Hz vs Reference: ${Number(refAvgHz || 0).toFixed(1)} Hz
+- Mean Pitch Offset: ${Number(avgCentsOffset || 0).toFixed(1)} cents (${avgCentsOffset > 12 ? 'tends Sharp/Chadha' : avgCentsOffset < -12 ? 'tends Flat/Utara' : 'well centered'})
+- Sur Accuracy (<=15c): ${Math.round(Number(inTunePercent || 0))}% | Pitch Stability StdDev: ${Number(stabilityCents || 0).toFixed(1)} cents
+- Take Duration: ${Number(durationSec || 0).toFixed(1)}s
+- Swaras sung: ${Array.isArray(sampleNotes) ? sampleNotes.slice(0, 12).join(', ') : 'N/A'}
+
+Return ONLY strict JSON (no markdown fences) with keys:
+{
+  "score": number (0-100),
+  "pitchVerdict": string (concise 1-sentence summary),
+  "strengths": string[],
+  "drills": string[],
+  "raagTip": string
+}`;
+        const models = ['gemini-3-flash-preview', 'gemini-3.1-flash-lite-preview', 'gemini-2.0-flash'];
+        for (const modelName of models) {
+            try {
+                const gRes = await fetch(
+                    `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`,
+                    {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            contents: [{ parts: [{ text: prompt }] }],
+                            generationConfig: { temperature: 0.35, responseMimeType: 'application/json' }
+                        })
+                    }
+                );
+                if (gRes.ok) {
+                    const gData = await gRes.json();
+                    const rawText = gData.candidates?.[0]?.content?.parts?.[0]?.text || '';
+                    const cleaned = rawText.replace(/^```json\s*|\s*```$/g, '').trim();
+                    const parsed = JSON.parse(cleaned);
+                    return res.json({
+                        success: true,
+                        source: modelName,
+                        analysis: {
+                            score: Number(parsed.score) || computedScore,
+                            pitchVerdict: parsed.pitchVerdict || 'Balanced tonal alignment with room for finer sustain.',
+                            strengths: Array.isArray(parsed.strengths) ? parsed.strengths : ['Steady breath support around tonic Sa'],
+                            drills: Array.isArray(parsed.drills) ? parsed.drills : ['Hold Sa-Pa-Sa with Tanpura for 8 cycles at 80 BPM'],
+                            raagTip: parsed.raagTip || `Focus on resting phrases gently on the Vadi swara of ${raga}.`
+                        }
+                    });
+                }
+            } catch (e) {
+                // Fallback to next model
+            }
+        }
+    }
+
+    const tendency =
+        avgCentsOffset > 12
+            ? 'slightly sharp (Chadha swar) — relax throat tension on upper transitions'
+            : avgCentsOffset < -12
+              ? 'slightly flat (Utara swar) — engage diaphragmatic breath support'
+              : 'well centered inside the 15-cent Sur pocket';
+
+    return res.json({
+        success: true,
+        source: 'local-dsp-coach',
+        analysis: {
+            score: computedScore,
+            pitchVerdict: `Your phrasing in ${raga} is ${tendency} (${Math.round(Number(inTunePercent || 65))}% in-Sur).`,
+            strengths: [
+                centsAbs <= 15
+                    ? `Strong tonal center lock around ${tonicLabel} (${avgCentsOffset >= 0 ? '+' : ''}${Number(avgCentsOffset || 0).toFixed(1)}c avg)`
+                    : `Consistent melodic contour tracked across ${Number(durationSec || 0).toFixed(1)}s take`,
+                stabilityCents <= 25
+                    ? 'Smooth vibrato/sustain stability with low micro-jitter'
+                    : 'Expressive dynamic phrasing across swara transitions'
+            ],
+            drills: [
+                `Slow Aakaar Kharaj Riyaz: hold Sa (${tonicLabel}) with Tanpura ON for 2 Teentaal cycles before ascending.`,
+                avgCentsOffset > 12
+                    ? 'Pitch Calibration Drill: hum descending Pa-Ma-Ga-Re-Sa slowly while watching the dial needle sit dead-center.'
+                    : 'Breath & Projection Drill: sing Sa-Re-Ga-Pa-Dha-Sa in staccato then sustained long notes.'
+            ],
+            raagTip: `${raga}: Approach Vadi swaras via subtle Meend (glide) rather than snapping sharply onto frets.`
+        }
+    });
+});
+
 // Serve frontend static build
 const clientDist = path.join(__dirname, 'client', 'dist');
 app.use(express.static(clientDist));
@@ -1448,6 +1862,7 @@ wss.on('connection', (ws) => {
                     email: data.user?.email || '',
                     picture: data.user?.picture || '',
                     initials: data.user?.initials || getInitials(data.user?.name || 'Guest'),
+                    instrument: data.user?.instrument || 'Vocalist',
                     isAudioOn: data.user?.isAudioOn !== false,
                     isVideoOn: data.user?.isVideoOn !== false,
                     isScreenSharing: Boolean(data.user?.isScreenSharing),
@@ -1465,7 +1880,9 @@ wss.on('connection', (ws) => {
                         selfPeerId: ws.peerId,
                         participants: participantsList,
                         transcript: room.transcript,
-                        tasks: room.tasks
+                        tasks: room.tasks,
+                        jamState: room.jamState || createDefaultJamState(),
+                        backingState: room.backingState || createDefaultBackingState()
                     }), () => {});
                 } catch (e) {}
 
@@ -1524,6 +1941,7 @@ wss.on('connection', (ws) => {
                     if (typeof data.isAudioOn === 'boolean') p.isAudioOn = data.isAudioOn;
                     if (typeof data.isVideoOn === 'boolean') p.isVideoOn = data.isVideoOn;
                     if (typeof data.isScreenSharing === 'boolean') p.isScreenSharing = data.isScreenSharing;
+                    if (typeof data.instrument === 'string' && data.instrument.trim()) p.instrument = data.instrument.trim();
                     room.participants.set(ws.peerId, p);
                     broadcastToRoom(ws.roomId, {
                         type: 'participant-updated',
@@ -1532,6 +1950,58 @@ wss.on('connection', (ws) => {
                         participants: Array.from(room.participants.values())
                     });
                 }
+                break;
+            }
+
+            case 'jam-state-sync': {
+                if (!ws.roomId || !data.jamState) break;
+                const room = rooms.get(ws.roomId);
+                if (room) {
+                    room.jamState = {
+                        ...(room.jamState || createDefaultJamState()),
+                        ...data.jamState,
+                        updatedAt: Date.now()
+                    };
+                    broadcastToRoom(ws.roomId, {
+                        type: 'jam-state-sync',
+                        jamState: room.jamState,
+                        senderPeerId: ws.peerId
+                    }, ws);
+                }
+                break;
+            }
+
+            case 'backing-sync': {
+                if (!ws.roomId || !data.backingState) break;
+                const room = rooms.get(ws.roomId);
+                if (room) {
+                    room.backingState = {
+                        ...(room.backingState || createDefaultBackingState()),
+                        ...data.backingState,
+                        updatedAt: Date.now()
+                    };
+                    broadcastToRoom(ws.roomId, {
+                        type: 'backing-sync',
+                        backingState: room.backingState,
+                        senderPeerId: ws.peerId
+                    }, ws);
+                }
+                break;
+            }
+
+            case 'pitch-telemetry': {
+                if (!ws.roomId) break;
+                broadcastToRoom(ws.roomId, {
+                    type: 'pitch-telemetry',
+                    peerId: ws.peerId,
+                    note: data.note || null,
+                    sargam: data.sargam || null,
+                    sargamDevanagari: data.sargamDevanagari || null,
+                    cents: typeof data.cents === 'number' ? data.cents : 0,
+                    hz: typeof data.hz === 'number' ? data.hz : 0,
+                    inTune: Boolean(data.inTune),
+                    level: typeof data.level === 'number' ? data.level : 0
+                }, ws);
                 break;
             }
 
@@ -1601,4 +2071,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { app, server, rooms, sessions, generateMeetingCode, normalizeRoomId };
+module.exports = { app, server, rooms, sessions, generateMeetingCode, normalizeRoomId, normalizeSargamPayload };

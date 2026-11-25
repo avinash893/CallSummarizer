@@ -20,7 +20,7 @@ describe('TopBar Component', () => {
       />
     );
 
-    expect(screen.getByText('CallSummarizer')).toBeInTheDocument();
+    expect(screen.getByText('SargamJam Studio')).toBeInTheDocument();
     expect(screen.getByText('strategy-sync')).toBeInTheDocument();
     expect(screen.getByText('04:15')).toBeInTheDocument();
     expect(screen.getByText('Services')).toBeInTheDocument();

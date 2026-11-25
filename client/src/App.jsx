@@ -6,6 +6,13 @@ import ControlDock from './components/ControlDock';
 import NotesDrawer from './components/NotesDrawer';
 import Lobby, { extractRoomCode } from './components/Lobby';
 import ArchitectureModal from './components/ArchitectureModal';
+import MusicalControlStrip from './components/MusicalControlStrip';
+import PitchAndLyricsView from './components/PitchAndLyricsView';
+import StudioDawView from './components/StudioDawView';
+import { autoCorrelate, findNearestSwara, midiToNoteName } from './audio/sargamEngine';
+import { TanpuraPlayer } from './audio/tanpuraEngine';
+import { TaalSequencer } from './audio/taalEngine';
+import { saveStudioTake } from './audio/studioStorage';
 
 const DEFAULT_ICE_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
@@ -86,7 +93,7 @@ function getInitialUser() {
       }
     } catch (e) {}
   }
-  return { name: 'You', email: '', initials: 'You' };
+  return { name: 'You', email: '', initials: 'You', instrument: 'Vocalist' };
 }
 
 export default function App() {
@@ -103,6 +110,38 @@ export default function App() {
   const [screenStream, setScreenStream] = useState(null);
   const [callSeconds, setCallSeconds] = useState(0);
   const [isExtracting, setIsExtracting] = useState(false);
+
+  // SargamJam Studio Music & Jamming State
+  const [activeStudioTab, setActiveStudioTab] = useState('stage'); // 'stage' | 'pitch' | 'daw'
+  const [jamState, setJamState] = useState({
+    tonicMidi: 60, // C4
+    raga: 'Bilawal',
+    tuningMode: 'ji',
+    langMode: 'en',
+    isTanpuraOn: false,
+    tanpuraVol: 0.45,
+    taal: 'Teentaal (16)',
+    bpm: 96,
+    isMetronomeOn: false
+  });
+  const [backingState, setBackingState] = useState({
+    title: '',
+    vocalUrl: '',
+    instUrl: '',
+    isPlaying: false,
+    currentTime: 0,
+    noteBars: [],
+    lyrics: []
+  });
+  const [isRoomSynced, setIsRoomSynced] = useState(true);
+  const [isRawAudio, setIsRawAudio] = useState(false);
+  const [liveMicPitch, setLiveMicPitch] = useState(null);
+  const [peerTelemetry, setPeerTelemetry] = useState({});
+  const [currentBeatInfo, setCurrentBeatInfo] = useState(null);
+
+  const tanpuraRef = useRef(null);
+  const taalRef = useRef(null);
+  const lastTelemetryEmitRef = useRef(0);
 
   // Real room state (no fake demo second participant)
   const [remotePeers, setRemotePeers] = useState([]);
@@ -299,6 +338,186 @@ export default function App() {
     };
   }, []);
 
+  // Tanpura player lifecycle synced with jamState when inside room
+  useEffect(() => {
+    if (!isInCall || !jamState.isTanpuraOn) {
+      if (tanpuraRef.current) {
+        tanpuraRef.current.stop();
+      }
+      return;
+    }
+    if (!tanpuraRef.current) {
+      tanpuraRef.current = new TanpuraPlayer();
+    }
+    if (!tanpuraRef.current.isPlaying) {
+      tanpuraRef.current.start(jamState.tonicMidi, jamState.raga, jamState.tanpuraVol);
+    } else {
+      tanpuraRef.current.updateConfig(jamState.tonicMidi, jamState.raga);
+      tanpuraRef.current.setVolume(jamState.tanpuraVol);
+    }
+  }, [isInCall, jamState.isTanpuraOn, jamState.tonicMidi, jamState.raga, jamState.tanpuraVol]);
+
+  // Taal percussion sequencer synced with jamState when inside room
+  useEffect(() => {
+    if (!isInCall || !jamState.isMetronomeOn) {
+      if (taalRef.current) {
+        taalRef.current.stop();
+      }
+      setCurrentBeatInfo(null);
+      return;
+    }
+    if (!taalRef.current) {
+      taalRef.current = new TaalSequencer();
+    }
+    if (!taalRef.current.getIsRunning?.() && !taalRef.current.isRunning) {
+      taalRef.current.start({
+        taalName: jamState.taal,
+        bpm: jamState.bpm,
+        onBeat: (info) => setCurrentBeatInfo(info)
+      });
+    } else {
+      taalRef.current.setTaal(jamState.taal);
+      taalRef.current.setTempo(jamState.bpm);
+    }
+  }, [isInCall, jamState.isMetronomeOn, jamState.taal, jamState.bpm]);
+
+  // Dispose audio synths on unmount
+  useEffect(() => {
+    return () => {
+      if (tanpuraRef.current) tanpuraRef.current.dispose();
+      if (taalRef.current) taalRef.current.dispose();
+    };
+  }, []);
+
+  // Real-time F0 pitch detection on active local microphone
+  useEffect(() => {
+    if (!localStream || !isAudioOn || typeof window === 'undefined') {
+      setLiveMicPitch(null);
+      return;
+    }
+    const audioTracks = localStream.getAudioTracks?.() || [];
+    if (audioTracks.length === 0) return;
+
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+
+    let ctx;
+    let source;
+    let analyser;
+    let timer;
+
+    try {
+      ctx = new Ctx();
+      const audioOnlyStream = typeof MediaStream !== 'undefined' ? new MediaStream(audioTracks) : localStream;
+      source = ctx.createMediaStreamSource(audioOnlyStream);
+      analyser = ctx.createAnalyser();
+      analyser.fftSize = 2048;
+      source.connect(analyser);
+
+      const buf = new Float32Array(analyser.fftSize);
+      timer = setInterval(() => {
+        if (!analyser) return;
+        analyser.getFloatTimeDomainData(buf);
+        const hz = autoCorrelate(buf, ctx.sampleRate || 44100);
+        if (hz > 0) {
+          const info = findNearestSwara(hz, jamState.tonicMidi, jamState.tuningMode, jamState.raga);
+          setLiveMicPitch(info);
+          const now = Date.now();
+          if (
+            info &&
+            isInCall &&
+            wsRef.current &&
+            wsRef.current.readyState === 1 &&
+            now - lastTelemetryEmitRef.current > 180
+          ) {
+            lastTelemetryEmitRef.current = now;
+            try {
+              wsRef.current.send(
+                JSON.stringify({
+                  type: 'pitch-telemetry',
+                  note: info.noteName,
+                  sargam: info.sargam,
+                  sargamDevanagari: info.devanagari,
+                  cents: info.cents,
+                  hz: info.freq,
+                  inTune: info.inTune
+                })
+              );
+            } catch (e) {}
+          }
+        }
+      }, 55);
+    } catch (e) {
+      // JSDOM or audio context restriction
+    }
+
+    return () => {
+      if (timer) clearInterval(timer);
+      try { source?.disconnect(); } catch (e) {}
+      try { if (ctx && ctx.state !== 'closed') ctx.close(); } catch (e) {}
+    };
+  }, [localStream, isAudioOn, isInCall, jamState.tonicMidi, jamState.tuningMode, jamState.raga]);
+
+  const updateJamState = useCallback(
+    (patch) => {
+      setJamState((prev) => {
+        const next = { ...prev, ...patch };
+        if (isInCall && isRoomSynced && wsRef.current && wsRef.current.readyState === 1) {
+          try {
+            wsRef.current.send(JSON.stringify({ type: 'jam-state-sync', jamState: next }));
+          } catch (e) {}
+        }
+        return next;
+      });
+    },
+    [isInCall, isRoomSynced]
+  );
+
+  const updateBackingState = useCallback((patch) => {
+    setBackingState((prev) => ({ ...prev, ...patch }));
+  }, []);
+
+  const syncBackingToRoom = useCallback(() => {
+    if (isInCall && wsRef.current && wsRef.current.readyState === 1) {
+      try {
+        wsRef.current.send(JSON.stringify({ type: 'backing-sync', backingState }));
+      } catch (e) {}
+    }
+  }, [isInCall, backingState]);
+
+  const toggleRawAudio = useCallback(() => {
+    setIsRawAudio((prev) => {
+      const next = !prev;
+      const tracks = localStreamRef.current?.getAudioTracks?.() || [];
+      tracks.forEach((t) => {
+        if (typeof t.applyConstraints === 'function') {
+          t.applyConstraints({
+            echoCancellation: !next,
+            noiseSuppression: !next,
+            autoGainControl: !next
+          }).catch(() => {});
+        }
+      });
+      return next;
+    });
+  }, []);
+
+  const handleSendClipToDaw = useCallback(
+    async (clip) => {
+      if (!clip?.blob) return;
+      await saveStudioTake({
+        title: `${clip.peerName || 'Jam'} Clip`,
+        raga: jamState.raga,
+        tonicMidi: jamState.tonicMidi,
+        bpm: jamState.bpm,
+        taal: jamState.taal,
+        audioBlob: clip.blob
+      });
+      setActiveStudioTab('daw');
+    },
+    [jamState.raga, jamState.tonicMidi, jamState.bpm, jamState.taal]
+  );
+
   // Call timer
   useEffect(() => {
     let interval = null;
@@ -421,6 +640,7 @@ export default function App() {
               name: user?.name || 'You',
               email: user?.email || '',
               initials: user?.initials || 'YO',
+              instrument: user?.instrument || 'Vocalist',
               isAudioOn,
               isVideoOn
             }
@@ -446,6 +666,12 @@ export default function App() {
           }
           if (Array.isArray(msg.tasks) && msg.tasks.length > 0) {
             setTasks(ensureUniqueTaskIds(msg.tasks));
+          }
+          if (msg.jamState && typeof msg.jamState === 'object') {
+            setJamState((prev) => ({ ...prev, ...msg.jamState }));
+          }
+          if (msg.backingState && typeof msg.backingState === 'object' && (msg.backingState.vocalUrl || msg.backingState.title)) {
+            setBackingState((prev) => ({ ...prev, ...msg.backingState }));
           }
           break;
         }
@@ -602,6 +828,30 @@ export default function App() {
         case 'tasks-sync': {
           if (Array.isArray(msg.tasks)) {
             setTasks(ensureUniqueTaskIds(msg.tasks));
+          }
+          break;
+        }
+
+        case 'jam-state-sync': {
+          if (msg.jamState && typeof msg.jamState === 'object') {
+            setJamState((prev) => ({ ...prev, ...msg.jamState }));
+          }
+          break;
+        }
+
+        case 'backing-sync': {
+          if (msg.backingState && typeof msg.backingState === 'object') {
+            setBackingState((prev) => ({ ...prev, ...msg.backingState }));
+          }
+          break;
+        }
+
+        case 'pitch-telemetry': {
+          if (msg.peerId) {
+            setPeerTelemetry((prev) => ({
+              ...prev,
+              [msg.peerId]: msg
+            }));
           }
           break;
         }
@@ -1534,25 +1784,26 @@ export default function App() {
       {!isInCall ? (
         <>
           <Lobby
-          roomName={roomName}
-          setRoomName={setRoomName}
-          onJoinCall={handleJoinCall}
-          isVideoOn={isVideoOn}
-          toggleVideo={toggleVideo}
-          isAudioOn={isAudioOn}
-          toggleAudio={toggleAudio}
-          localStream={localStream}
-          user={user}
-          onUserChange={handleUserChange}
-          googleClientId={appConfig.googleClientId}
-          turnstileSiteKey={appConfig.turnstileSiteKey}
-          isTurnstileVerified={isTurnstileVerified}
-          onTurnstileVerified={setIsTurnstileVerified}
-          hasSessionNotes={tasks.length > 0 || transcript.length > 0}
-          isNotesOpen={isNotesOpen}
-          onToggleNotes={() => setIsNotesOpen((prev) => !prev)}
-          onClearNotes={handleClearNotesAndTranscript}
-        />
+            roomName={roomName}
+            setRoomName={setRoomName}
+            onJoinCall={handleJoinCall}
+            isVideoOn={isVideoOn}
+            toggleVideo={toggleVideo}
+            isAudioOn={isAudioOn}
+            toggleAudio={toggleAudio}
+            localStream={localStream}
+            user={user}
+            onUserChange={handleUserChange}
+            googleClientId={appConfig.googleClientId}
+            turnstileSiteKey={appConfig.turnstileSiteKey}
+            isTurnstileVerified={isTurnstileVerified}
+            onTurnstileVerified={setIsTurnstileVerified}
+            hasSessionNotes={tasks.length > 0 || transcript.length > 0}
+            isNotesOpen={isNotesOpen}
+            onToggleNotes={() => setIsNotesOpen((prev) => !prev)}
+            onClearNotes={handleClearNotesAndTranscript}
+            liveMicPitch={liveMicPitch}
+          />
         {isNotesOpen && (tasks.length > 0 || transcript.length > 0) && (
           <NotesDrawer
             isOpen={isNotesOpen}
@@ -1573,6 +1824,8 @@ export default function App() {
             onToggleCapturePeer={handleToggleCapturePeer}
             onDeleteClip={handleDeleteClip}
             onClearSession={handleClearNotesAndTranscript}
+            jamState={jamState}
+            onSendClipToDaw={handleSendClipToDaw}
           />
         )}
         </>
@@ -1586,6 +1839,19 @@ export default function App() {
             onOpenArchModal={() => setIsArchModalOpen(true)}
             onCopyRoom={handleCopyRoom}
             participantCount={1 + remotePeers.length}
+            activeTab={activeStudioTab}
+            onChangeTab={setActiveStudioTab}
+            activeScaleBadge={`${midiToNoteName(jamState.tonicMidi)} · ${jamState.raga}`}
+          />
+
+          <MusicalControlStrip
+            jamState={jamState}
+            onUpdateJamState={updateJamState}
+            isRawAudio={isRawAudio}
+            onToggleRawAudio={toggleRawAudio}
+            currentBeatInfo={currentBeatInfo}
+            isRoomSynced={isRoomSynced}
+            onToggleRoomSync={() => setIsRoomSynced((prev) => !prev)}
           />
 
           <main className="main-stage">
@@ -1603,17 +1869,42 @@ export default function App() {
               </button>
             )}
 
-            <VideoCanvas
-              isVideoOn={isVideoOn}
-              isAudioOn={isAudioOn}
-              localStream={localStream}
-              screenStream={screenStream}
-              isScreenSharing={isScreenSharing}
-              localUser={user}
-              remotePeers={remotePeers}
-              capturedPeerIds={capturedPeerIds}
-              onToggleCapturePeer={handleToggleCapturePeer}
-            />
+            {activeStudioTab === 'stage' && (
+              <VideoCanvas
+                isVideoOn={isVideoOn}
+                isAudioOn={isAudioOn}
+                localStream={localStream}
+                screenStream={screenStream}
+                isScreenSharing={isScreenSharing}
+                localUser={user}
+                remotePeers={remotePeers}
+                capturedPeerIds={capturedPeerIds}
+                onToggleCapturePeer={handleToggleCapturePeer}
+                localPitchInfo={liveMicPitch}
+                peerTelemetry={peerTelemetry}
+                langMode={jamState.langMode}
+                isRawAudio={isRawAudio}
+              />
+            )}
+
+            {activeStudioTab === 'pitch' && (
+              <PitchAndLyricsView
+                jamState={jamState}
+                onUpdateJamState={updateJamState}
+                liveMicPitch={liveMicPitch}
+                backingState={backingState}
+                onUpdateBackingState={updateBackingState}
+                onSyncBackingToRoom={syncBackingToRoom}
+              />
+            )}
+
+            {activeStudioTab === 'daw' && (
+              <StudioDawView
+                jamState={jamState}
+                localStream={localStream}
+                backingState={backingState}
+              />
+            )}
 
             <NotesDrawer
               isOpen={isNotesOpen}
@@ -1634,6 +1925,8 @@ export default function App() {
               onToggleCapturePeer={handleToggleCapturePeer}
               onDeleteClip={handleDeleteClip}
               onClearSession={handleClearNotesAndTranscript}
+              jamState={jamState}
+              onSendClipToDaw={handleSendClipToDaw}
             />
 
             <ControlDock
@@ -1646,6 +1939,10 @@ export default function App() {
               isNotesOpen={isNotesOpen}
               setIsNotesOpen={setIsNotesOpen}
               onLeaveCall={handleLeaveCall}
+              isTanpuraOn={jamState.isTanpuraOn}
+              onToggleTanpura={() => updateJamState({ isTanpuraOn: !jamState.isTanpuraOn })}
+              isMetronomeOn={jamState.isMetronomeOn}
+              onToggleMetronome={() => updateJamState({ isMetronomeOn: !jamState.isMetronomeOn })}
             />
           </main>
         </>

@@ -39,7 +39,9 @@ export default function NotesDrawer({
   onToggleCapturePeer,
   onDeleteClip,
   onClearSession,
-  user = { name: 'You' }
+  user = { name: 'You' },
+  jamState = null,
+  onSendClipToDaw = null
 }) {
   const [activeTab, setActiveTab] = useState('notes');
   const [actionFilter, setActionFilter] = useState(user?.email ? 'mine' : 'all'); // 'mine' for logged in users, 'all' default for overview
@@ -347,6 +349,16 @@ export default function NotesDrawer({
                         >
                           <i className="bi bi-journal-plus me-1"></i> Note
                         </button>
+                        {onSendClipToDaw && clip.blob && (
+                          <button
+                            type="button"
+                            className="btn btn-outline-warning btn-sm"
+                            onClick={() => onSendClipToDaw(clip)}
+                            title="Load captured clip into Studio DAW"
+                          >
+                            <i className="bi bi-sliders2 me-1"></i> DAW
+                          </button>
+                        )}
                         {onDeleteClip && (
                           <button
                             type="button"
@@ -372,6 +384,21 @@ export default function NotesDrawer({
             aria-labelledby="tab-notes"
             style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}
           >
+            {/* Active Jam Raga Snapshot */}
+            {jamState && (
+              <div className="notes-card notes-raga-snapshot">
+                <div className="notes-card-title">
+                  <i className="bi bi-music-note-beamed" style={{ marginRight: '6px', color: 'var(--accent-primary)' }}></i>
+                  <span>Session Scale & Taal</span>
+                </div>
+                <div className="d-flex flex-wrap gap-2" style={{ fontSize: '0.78rem', color: 'var(--text-main)' }}>
+                  <span className="badge bg-dark border border-warning text-warning">Raga: {jamState.raga}</span>
+                  <span className="badge bg-dark border border-secondary">{jamState.taal} · {jamState.bpm} BPM</span>
+                  <span className="badge bg-dark border border-secondary">{jamState.tuningMode === 'ji' ? 'JI Shruti' : 'ET'}</span>
+                </div>
+              </div>
+            )}
+
             {/* Discussion Summary */}
             <div className="notes-card">
               <div className="notes-card-title">

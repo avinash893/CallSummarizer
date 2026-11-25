@@ -29,6 +29,15 @@ export function generateClientMeetingCode() {
   return `${seg(3)}-${seg(4)}-${seg(3)}`;
 }
 
+export const MUSICIAN_ROLES = [
+  'Vocalist',
+  'Guitarist',
+  'Tabla / Beats',
+  'Keys / Harmonium',
+  'Flute / Sitar',
+  'Producer'
+];
+
 export default function Lobby({
   roomName,
   setRoomName,
@@ -38,7 +47,7 @@ export default function Lobby({
   isAudioOn,
   toggleAudio,
   localStream,
-  user = { name: 'You', email: '', initials: 'YO' },
+  user = { name: 'You', email: '', initials: 'YO', instrument: 'Vocalist' },
   onUserChange,
   googleClientId = DEFAULT_GOOGLE_CLIENT_ID,
   turnstileSiteKey,
@@ -47,7 +56,8 @@ export default function Lobby({
   hasSessionNotes = false,
   isNotesOpen = false,
   onToggleNotes,
-  onClearNotes
+  onClearNotes,
+  liveMicPitch = null
 }) {
   const previewRef = useRef(null);
   const [showGoogleModal, setShowGoogleModal] = useState(false);
@@ -280,6 +290,10 @@ export default function Lobby({
       <div className="lobby-box">
         <div className="lobby-header-row">
           <div>
+            <div className="lobby-brand-kicker">
+              <i className="bi bi-music-note-beamed me-1"></i>
+              <span>SargamJam Studio</span>
+            </div>
             <h2 className="lobby-title">Ready to join?</h2>
             <p className="lobby-subtitle">Check your camera and microphone</p>
           </div>
@@ -404,7 +418,42 @@ export default function Lobby({
               <i className={`bi ${isVideoOn ? 'bi-camera-video-fill' : 'bi-camera-video-off-fill'}`}></i>
             </button>
           </div>
+
+          {/* Pre-Join Live Pitch Tuner Pill */}
+          {isAudioOn && (
+            <div className={`lobby-tuner-pill ${liveMicPitch?.inTune ? 'sur-locked' : ''}`} data-testid="lobby-tuner-pill">
+              <i className="bi bi-soundwave"></i>
+              <span>
+                {liveMicPitch
+                  ? `${liveMicPitch.sargam} · ${liveMicPitch.noteName} (${liveMicPitch.inTune ? 'In Sur' : `${liveMicPitch.cents > 0 ? '+' : ''}${liveMicPitch.cents}c`})`
+                  : 'Mic ready · Sing Sa to check tuning'}
+              </span>
+            </div>
+          )}
         </div>
+
+        {/* Musician Role / Instrument Selector */}
+        {onUserChange && (
+          <div className="lobby-instrument-row" aria-label="Select your musician role">
+            <span className="lobby-inst-label">Playing as:</span>
+            <div className="lobby-inst-chips">
+              {MUSICIAN_ROLES.map((role) => {
+                const active = (user?.instrument || 'Vocalist') === role;
+                return (
+                  <button
+                    key={role}
+                    type="button"
+                    className={`lobby-inst-pill ${active ? 'active' : ''}`}
+                    onClick={() => onUserChange({ ...user, instrument: role })}
+                    aria-pressed={active}
+                  >
+                    {role}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Meeting Management Form (New Meeting, Code or Shareable Link) */}
         <form onSubmit={handleSubmit} className="lobby-form">

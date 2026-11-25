@@ -63,7 +63,7 @@ describe('App Main Flow', () => {
       fireEvent.click(screen.getByRole('button', { name: /Join now/i }));
     });
 
-    expect(screen.queryByText('CallSummarizer')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Leave call/i })).not.toBeInTheDocument();
     expect(screen.getByTestId('lobby-auth-error')).toHaveTextContent(/Sign in with Google is required to join a meeting/i);
     expect(screen.getByTestId('google-signin-form')).toBeInTheDocument();
   });
@@ -83,7 +83,7 @@ describe('App Main Flow', () => {
       fireEvent.click(screen.getByRole('button', { name: /Join now/i }));
     });
 
-    expect(screen.getByText('CallSummarizer')).toBeInTheDocument();
+    expect(screen.getByText('SargamJam Studio')).toBeInTheDocument();
     // Only 1 video tile when only 1 person has joined (no fake demo tile)
     expect(container.querySelectorAll('.video-tile').length).toBe(1);
     expect(screen.queryByText('RS')).not.toBeInTheDocument();
@@ -182,7 +182,7 @@ describe('App Main Flow', () => {
         fireEvent.click(screen.getByRole('button', { name: /Join now/i }));
       });
 
-      expect(screen.queryByText('CallSummarizer')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Leave call/i })).not.toBeInTheDocument();
       expect(screen.getByTestId('lobby-auth-error')).toHaveTextContent(/Cloudflare Turnstile verification required/i);
     } finally {
       vi.useRealTimers();
@@ -210,5 +210,48 @@ describe('App Main Flow', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Transcript' }));
     expect(screen.getByText(/No transcript lines recorded yet/i)).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/Type a meeting note or commitment/i)).toBeInTheDocument();
+  });
+
+  it('switches cleanly between Jam Stage, Pitch & Lyrics, and Studio DAW workspaces and toggles music controls', async () => {
+    render(<App />);
+
+    // Select instrument role in Lobby
+    const guitarChip = screen.getByRole('button', { name: 'Guitarist' });
+    fireEvent.click(guitarChip);
+    expect(guitarChip).toHaveAttribute('aria-pressed', 'true');
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 60));
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Join now/i }));
+    });
+
+    // Musical control strip & local role badge visible on stage
+    expect(screen.getByTestId('musical-control-strip')).toBeInTheDocument();
+    expect(screen.getByTestId('local-video-tile')).toHaveTextContent('Guitarist');
+
+    // Toggle Tanpura & Beat & Raw Audio without affecting action item checkbox count
+    fireEvent.click(screen.getByTestId('btn-toggle-tanpura'));
+    expect(screen.getByTestId('btn-toggle-tanpura')).toHaveAttribute('aria-pressed', 'true');
+
+    fireEvent.click(screen.getByTestId('btn-toggle-metronome'));
+    expect(screen.getByTestId('btn-toggle-metronome')).toHaveAttribute('aria-pressed', 'true');
+
+    fireEvent.click(screen.getByTestId('btn-toggle-raw-audio'));
+    expect(screen.getByTestId('btn-toggle-raw-audio')).toHaveAttribute('aria-pressed', 'true');
+
+    // Switch to Pitch & Lyrics tab
+    fireEvent.click(screen.getByTestId('tab-studio-pitch'));
+    expect(screen.getByTestId('pitch-lyrics-view')).toBeInTheDocument();
+
+    // Switch to Studio DAW tab
+    fireEvent.click(screen.getByTestId('tab-studio-daw'));
+    expect(screen.getByTestId('studio-daw-view')).toBeInTheDocument();
+
+    // Return to Stage
+    fireEvent.click(screen.getByTestId('tab-studio-stage'));
+    expect(screen.getByTestId('local-video-tile')).toBeInTheDocument();
   });
 });

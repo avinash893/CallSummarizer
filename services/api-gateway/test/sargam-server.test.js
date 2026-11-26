@@ -4,7 +4,14 @@ const { WebSocket } = require('ws');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { server, rooms, normalizeSargamPayload } = require('../../../server');
+const {
+    server,
+    rooms,
+    normalizeSargamPayload,
+    extractCanonicalSongKey,
+    setCachedSeparatedSong,
+    sargamStemMetadataCache
+} = require('../../../server');
 
 test('SargamJam Unified Server - Sargam APIs, Vocal Coach & Jam WebSocket Sync', async (t) => {
     let baseUrl;
@@ -317,5 +324,65 @@ test('SargamJam Unified Server - Sargam APIs, Vocal Coach & Jam WebSocket Sync',
         const meta = await metaRes.json();
         assert.strictEqual(meta.noteBars.length, 1);
         assert.strictEqual(meta.lyrics[0].text, 'Sa Re Ga');
+    });
+
+    await t.test('caches separated songs across canonical YouTube URL variants and deduplicates room shared audio', async (sub) => {
+        const key1 = extractCanonicalSongKey('https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=42s');
+        const key2 = extractCanonicalSongKey('https://youtu.be/dQw4w9WgXcQ?si=share123');
+        const key3 = extractCanonicalSongKey('https://www.youtube.com/shorts/dQw4w9WgXcQ');
+        assert.strictEqual(key1, 'yt:dQw4w9WgXcQ');
+        assert.strictEqual(key2, 'yt:dQw4w9WgXcQ');
+        assert.strictEqual(key3, 'yt:dQw4w9WgXcQ');
+
+        const crypto = require('crypto');
+        const cacheRoot = process.env.SARGAM_LOCAL_CACHE_DIR || path.join(os.tmpdir(), 'callsummarizer_sargam_cache');
+        const songDiskHash = crypto.createHash('sha256').update(key1).digest('hex').slice(0, 24);
+        const songDiskFile = path.join(cacheRoot, 'songs', `${songDiskHash}.json`);
+
+        sub.after(() => {
+            sargamStemMetadataCache.delete(key1);
+            rooms.delete('cache-dedup-room');
+            try { if (fs.existsSync(songDiskFile)) fs.unlinkSync(songDiskFile); } catch (e) {}
+        });
+
+        setCachedSeparatedSong(key1, {
+            success: true,
+            title: 'Cached Hit Track',
+            vocalUrl: '/api/sargam/audio?file=vid_cached01%2Fvocals.mp3',
+            instUrl: '/api/sargam/audio?file=vid_cached01%2Fno_vocals.mp3',
+            noteBars: [{ start: 1, end: 2, freq: 261.6, midi: 60 }],
+            lyrics: [{ start: 1, end: 2, text: 'Cached line' }]
+        });
+
+        const sepRes = await fetch(`${baseUrl}/api/sargam/separate-stems`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: 'https://youtu.be/dQw4w9WgXcQ?si=anotheruser' })
+        });
+        assert.strictEqual(sepRes.status, 200);
+        const sepData = await sepRes.json();
+        assert.strictEqual(sepData.cached, true);
+        assert.strictEqual(sepData.title, 'Cached Hit Track');
+        assert.strictEqual(sepData.vocalUrl, '/api/sargam/audio?file=vid_cached01%2Fvocals.mp3');
+
+        // Same local file uploaded again in same room reuses existing URL
+        const payloadBuf = Buffer.from('ID3-DEDUP-SHARED-TRACK');
+        const r1 = await fetch(`${baseUrl}/api/rooms/cache-dedup-room/shared-audio`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'audio/mpeg' },
+            body: payloadBuf
+        });
+        assert.strictEqual(r1.status, 201);
+        const d1 = await r1.json();
+
+        const r2 = await fetch(`${baseUrl}/api/rooms/cache-dedup-room/shared-audio`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'audio/mpeg' },
+            body: payloadBuf
+        });
+        assert.strictEqual(r2.status, 200);
+        const d2 = await r2.json();
+        assert.strictEqual(d2.cached, true);
+        assert.strictEqual(d2.url, d1.url);
     });
 });

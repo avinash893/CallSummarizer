@@ -537,8 +537,9 @@ export default function PitchAndLyricsView({
 
       if (inlineBars.length > 0) {
         const detectedScale = applyDetectedScale(inlineBars);
+        const sourceTag = data.cached ? 'Loaded from cache & shared with room' : 'Shared with room (Cloud AI)';
         setStatusMsg(
-          `Shared with room (Cloud AI): ${inlineBars.length} note bars & ${inlineLyrics.length} lyric cues${detectedScale ? ` • Key: ${detectedScale}` : '.'}`
+          `${sourceTag}: ${inlineBars.length} note bars & ${inlineLyrics.length} lyric cues${detectedScale ? ` • Key: ${detectedScale}` : '.'}`
         );
       } else {
         await fetchPitchAndLyricsForVocal(data.vocalUrl, stemPatch);

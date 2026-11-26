@@ -1309,17 +1309,25 @@ app.post('/api/rooms/:id/shared-audio', express.raw({ type: '*/*', limit: '25mb'
     }
     const room = getOrCreateRoom(normalized);
     if (!room.sharedAudioFiles) room.sharedAudioFiles = new Map();
-    // Retain at most 3 files per room to bound memory
-    while (room.sharedAudioFiles.size >= 3) {
+    const contentHash = crypto.createHash('sha256').update(req.body).digest('hex').slice(0, 12);
+    if (room.sharedAudioFiles.has(contentHash)) {
+        return res.status(200).json({
+            success: true,
+            cached: true,
+            url: `/api/rooms/${encodeURIComponent(normalized)}/shared-audio/${contentHash}`
+        });
+    }
+    // Retain at most 5 distinct files per room to bound memory
+    while (room.sharedAudioFiles.size >= 5) {
         const oldestKey = room.sharedAudioFiles.keys().next().value;
         room.sharedAudioFiles.delete(oldestKey);
     }
-    const fileId = crypto.randomUUID().slice(0, 12);
     const mimeType = String(req.headers['content-type'] || 'audio/mpeg').split(';')[0].trim();
-    room.sharedAudioFiles.set(fileId, { buffer: req.body, mimeType });
+    room.sharedAudioFiles.set(contentHash, { buffer: req.body, mimeType });
     return res.status(201).json({
         success: true,
-        url: `/api/rooms/${encodeURIComponent(normalized)}/shared-audio/${fileId}`
+        cached: false,
+        url: `/api/rooms/${encodeURIComponent(normalized)}/shared-audio/${contentHash}`
     });
 });
 
@@ -2074,13 +2082,107 @@ app.get('/api/sargam/health', async (req, res) => {
 
 const sargamAudioCache = new Map();
 const sargamAudioInFlight = new Map();
-const MAX_SARGAM_CACHE_ENTRIES = 6;
+const sargamStemMetadataCache = new Map();
+const sargamPitchLyricsCache = new Map();
+const sargamSeparationInFlight = new Map();
+const MAX_SARGAM_CACHE_ENTRIES = 20;
+const MAX_SARGAM_META_ENTRIES = 30;
 const MAX_SARGAM_CACHE_BYTES = 35 * 1024 * 1024;
+const SARGAM_SONGS_DISK_DIR = path.join(SARGAM_LOCAL_CACHE_DIR, 'songs');
 
-function getOrFetchSargamAudio(upstreamUrl) {
+function extractCanonicalSongKey(rawUrl) {
+    if (!rawUrl || typeof rawUrl !== 'string') return '';
+    const trimmed = rawUrl.trim();
+    try {
+        const parsed = new URL(trimmed);
+        const host = parsed.hostname.toLowerCase();
+        if (host.includes('youtu.be')) {
+            const id = parsed.pathname.replace(/^\/+/, '').split('/')[0];
+            if (/^[0-9A-Za-z_-]{11}$/.test(id)) return `yt:${id}`;
+        }
+        if (host.includes('youtube.com') || host.includes('youtube-nocookie.com')) {
+            const v = parsed.searchParams.get('v');
+            if (v && /^[0-9A-Za-z_-]{11}$/.test(v)) return `yt:${v}`;
+            const m = parsed.pathname.match(/\/(?:embed|shorts|live)\/([0-9A-Za-z_-]{11})/);
+            if (m) return `yt:${m[1]}`;
+        }
+        parsed.hash = '';
+        return `url:${parsed.toString()}`;
+    } catch (e) {
+        return `url:${trimmed}`;
+    }
+}
+
+function getSongDiskMetaPath(songKey) {
+    const hash = crypto.createHash('sha256').update(String(songKey)).digest('hex').slice(0, 24);
+    return path.join(SARGAM_SONGS_DISK_DIR, `${hash}.json`);
+}
+
+function getCachedSeparatedSong(songKey) {
+    if (!songKey) return null;
+    if (sargamStemMetadataCache.has(songKey)) {
+        const hit = sargamStemMetadataCache.get(songKey);
+        sargamStemMetadataCache.delete(songKey);
+        sargamStemMetadataCache.set(songKey, hit);
+        return { ...hit, cached: true };
+    }
+    try {
+        const diskPath = getSongDiskMetaPath(songKey);
+        if (fs.existsSync(diskPath)) {
+            const parsed = JSON.parse(fs.readFileSync(diskPath, 'utf8'));
+            if (parsed && (parsed.vocalUrl || parsed.instUrl)) {
+                sargamStemMetadataCache.set(songKey, parsed);
+                return { ...parsed, cached: true };
+            }
+        }
+    } catch (e) {}
+    return null;
+}
+
+function setCachedSeparatedSong(songKey, payload) {
+    if (!songKey || !payload || (!payload.vocalUrl && !payload.instUrl)) return;
+    while (sargamStemMetadataCache.size >= MAX_SARGAM_META_ENTRIES) {
+        const oldestKey = sargamStemMetadataCache.keys().next().value;
+        sargamStemMetadataCache.delete(oldestKey);
+    }
+    const cleanPayload = { ...payload };
+    sargamStemMetadataCache.set(songKey, cleanPayload);
+    if (cleanPayload.vocalUrl && Array.isArray(cleanPayload.noteBars) && cleanPayload.noteBars.length > 0) {
+        sargamPitchLyricsCache.set(cleanPayload.vocalUrl, {
+            success: true,
+            noteBars: cleanPayload.noteBars,
+            pitchCurve: Array.isArray(cleanPayload.pitchCurve) ? cleanPayload.pitchCurve : [],
+            lyrics: Array.isArray(cleanPayload.lyrics) ? cleanPayload.lyrics : []
+        });
+    }
+    try {
+        fs.mkdirSync(SARGAM_SONGS_DISK_DIR, { recursive: true });
+        fs.writeFileSync(getSongDiskMetaPath(songKey), JSON.stringify(cleanPayload), 'utf8');
+    } catch (e) {}
+}
+
+function persistAudioToLocalCache(relFile, buffer) {
+    if (!relFile || !Buffer.isBuffer(buffer) || buffer.length === 0) return;
+    try {
+        const localFile = resolveLocalCacheFile(relFile);
+        if (localFile) {
+            fs.mkdirSync(path.dirname(localFile), { recursive: true });
+            fs.writeFileSync(localFile, buffer);
+        }
+    } catch (e) {}
+}
+
+function getOrFetchSargamAudio(upstreamUrl, relFile = '') {
+    if (relFile) {
+        const localFile = resolveLocalCacheFile(relFile);
+        if (localFile && fs.existsSync(localFile)) {
+            const buffer = fs.readFileSync(localFile);
+            const mimeType = localFile.endsWith('.wav') ? 'audio/wav' : 'audio/mpeg';
+            return Promise.resolve({ buffer, mimeType });
+        }
+    }
     if (sargamAudioCache.has(upstreamUrl)) {
         const hit = sargamAudioCache.get(upstreamUrl);
-        // Refresh LRU order
         sargamAudioCache.delete(upstreamUrl);
         sargamAudioCache.set(upstreamUrl, hit);
         return Promise.resolve(hit);
@@ -2104,6 +2206,7 @@ function getOrFetchSargamAudio(upstreamUrl) {
                 sargamAudioCache.delete(oldestKey);
             }
             sargamAudioCache.set(upstreamUrl, { buffer, mimeType });
+            if (relFile) persistAudioToLocalCache(relFile, buffer);
         }
         return { buffer, mimeType };
     })();
@@ -2118,8 +2221,12 @@ function warmSargamAudioCache(payload, backend) {
     if (!payload) return;
     [payload.vocalUrl, payload.instUrl].forEach((clientUrl) => {
         const upstream = toBackendVocalUrl(clientUrl, backend);
+        let relFile = '';
+        try {
+            relFile = new URL(clientUrl, 'http://localhost').searchParams.get('file') || '';
+        } catch (e) {}
         if (upstream && !sargamAudioCache.has(upstream) && !sargamAudioInFlight.has(upstream)) {
-            getOrFetchSargamAudio(upstream).catch(() => {});
+            getOrFetchSargamAudio(upstream, relFile).catch(() => {});
         }
     });
 }
@@ -2134,39 +2241,65 @@ app.post('/api/sargam/separate-stems', async (req, res) => {
         return res.status(400).json({ error: 'Invalid or private media URL provided.' });
     }
     const backend = resolveSargamBackend(requestedBackend || req.headers['x-sargam-backend']);
-    let upstreamError = '';
-    let upstreamStatus = 502;
-    try {
-        const upRes = await fetch(`${backend}/api/separate-stems`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url: targetUrl }),
-            signal: AbortSignal.timeout(240000)
-        });
-        const parsed = await parseUpstreamSargamResponse(upRes);
-        if (parsed.ok) {
-            const normalized = normalizeSargamPayload(parsed.data, backend, 'AI Separated Track');
-            warmSargamAudioCache(normalized, backend);
-            return res.json(normalized);
-        }
-        upstreamStatus = parsed.status || 422;
-        upstreamError = parsed.errorText || 'Stem separation failed.';
-    } catch (err) {
-        upstreamError = `Stem backend unreachable: ${err.message}`;
+    const songKey = extractCanonicalSongKey(targetUrl);
+    const cachedSong = getCachedSeparatedSong(songKey);
+    if (cachedSong) {
+        return res.json(cachedSong);
     }
 
-    // Fallback to local GPU/CPU Demucs + yt-dlp when cloud backend fails or workspace is disabled
-    const localProbe = await probeLocalSargam();
-    if (localProbe.ok) {
+    if (sargamSeparationInFlight.has(songKey)) {
         try {
-            const localData = await runLocalSargamSeparation('url', targetUrl);
-            const normalized = normalizeSargamPayload(localData, backend, 'AI Separated Track');
-            return res.json(normalized);
-        } catch (localErr) {
-            return res.status(500).json({ error: localErr.message || upstreamError || 'Stem separation failed.' });
+            const sharedResult = await sargamSeparationInFlight.get(songKey);
+            return res.json({ ...sharedResult, cached: true });
+        } catch (err) {
+            return res.status(err.statusCode || 502).json({ error: err.message || 'Stem separation failed.' });
         }
     }
-    return res.status(upstreamStatus >= 400 ? upstreamStatus : 502).json({ error: upstreamError || 'Stem separation failed.' });
+
+    const workPromise = (async () => {
+        let upstreamError = '';
+        let upstreamStatus = 502;
+        try {
+            const upRes = await fetch(`${backend}/api/separate-stems`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: targetUrl }),
+                signal: AbortSignal.timeout(240000)
+            });
+            const parsed = await parseUpstreamSargamResponse(upRes);
+            if (parsed.ok) {
+                const normalized = normalizeSargamPayload(parsed.data, backend, 'AI Separated Track');
+                setCachedSeparatedSong(songKey, normalized);
+                warmSargamAudioCache(normalized, backend);
+                return normalized;
+            }
+            upstreamStatus = parsed.status || 422;
+            upstreamError = parsed.errorText || 'Stem separation failed.';
+        } catch (err) {
+            upstreamError = `Stem backend unreachable: ${err.message}`;
+        }
+
+        const localProbe = await probeLocalSargam();
+        if (localProbe.ok) {
+            const localData = await runLocalSargamSeparation('url', targetUrl);
+            const normalized = normalizeSargamPayload(localData, backend, 'AI Separated Track');
+            setCachedSeparatedSong(songKey, normalized);
+            return normalized;
+        }
+        const errObj = new Error(upstreamError || 'Stem separation failed.');
+        errObj.statusCode = upstreamStatus >= 400 ? upstreamStatus : 502;
+        throw errObj;
+    })();
+
+    sargamSeparationInFlight.set(songKey, workPromise);
+    try {
+        const result = await workPromise;
+        return res.json(result);
+    } catch (err) {
+        return res.status(err.statusCode || 502).json({ error: err.message || 'Stem separation failed.' });
+    } finally {
+        sargamSeparationInFlight.delete(songKey);
+    }
 });
 
 app.post('/api/sargam/separate-stems-file', express.raw({ type: '*/*', limit: '60mb' }), async (req, res) => {
@@ -2174,6 +2307,12 @@ app.post('/api/sargam/separate-stems-file', express.raw({ type: '*/*', limit: '6
     const contentType = req.headers['content-type'] || 'application/octet-stream';
     if (!req.body || !Buffer.isBuffer(req.body) || req.body.length === 0) {
         return res.status(400).json({ error: 'Uploaded audio file is empty.' });
+    }
+
+    const fileHashKey = `file:${crypto.createHash('sha256').update(req.body).digest('hex').slice(0, 24)}`;
+    const cachedSong = getCachedSeparatedSong(fileHashKey);
+    if (cachedSong) {
+        return res.json(cachedSong);
     }
 
     const filename = String(req.headers['x-filename'] || req.query.filename || 'upload.mp3').replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -2202,6 +2341,7 @@ app.post('/api/sargam/separate-stems-file', express.raw({ type: '*/*', limit: '6
         const parsed = await parseUpstreamSargamResponse(upRes);
         if (parsed.ok) {
             const normalized = normalizeSargamPayload(parsed.data, backend, 'Uploaded Song Stems');
+            setCachedSeparatedSong(fileHashKey, normalized);
             warmSargamAudioCache(normalized, backend);
             return res.json(normalized);
         }
@@ -2219,6 +2359,7 @@ app.post('/api/sargam/separate-stems-file', express.raw({ type: '*/*', limit: '6
             const title = filename.replace(/\.[^.]+$/, '');
             const localData = await runLocalSargamSeparation('file', tmpIn, title);
             const normalized = normalizeSargamPayload(localData, backend, title || 'Uploaded Song Stems');
+            setCachedSeparatedSong(fileHashKey, normalized);
             return res.json(normalized);
         } catch (localErr) {
             return res.status(500).json({ error: localErr.message || upstreamError || 'File stem separation failed.' });
@@ -2270,7 +2411,7 @@ app.get('/api/sargam/audio', async (req, res) => {
     const backend = resolveSargamBackend(req.query.backend);
     const upstreamUrl = `${backend}/api/audio?file=${encodeURIComponent(file)}`;
     try {
-        const entry = await getOrFetchSargamAudio(upstreamUrl);
+        const entry = await getOrFetchSargamAudio(upstreamUrl, file);
         return sendBufferWithRange(req, res, entry.buffer, entry.mimeType);
     } catch (err) {
         if (err.statusCode) {
@@ -2290,6 +2431,9 @@ app.get('/api/sargam/get-pitch-and-lyrics', async (req, res) => {
     if (!normalizedVocalUrl) {
         return res.status(400).json({ error: 'Invalid vocal_url origin' });
     }
+    if (sargamPitchLyricsCache.has(vocalUrl)) {
+        return res.json({ ...sargamPitchLyricsCache.get(vocalUrl), cached: true });
+    }
     try {
         const parsedVocal = new URL(vocalUrl, 'http://localhost');
         const relFile = parsedVocal.searchParams.get('file');
@@ -2297,12 +2441,15 @@ app.get('/api/sargam/get-pitch-and-lyrics', async (req, res) => {
             const metaPath = resolveLocalCacheFile(path.posix.join(path.posix.dirname(relFile), 'metadata.json'));
             if (metaPath && fs.existsSync(metaPath)) {
                 const cached = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
-                return res.json({
+                const result = {
                     success: true,
+                    cached: true,
                     noteBars: normalizeNoteBars(cached.note_bars || cached.noteBars),
                     pitchCurve: Array.isArray(cached.pitch_curve) ? cached.pitch_curve : [],
                     lyrics: Array.isArray(cached.lyrics) ? cached.lyrics : []
-                });
+                };
+                sargamPitchLyricsCache.set(vocalUrl, result);
+                return res.json(result);
             }
         }
     } catch (e) {}
@@ -2313,11 +2460,13 @@ app.get('/api/sargam/get-pitch-and-lyrics', async (req, res) => {
             return res.status(parsed.status || 502).json({ error: parsed.errorText || 'Pitch/lyrics extraction failed' });
         }
         const data = parsed.data;
-        return res.json({
+        const result = {
             ...data,
             noteBars: normalizeNoteBars(data.note_bars || data.noteBars),
             lyrics: Array.isArray(data.lyrics) ? data.lyrics : []
-        });
+        };
+        sargamPitchLyricsCache.set(vocalUrl, result);
+        return res.json(result);
     } catch (err) {
         return res.status(502).json({ error: `Pitch backend error: ${err.message}` });
     }
@@ -2917,4 +3066,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { app, server, wss, rooms, sessions, generateMeetingCode, normalizeRoomId, normalizeSargamPayload, shutdownLocalWhisperWorker };
+module.exports = { app, server, wss, rooms, sessions, generateMeetingCode, normalizeRoomId, normalizeSargamPayload, extractCanonicalSongKey, getCachedSeparatedSong, setCachedSeparatedSong, sargamStemMetadataCache, shutdownLocalWhisperWorker };

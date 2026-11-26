@@ -113,13 +113,13 @@ app.use('/api/sargam/upload-cookies', stemsRateLimiter);
 
 const DEFAULT_SARGAM_BACKEND = (
     process.env.SARGAM_BACKEND_URL ||
-    'https://khurana-aaa3--sargam-tuner-backend-fastapi-app.us-east.modal.run'
+    'https://aluchip25--sargam-tuner-backend-fastapi-app.modal.run'
 ).replace(/\/$/, '');
 
 const ALLOWED_SARGAM_HOSTS = new Set(
     [
         DEFAULT_SARGAM_BACKEND,
-        'https://khurana-aaa3--sargam-tuner-backend-fastapi-app.us-east.modal.run'
+        'https://aluchip25--sargam-tuner-backend-fastapi-app.modal.run'
     ].map((u) => {
         try {
             return new URL(u).origin;

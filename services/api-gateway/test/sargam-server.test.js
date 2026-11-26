@@ -45,7 +45,7 @@ test('SargamJam Unified Server - Sargam APIs, Vocal Coach & Jam WebSocket Sync',
             note_bars: [{ start: 0.2, end: 0.8, midi: 60, avg_hz: 261.6 }],
             pitch_curve: [{ t: 0.2, hz: 261.6 }],
             lyrics: [{ start: 0.2, end: 1.5, text: 'Sa Re Ga' }]
-        }, 'https://khurana-aaa3--sargam-tuner-backend-fastapi-app.us-east.modal.run');
+        }, 'https://aluchip25--sargam-tuner-backend-fastapi-app.modal.run');
         assert.strictEqual(normalized.vocalUrl, '/api/sargam/audio?file=vid_abc123%2Fvocals.mp3');
         assert.strictEqual(normalized.instUrl, '/api/sargam/audio?file=vid_abc123%2Fno_vocals.mp3');
         assert.strictEqual(normalized.noteBars[0].freq, 261.6);

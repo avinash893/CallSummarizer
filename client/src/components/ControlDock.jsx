@@ -65,8 +65,8 @@ export default function ControlDock({
             type="button"
             className={`btn btn-outline-secondary dock-icon-btn dock-beat-btn ${isMetronomeOn ? 'active' : ''}`}
             onClick={onToggleMetronome}
-            title={isMetronomeOn ? 'Stop Taal rhythm' : 'Start Taal rhythm'}
-            aria-label="Toggle Taal rhythm"
+            title={isMetronomeOn ? 'Stop Metronome' : 'Start Metronome'}
+            aria-label="Toggle Metronome"
           >
             <i className="bi bi-disc"></i>
           </button>

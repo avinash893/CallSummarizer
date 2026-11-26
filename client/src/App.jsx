@@ -136,12 +136,12 @@ export default function App() {
   }, []);
   const [jamState, setJamState] = useState({
     tonicMidi: 60, // C4
-    raga: 'Bilawal',
-    tuningMode: 'ji',
+    raga: 'All Notes',
+    tuningMode: 'et',
     langMode: 'en',
     isTanpuraOn: false,
     tanpuraVol: 0.45,
-    taal: 'Teentaal (16)',
+    taal: '4/4 Studio Click',
     bpm: 96,
     isMetronomeOn: false
   });
@@ -1871,7 +1871,7 @@ export default function App() {
             participantCount={1 + remotePeers.length}
             activeTab={activeStudioTab}
             onChangeTab={setActiveStudioTab}
-            activeScaleBadge={`${midiToNoteName(jamState.tonicMidi)} · ${jamState.raga}`}
+            activeScaleBadge={`Scale ${midiToNoteName(jamState.tonicMidi)} · ${jamState.bpm} BPM`}
             theme={theme}
             onToggleTheme={toggleTheme}
           />

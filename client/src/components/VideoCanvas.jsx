@@ -55,11 +55,7 @@ function RemotePeerTile({ peer, isCaptured = false, onToggleCapture, telemetry =
 
   const pitchActive = Boolean(telemetry && telemetry.note);
   const inTune = Boolean(pitchActive && telemetry.inTune);
-  const swaraLabel = pitchActive
-    ? langMode === 'hi'
-      ? telemetry.sargamDevanagari || telemetry.sargam || telemetry.note
-      : telemetry.sargam || telemetry.note
-    : '';
+  const noteBadgeText = pitchActive ? telemetry.note : '';
 
   return (
     <div
@@ -95,8 +91,8 @@ function RemotePeerTile({ peer, isCaptured = false, onToggleCapture, telemetry =
       {pitchActive && (
         <div className={`tile-pitch-badge ${inTune ? 'in-sur' : ''}`}>
           <i className="bi bi-music-note-beamed"></i>
-          <span>{swaraLabel} · {telemetry.note}</span>
-          <small>{inTune ? 'SUR' : `${telemetry.cents > 0 ? '+' : ''}${telemetry.cents}c`}</small>
+          <span>{noteBadgeText}</span>
+          <small>{inTune ? 'IN TUNE' : `${telemetry.cents > 0 ? '+' : ''}${telemetry.cents}c`}</small>
         </div>
       )}
 
@@ -233,9 +229,7 @@ export default function VideoCanvas({
   const countClass = totalParticipants <= 6 ? `count-${totalParticipants}` : 'count-many';
 
   const localInTune = Boolean(localPitchInfo && localPitchInfo.inTune);
-  const localSwaraText = localPitchInfo
-    ? `${langMode === 'hi' ? localPitchInfo.devanagari : localPitchInfo.sargam} · ${localPitchInfo.noteName}`
-    : '';
+  const localNoteText = localPitchInfo ? localPitchInfo.noteName : '';
 
   return (
     <div className="video-canvas">
@@ -268,8 +262,8 @@ export default function VideoCanvas({
           {localPitchInfo && (
             <div className={`tile-pitch-badge ${localInTune ? 'in-sur' : ''}`}>
               <i className="bi bi-music-note-beamed"></i>
-              <span>{localSwaraText}</span>
-              <small>{localInTune ? 'SUR' : `${localPitchInfo.cents > 0 ? '+' : ''}${localPitchInfo.cents}c`}</small>
+              <span>{localNoteText}</span>
+              <small>{localInTune ? 'IN TUNE' : `${localPitchInfo.cents > 0 ? '+' : ''}${localPitchInfo.cents}c`}</small>
             </div>
           )}
 

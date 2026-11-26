@@ -390,8 +390,8 @@ export default function Lobby({
                   <i className="bi bi-soundwave"></i>
                   <span>
                     {liveMicPitch
-                      ? `${liveMicPitch.sargam} · ${liveMicPitch.noteName} (${liveMicPitch.inTune ? 'In Sur' : `${liveMicPitch.cents > 0 ? '+' : ''}${liveMicPitch.cents}c`})`
-                      : 'Mic ready · Sing Sa to check tuning'}
+                      ? `${liveMicPitch.noteName} (${liveMicPitch.inTune ? 'In Tune' : `${liveMicPitch.cents > 0 ? '+' : ''}${liveMicPitch.cents}c`})`
+                      : 'Mic ready · Sing a note to check tuning'}
                   </span>
                 </div>
               )}

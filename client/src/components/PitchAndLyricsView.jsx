@@ -202,8 +202,8 @@ export default function PitchAndLyricsView({
     if (!Array.isArray(bars) || bars.length === 0) return null;
     const fit = autoDetectVocalScaleAndRange(bars);
     if (fit && fit.confidence > 20) {
-      onUpdateJamState({ tonicMidi: fit.tonicMidi, raga: fit.raga });
-      return `${midiToNoteName(fit.tonicMidi)} (${fit.raga})`;
+      onUpdateJamState({ tonicMidi: fit.tonicMidi });
+      return midiToNoteName(fit.tonicMidi);
     }
     return null;
   };
@@ -273,7 +273,7 @@ export default function PitchAndLyricsView({
       if (inlineBars.length > 0) {
         const detectedScale = applyDetectedScale(inlineBars);
         setStatusMsg(
-          `Ready (Cloud AI): ${inlineBars.length} Swara bars & ${inlineLyrics.length} lyric cues${detectedScale ? ` • Scale: ${detectedScale}` : '.'}`
+          `Ready (Cloud AI): ${inlineBars.length} note bars & ${inlineLyrics.length} lyric cues${detectedScale ? ` • Key: ${detectedScale}` : '.'}`
         );
       } else {
         await fetchPitchAndLyricsForVocal(data.vocalUrl);
@@ -344,8 +344,8 @@ export default function PitchAndLyricsView({
             noteBars
           });
           if (fit && fit.confidence > 25) {
-            onUpdateJamState({ tonicMidi: fit.tonicMidi, raga: fit.raga });
-            setStatusMsg(`Decoded ${noteBars.length} notes • Auto-fit: ${fit.raga} (Sa ${fit.confidence}% match)`);
+            onUpdateJamState({ tonicMidi: fit.tonicMidi });
+            setStatusMsg(`Decoded ${noteBars.length} notes • Detected Key: ${midiToNoteName(fit.tonicMidi)} (${fit.confidence}% match)`);
           } else {
             setStatusMsg(`Decoded ${noteBars.length} pitch notes locally.`);
           }
@@ -374,7 +374,7 @@ export default function PitchAndLyricsView({
         if (Array.isArray(data.noteBars) && data.noteBars.length > 0) {
           const detectedScale = applyDetectedScale(data.noteBars);
           setStatusMsg(
-            `Ready (Cloud AI): ${data.noteBars.length} Swara bars & ${(data.lyrics || []).length} lyric cues${detectedScale ? ` • Scale: ${detectedScale}` : '.'}`
+            `Ready (Cloud AI): ${data.noteBars.length} note bars & ${(data.lyrics || []).length} lyric cues${detectedScale ? ` • Key: ${detectedScale}` : '.'}`
           );
         } else if (data.vocalUrl) {
           await fetchPitchAndLyricsForVocal(data.vocalUrl);
@@ -387,11 +387,11 @@ export default function PitchAndLyricsView({
     }
   };
 
-  const handleAutoFitRaga = () => {
+  const handleAutoDetectKey = () => {
     if (!backingState?.noteBars?.length) return;
     const fit = autoDetectVocalScaleAndRange(backingState.noteBars);
-    onUpdateJamState({ tonicMidi: fit.tonicMidi, raga: fit.raga });
-    setStatusMsg(`Auto-fit Raga: ${fit.raga} (Confidence ${fit.confidence}%)`);
+    onUpdateJamState({ tonicMidi: fit.tonicMidi });
+    setStatusMsg(`Detected Key: ${midiToNoteName(fit.tonicMidi)} (Confidence ${fit.confidence}%)`);
   };
 
   const saveManualLyrics = () => {
@@ -525,9 +525,9 @@ export default function PitchAndLyricsView({
               </button>
             )}
             {backingState?.noteBars?.length > 0 && (
-              <button type="button" className="btn btn-outline-warning btn-sm" onClick={handleAutoFitRaga}>
+              <button type="button" className="btn btn-outline-warning btn-sm" onClick={handleAutoDetectKey}>
                 <i className="bi bi-stars me-1"></i>
-                Auto-Fit Sa & Raga
+                Auto-Detect Key
               </button>
             )}
             {onSyncBackingToRoom && (backingState?.vocalUrl || backingState?.lyrics?.length > 0) && (
@@ -599,7 +599,7 @@ export default function PitchAndLyricsView({
           <span className="plv-match-indicator" />
           <span className="plv-match-text">
             {liveMatch?.isMatched
-              ? `Sur Mila! Within ${tolLabel}% pitch tolerance (${liveMatch.errorPct}% error)`
+              ? `In Tune! Within ${tolLabel}% pitch tolerance (${liveMatch.errorPct}% error)`
               : liveMatch
                 ? `Adjust pitch: ${liveMatch.direction === 'flat' ? 'Flat (too low)' : 'Sharp (too high)'} (${liveMatch.errorPct}% off, need ≤ ${tolLabel}%)`
                 : liveMicPitch?.freq > 50
@@ -660,10 +660,9 @@ export default function PitchAndLyricsView({
       <div className="plv-stage-grid">
         <div className="plv-dials-col">
           <ScaleWatcherDial
-            title="Your Mic Sur"
+            title="Your Mic Pitch"
             subtitle="Real-time F0 Pitch"
             pitchInfo={liveMicPitch}
-            langMode={jamState.langMode}
             accentColor="var(--accent-primary)"
             emptyLabel="Sing into mic..."
           />
@@ -671,7 +670,6 @@ export default function PitchAndLyricsView({
             title="Target Song Vocal"
             subtitle="Reference Melody"
             pitchInfo={refPitchInfo}
-            langMode={jamState.langMode}
             accentColor="var(--accent-secondary)"
             emptyLabel="Play track or load stems..."
           />
@@ -685,7 +683,6 @@ export default function PitchAndLyricsView({
             tonicMidi={jamState.tonicMidi}
             raga={jamState.raga}
             tuningMode={jamState.tuningMode}
-            langMode={jamState.langMode}
             liveMicPitch={liveMicPitch}
             onSeek={handleSeek}
             tolerancePct={tolerancePct}
@@ -699,7 +696,7 @@ export default function PitchAndLyricsView({
         <div className="plv-lyrics-header">
           <div>
             <i className="bi bi-music-note-list me-2 text-warning"></i>
-            <strong>Synced Lyrics & Bandish Cues</strong>
+            <strong>Synced Lyrics & Cue Sheet</strong>
             <span className="ms-2 text-muted small">Click any line to seek playback</span>
           </div>
           <button
@@ -719,7 +716,7 @@ export default function PitchAndLyricsView({
             <textarea
               className="form-control"
               rows={3}
-              placeholder="Paste bandish, chorus, or lyric cues (one line per phrase)..."
+              placeholder="Paste lyrics or vocal cues (one line per phrase)..."
               value={lyricsDraft}
               onChange={(e) => setLyricsDraft(e.target.value)}
             />
@@ -731,7 +728,7 @@ export default function PitchAndLyricsView({
           <div className="plv-lyrics-tray">
             {(backingState?.lyrics || []).length === 0 ? (
               <div className="plv-lyrics-empty">
-                No synced lyrics loaded yet. Split a YouTube song with AI Stems or click &ldquo;Edit / Paste Lyrics&rdquo; to share bandish/chord cues.
+                No synced lyrics loaded yet. Split a YouTube song with AI Stems or click &ldquo;Edit / Paste Lyrics&rdquo; to add lyrics or chord cues.
               </div>
             ) : (
               backingState.lyrics.map((line, idx) => (

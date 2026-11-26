@@ -174,7 +174,7 @@ export function findNearestSwara(freq, tonicMidi = 60, tuningMode = 'ji', ragaNa
     }
   }
 
-  const octaveMarker = best.oct < 0 ? ' · Mandra' : best.oct > 0 ? ' · Taar' : ' · Madhya';
+  const octaveMarker = '';
   return {
     freq: Number(freq.toFixed(2)),
     targetFreq: Number(best.freq.toFixed(2)),

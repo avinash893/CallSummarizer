@@ -12,9 +12,8 @@ export default function PitchMelodyCanvas({
   currentTime = 0,
   duration = 0,
   tonicMidi = 60,
-  raga = 'Bilawal',
-  tuningMode = 'ji',
-  langMode = 'en',
+  raga = 'All Notes',
+  tuningMode = 'et',
   liveMicPitch = null,
   onSeek = null,
   tolerancePct = 0.10,
@@ -30,13 +29,13 @@ export default function PitchMelodyCanvas({
         t: Date.now(),
         midi: 69 + 12 * Math.log2(liveMicPitch.freq / 440),
         inTune: Boolean(liveMicPitch.inTune),
-        label: langMode === 'hi' ? liveMicPitch.devanagari : liveMicPitch.shortSargam
+        label: liveMicPitch.noteName
       });
       if (trailRef.current.length > 90) {
         trailRef.current.shift();
       }
     }
-  }, [liveMicPitch, langMode]);
+  }, [liveMicPitch]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -93,32 +92,32 @@ export default function PitchMelodyCanvas({
       return height - 18 - Math.max(0, Math.min(1, ratio)) * (height - 36);
     };
 
-    // Draw Raga-aware horizontal pitch grid lines
-    const scaleNotes = buildScaleNotes(tonicMidi, tuningMode, raga);
+    // Draw chromatic horizontal pitch grid lines with Western note labels
+    const scaleNotes = buildScaleNotes(tonicMidi, tuningMode, 'All Notes');
     ctx.font = '600 10px "JetBrains Mono", monospace';
     scaleNotes.forEach((n) => {
       if (n.midi < minMidi || n.midi > maxMidi) return;
       const y = midiToY(n.midi);
-      const isSa = n.semi === 0;
-      const isPa = n.semi === 7;
+      const isRoot = n.semi === 0;
+      const isFifth = n.semi === 7;
+      const isNatural = !n.noteName.includes('#');
 
       ctx.beginPath();
       ctx.moveTo(46, y);
       ctx.lineTo(width, y);
-      ctx.strokeStyle = isSa
+      ctx.strokeStyle = isRoot
         ? 'rgba(255, 111, 32, 0.42)'
-        : isPa
+        : isFifth
           ? 'rgba(56, 189, 248, 0.25)'
-          : n.inRaga
+          : isNatural
             ? 'rgba(255, 255, 255, 0.1)'
             : 'rgba(255, 255, 255, 0.025)';
-      ctx.lineWidth = isSa ? 1.5 : 1;
+      ctx.lineWidth = isRoot ? 1.5 : 1;
       ctx.stroke();
 
-      if (n.inRaga || isSa) {
-        ctx.fillStyle = isSa ? '#ff8b3d' : isPa ? '#7dd3fc' : 'rgba(220,226,240,0.68)';
-        const label = langMode === 'hi' ? n.devanagari : n.short;
-        ctx.fillText(label, 12, y + 3.5);
+      if (isNatural || isRoot || isFifth) {
+        ctx.fillStyle = isRoot ? '#ff8b3d' : isFifth ? '#7dd3fc' : 'rgba(220,226,240,0.68)';
+        ctx.fillText(n.noteName, 10, y + 3.5);
       }
     });
 
@@ -174,7 +173,7 @@ export default function PitchMelodyCanvas({
         if (bw > 22 && sw) {
           ctx.fillStyle = barMatched ? '#072310' : '#ffffff';
           ctx.font = '700 9px "Manrope", sans-serif';
-          ctx.fillText(langMode === 'hi' ? sw.devanagari : sw.shortSargam, x1 + 5, y + 3);
+          ctx.fillText(sw.noteName, x1 + 5, y + 3);
         }
         ctx.restore();
       });
@@ -192,8 +191,6 @@ export default function PitchMelodyCanvas({
     if (Array.isArray(noteBars) && noteBars.length > 0 && currentTime < (Number(noteBars[0].start) || 0) - 0.2) {
       const firstBar = noteBars[0];
       const remaining = Math.max(0, firstBar.start - currentTime).toFixed(1);
-      const sw = findNearestSwara(firstBar.freq, tonicMidi, tuningMode, raga);
-      const swName = sw ? (langMode === 'hi' ? sw.devanagari : sw.shortSargam) : 'Sa';
       const noteName = midiToNoteName(firstBar.midi || tonicMidi);
 
       ctx.save();
@@ -218,7 +215,7 @@ export default function PitchMelodyCanvas({
 
       ctx.font = '500 10px "Manrope", sans-serif';
       ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
-      ctx.fillText(`First Note: ${swName} (${noteName}) — Click canvas to jump`, width / 2, 45);
+      ctx.fillText(`First Note: ${noteName} — Click canvas to jump`, width / 2, 45);
       ctx.restore();
     }
 
@@ -292,25 +289,25 @@ export default function PitchMelodyCanvas({
       ctx.font = '700 9px "Manrope", sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(isUserMatched ? '✓ SUR' : 'YOU', px, py);
+      ctx.fillText(isUserMatched ? 'IN TUNE' : 'YOU', px, py);
 
       ctx.textAlign = 'left';
       ctx.textBaseline = 'alphabetic';
       ctx.fillStyle = isUserMatched ? '#6ee7b7' : '#fde68a';
       ctx.font = '700 10px "Manrope", sans-serif';
-      const swLabel = langMode === 'hi' ? liveMicPitch.devanagari : liveMicPitch.shortSargam;
-      const errLabel = activeMatch ? `${activeMatch.errorPct}% err` : (liveMicPitch.inTune ? '✓ SUR' : `${liveMicPitch.cents > 0 ? '+' : ''}${liveMicPitch.cents}c`);
-      ctx.fillText(`${swLabel} ${errLabel}`, Math.min(width - 88, px + 24), Math.max(18, py - 8));
+      const noteLabel = liveMicPitch.noteName || liveMicPitch.shortSargam;
+      const errLabel = activeMatch ? `${activeMatch.errorPct}% err` : (liveMicPitch.inTune ? 'IN TUNE' : `${liveMicPitch.cents > 0 ? '+' : ''}${liveMicPitch.cents}c`);
+      ctx.fillText(`${noteLabel} ${errLabel}`, Math.min(width - 88, px + 24), Math.max(18, py - 8));
       ctx.restore();
     } else if (!noteBars || noteBars.length === 0) {
       ctx.fillStyle = 'rgba(184, 192, 207, 0.72)';
       ctx.font = '500 12px "Manrope", sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('Sing/play into mic OR separate/load a song to see live Swara bars scroll here', width / 2 + 16, height / 2);
+      ctx.fillText('Sing/play into mic OR separate/load a song to see live note bars scroll here', width / 2 + 16, height / 2);
     }
 
     ctx.restore();
-  }, [noteBars, currentTime, duration, tonicMidi, raga, tuningMode, langMode, liveMicPitch, tolerancePct, liveMatch]);
+  }, [noteBars, currentTime, duration, tonicMidi, raga, tuningMode, liveMicPitch, tolerancePct, liveMatch]);
 
   const handleCanvasClick = (e) => {
     if (!onSeek || !duration || duration <= 0) return;
@@ -337,7 +334,7 @@ export default function PitchMelodyCanvas({
             data-testid="pmc-live-diff"
           >
             {liveMatch?.isMatched
-              ? `SUR MILA (${liveMatch.errorPct}% error ≤ ${tolLabel}%)`
+              ? `IN TUNE (${liveMatch.errorPct}% error ≤ ${tolLabel}%)`
               : liveMatch
                 ? `${Math.round(liveMatch.errorPct)}% Error (${liveMatch.direction === 'flat' ? 'Flat' : 'Sharp'})`
                 : `Sing into mic to match target bars (${tolLabel}% Tolerance)`}
@@ -350,7 +347,7 @@ export default function PitchMelodyCanvas({
         ref={canvasRef}
         className="pitch-melody-canvas"
         onClick={handleCanvasClick}
-        aria-label="Live Pitch and Reference Swara Piano Roll"
+        aria-label="Live Pitch and Reference Note Piano Roll"
       />
       {duration > 0 && (
         <div
@@ -378,7 +375,7 @@ export default function PitchMelodyCanvas({
           </span>
           <span className="pmc-legend-item">
             <span className="pmc-legend-dot" style={{ background: '#2ecc71' }} />
-            Sur Mila (Within {tolLabel}% Match)
+            In Tune (Within {tolLabel}% Match)
           </span>
           <span className="pmc-legend-item">
             <span className="pmc-legend-dot" style={{ background: '#e67e22' }} />

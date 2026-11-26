@@ -94,7 +94,7 @@ export default function TopBar({
         </span>
 
         {activeScaleBadge && (
-          <span className="top-scale-chip" title="Current Room Sa & Raga">
+          <span className="top-scale-chip" title="Current Scale & Tempo">
             <i className="bi bi-music-note"></i>
             <span>{activeScaleBadge}</span>
           </span>

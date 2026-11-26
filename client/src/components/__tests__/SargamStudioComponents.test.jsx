@@ -7,23 +7,22 @@ import PitchAndLyricsView from '../PitchAndLyricsView';
 import StudioDawView from '../StudioDawView';
 
 describe('SargamJam Studio Components', () => {
-  it('renders ScaleWatcherDial with Sur Mila badge when cents deviation <= 15', () => {
+  it('renders ScaleWatcherDial with IN TUNE badge and Western note when cents deviation <= 15', () => {
     render(
       <ScaleWatcherDial
-        title="Your Mic Sur"
+        title="Your Mic Pitch"
         subtitle="Real-time F0 Pitch"
-        langMode="hi"
-        pitchInfo={{ freq: 261.6, cents: -4, inTune: true, noteName: 'C4', sargam: 'Sa', devanagari: 'सा' }}
+        pitchInfo={{ freq: 261.6, cents: -4, inTune: true, noteName: 'C4', targetFreq: 261.6 }}
       />
     );
 
-    expect(screen.getByText('Your Mic Sur')).toBeInTheDocument();
-    expect(screen.getByTestId('sur-status-badge')).toHaveTextContent('SUR MILA');
-    expect(screen.getByText('सा')).toBeInTheDocument();
+    expect(screen.getByText('Your Mic Pitch')).toBeInTheDocument();
+    expect(screen.getByTestId('sur-status-badge')).toHaveTextContent('IN TUNE');
+    expect(screen.getByText('C4')).toBeInTheDocument();
     expect(screen.getByText('261.6 Hz')).toBeInTheDocument();
   });
 
-  it('allows updating tonic, raga, tanpura, beat, and raw audio in MusicalControlStrip', () => {
+  it('allows updating scale, tanpura, bpm beat, and raw audio in MusicalControlStrip', () => {
     const onUpdate = vi.fn();
     const onToggleRaw = vi.fn();
 
@@ -31,12 +30,8 @@ describe('SargamJam Studio Components', () => {
       <MusicalControlStrip
         jamState={{
           tonicMidi: 60,
-          raga: 'Bilawal',
-          tuningMode: 'ji',
-          langMode: 'en',
           isTanpuraOn: false,
           tanpuraVol: 0.45,
-          taal: 'Teentaal (16)',
           bpm: 96,
           isMetronomeOn: false
         }}
@@ -55,31 +50,34 @@ describe('SargamJam Studio Components', () => {
     fireEvent.click(screen.getByTestId('btn-toggle-raw-audio'));
     expect(onToggleRaw).toHaveBeenCalledTimes(1);
 
-    fireEvent.change(screen.getByLabelText('Raga Scale'), { target: { value: 'Yaman' } });
-    expect(onUpdate).toHaveBeenCalledWith({ raga: 'Yaman' });
+    fireEvent.change(screen.getByLabelText('Scale'), { target: { value: '62' } });
+    expect(onUpdate).toHaveBeenCalledWith({ tonicMidi: 62 });
+
+    fireEvent.click(screen.getByLabelText('Increase BPM'));
+    expect(onUpdate).toHaveBeenCalledWith({ bpm: 100 });
   });
 
   it('renders PitchAndLyricsView with AI Stems URL splitter, Dual Watchers, and Lyrics Tray', () => {
     render(
       <PitchAndLyricsView
-        jamState={{ tonicMidi: 60, raga: 'Yaman', tuningMode: 'ji', langMode: 'en' }}
+        jamState={{ tonicMidi: 60, raga: 'All Notes', tuningMode: 'et' }}
         onUpdateJamState={vi.fn()}
         liveMicPitch={null}
         backingState={{
-          title: 'Yaman Bandish',
+          title: 'Practice Track',
           vocalUrl: '',
           instUrl: '',
           noteBars: [],
-          lyrics: [{ start: 1, end: 4, text: 'Eri aali piya bin' }]
+          lyrics: [{ start: 1, end: 4, text: 'Verse one cue line' }]
         }}
         onUpdateBackingState={vi.fn()}
       />
     );
 
     expect(screen.getByTestId('pitch-lyrics-view')).toBeInTheDocument();
-    expect(screen.getByText('Your Mic Sur')).toBeInTheDocument();
+    expect(screen.getByText('Your Mic Pitch')).toBeInTheDocument();
     expect(screen.getByText('Target Song Vocal')).toBeInTheDocument();
-    expect(screen.getByText('Eri aali piya bin')).toBeInTheDocument();
+    expect(screen.getByText('Verse one cue line')).toBeInTheDocument();
   });
 
   it('renders StudioDawView console controls cleanly in JSDOM', () => {

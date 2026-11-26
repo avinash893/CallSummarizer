@@ -2,9 +2,8 @@ import React from 'react';
 
 export default function ScaleWatcherDial({
   title = 'Live Mic Watcher',
-  subtitle = 'Mic Sur',
+  subtitle = 'Pitch Accuracy',
   pitchInfo = null,
-  langMode = 'en',
   accentColor = 'var(--accent-primary)',
   emptyLabel = 'Sing or play a note...'
 }) {
@@ -14,13 +13,11 @@ export default function ScaleWatcherDial({
   const needleDeg = cents * 1.65; // -82.5deg to +82.5deg
 
   const primaryLabel = hasPitch
-    ? langMode === 'hi'
-      ? pitchInfo.devanagari || pitchInfo.sargam
-      : pitchInfo.sargam || pitchInfo.noteName
+    ? pitchInfo.noteName || pitchInfo.sargam || '--'
     : '--';
 
   const secondaryLabel = hasPitch
-    ? `${pitchInfo.noteName || ''}${pitchInfo.octaveLabel || ''}`
+    ? (pitchInfo.targetFreq ? `Target ${pitchInfo.targetFreq} Hz` : pitchInfo.noteName || '')
     : emptyLabel;
 
   const dialAccent = inTune ? 'var(--sur-color)' : accentColor;
@@ -39,7 +36,7 @@ export default function ScaleWatcherDial({
           className={`sw-sur-pill ${inTune ? 'active' : hasPitch ? 'off-center' : 'idle'}`}
           data-testid="sur-status-badge"
         >
-          {inTune ? 'SUR MILA' : hasPitch ? `${cents > 0 ? '+' : ''}${cents}c` : 'STANDBY'}
+          {inTune ? 'IN TUNE' : hasPitch ? `${cents > 0 ? '+' : ''}${cents}c` : 'STANDBY'}
         </span>
       </div>
 

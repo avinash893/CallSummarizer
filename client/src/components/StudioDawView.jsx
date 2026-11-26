@@ -260,8 +260,8 @@ export default function StudioDawView({
       const takeId = `take_${Date.now()}`;
       await saveStudioTake({
         id: takeId,
-        title: `Jam Take (${jamState.raga})`,
-        raga: jamState.raga,
+        title: `Jam Take (${midiToNoteName(jamState.tonicMidi)})`,
+        raga: 'All Notes',
         tonicMidi: jamState.tonicMidi,
         bpm: jamState.bpm,
         taal: jamState.taal,
@@ -462,11 +462,11 @@ export default function StudioDawView({
 
   const handleCompareAndCoach = async () => {
     if (!vocalBuffer) {
-      setDawMsg('Record or import a vocal take first to analyze Sur accuracy.');
+      setDawMsg('Record or import a vocal take first to analyze pitch accuracy.');
       return;
     }
     setIsCoachBusy(true);
-    setDawMsg('Analyzing Sur accuracy, pitch stability & consulting AI Guru...');
+    setDawMsg('Analyzing pitch accuracy, stability & consulting AI Coach...');
     try {
       const stats = analyzeAndCompareVoices({
         userAudioBuffer: vocalBuffer,
@@ -525,7 +525,7 @@ export default function StudioDawView({
             {takesMeta.length === 0 && <option value="">No recorded takes yet</option>}
             {takesMeta.map((t) => (
               <option key={t.id} value={t.id}>
-                {t.title} · {t.durationSec || 0}s ({t.raga})
+                {t.title} · {t.durationSec || 0}s
               </option>
             ))}
           </select>
@@ -732,10 +732,10 @@ export default function StudioDawView({
           </div>
         </div>
 
-        {/* AI Vocal Guru & Pitch Audit */}
+        {/* AI Vocal Coach & Pitch Audit */}
         <div className="daw-panel daw-coach-panel">
           <div className="daw-panel-title d-flex justify-content-between align-items-center">
-            <span><i className="bi bi-stars me-2 text-warning"></i>Gemini Vocal Guru</span>
+            <span><i className="bi bi-stars me-2 text-warning"></i>Gemini Vocal Coach</span>
             <button
               type="button"
               className="btn btn-sm btn-warning fw-semibold"
@@ -743,7 +743,7 @@ export default function StudioDawView({
               onClick={handleCompareAndCoach}
               data-testid="btn-ai-vocal-coach"
             >
-              {isCoachBusy ? 'Analyzing...' : 'Analyze Sur & Coach'}
+              {isCoachBusy ? 'Analyzing...' : 'Analyze Pitch & Coach'}
             </button>
           </div>
 
@@ -754,7 +754,7 @@ export default function StudioDawView({
                 <strong>{comparisonStats.overallScore}/100 ({comparisonStats.overallGrade})</strong>
               </div>
               <div className="metric-chip">
-                <small>Sur Accuracy</small>
+                <small>Pitch Accuracy</small>
                 <strong>{comparisonStats.inTunePercent}%</strong>
               </div>
               <div className="metric-chip">
@@ -776,7 +776,7 @@ export default function StudioDawView({
             </div>
           ) : (
             <p className="text-muted small mb-2">
-              Run &ldquo;Analyze Sur & Coach&rdquo; on your vocal take for intonation scoring, Raga micro-tuning feedback, and customized Riyaz exercises.
+              Run &ldquo;Analyze Pitch & Coach&rdquo; on your vocal take for intonation scoring, stability feedback, and customized vocal drills.
             </p>
           )}
 
@@ -790,13 +790,13 @@ export default function StudioDawView({
               <ul className="coach-list">
                 {coachReport.strengths.map((s, idx) => <li key={idx}>{s}</li>)}
               </ul>
-              <div className="coach-list-title">Recommended Riyaz Drills</div>
+              <div className="coach-list-title">Recommended Vocal Drills</div>
               <ul className="coach-list">
                 {coachReport.drills.map((d, idx) => <li key={idx}>{d}</li>)}
               </ul>
               {coachReport.raagTip && (
                 <div className="coach-raag-tip">
-                  <strong>{jamState.raga} Tip:</strong> {coachReport.raagTip}
+                  <strong>Scale Tip:</strong> {coachReport.raagTip}
                 </div>
               )}
             </div>

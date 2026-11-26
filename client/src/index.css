@@ -82,6 +82,7 @@
   --indigo-soft-text: #1e40af;
   --indigo-soft-border: #93c5fd;
 
+  --shadow-card: 0 1px 2px rgba(17, 20, 26, 0.05), 0 4px 12px rgba(17, 20, 26, 0.04);
   --shadow-float: 0 8px 24px rgba(17, 20, 26, 0.12);
 
   --radius-xs: 4px;
@@ -135,7 +136,69 @@
   --indigo-soft-text: #bae6fd;
   --indigo-soft-border: rgba(56, 189, 248, 0.45);
 
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.32), 0 6px 16px rgba(0, 0, 0, 0.22);
   --shadow-float: 0 8px 28px rgba(0, 0, 0, 0.55);
+}
+
+/* Custom Precision Studio Range Sliders */
+.musical-control-strip input[type="range"],
+.studio-daw-view input[type="range"],
+.pitch-lyrics-view input[type="range"],
+.video-tile input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+  height: 18px;
+}
+
+.musical-control-strip input[type="range"]::-webkit-slider-runnable-track,
+.studio-daw-view input[type="range"]::-webkit-slider-runnable-track,
+.pitch-lyrics-view input[type="range"]::-webkit-slider-runnable-track,
+.video-tile input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--border-default);
+}
+
+.musical-control-strip input[type="range"]::-webkit-slider-thumb,
+.studio-daw-view input[type="range"]::-webkit-slider-thumb,
+.pitch-lyrics-view input[type="range"]::-webkit-slider-thumb,
+.video-tile input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 13px;
+  height: 13px;
+  margin-top: -4.5px;
+  border-radius: 50%;
+  background: var(--accent-primary);
+  border: 2px solid var(--bg-surface);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
+  transition: transform 0.12s ease;
+}
+
+.musical-control-strip input[type="range"]::-webkit-slider-thumb:hover,
+.studio-daw-view input[type="range"]::-webkit-slider-thumb:hover,
+.pitch-lyrics-view input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+
+.musical-control-strip input[type="range"]::-moz-range-track,
+.studio-daw-view input[type="range"]::-moz-range-track,
+.pitch-lyrics-view input[type="range"]::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--border-default);
+}
+
+.musical-control-strip input[type="range"]::-moz-range-thumb,
+.studio-daw-view input[type="range"]::-moz-range-thumb,
+.pitch-lyrics-view input[type="range"]::-moz-range-thumb {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--accent-primary);
+  border: 2px solid var(--bg-surface);
 }
 
 [data-theme="dark"] ::selection {
@@ -213,7 +276,8 @@ input, textarea, select {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 20px;
+  padding: 0 16px;
+  gap: 10px;
   z-index: 20;
 }
 
@@ -222,17 +286,19 @@ input, textarea, select {
 .top-nav-right {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  min-width: 0;
 }
 
 .brand-title {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 0.94rem;
+  font-size: 0.92rem;
   font-weight: 700;
   color: var(--text-main);
   letter-spacing: -0.015em;
+  white-space: nowrap;
 }
 
 .brand-icon-accent {
@@ -250,8 +316,9 @@ input, textarea, select {
   color: var(--text-secondary);
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   cursor: pointer;
+  white-space: nowrap;
   transition: all 0.15s ease;
 }
 
@@ -279,17 +346,22 @@ input, textarea, select {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  white-space: nowrap;
 }
 
 .call-timer {
   font-family: var(--font-mono);
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   font-weight: 600;
   color: var(--text-secondary);
   background: var(--bg-surface-elevated);
   border: 1px solid var(--border-subtle);
   padding: 4px 10px;
   border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
 }
 
 .top-scale-chip {
@@ -301,9 +373,10 @@ input, textarea, select {
   color: var(--accent-soft-text);
   padding: 4px 10px;
   border-radius: 999px;
-  font-size: 0.74rem;
+  font-size: 0.72rem;
   font-weight: 700;
   font-family: var(--font-mono);
+  white-space: nowrap;
 }
 
 .nav-btn {
@@ -312,12 +385,13 @@ input, textarea, select {
   color: var(--text-secondary);
   padding: 0.32rem 0.65rem;
   border-radius: var(--radius-sm);
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   font-weight: 600;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  white-space: nowrap;
   transition: all 0.15s ease;
 }
 
@@ -344,11 +418,12 @@ input, textarea, select {
   color: var(--text-secondary);
   font-size: 0.78rem;
   font-weight: 600;
-  padding: 5px 12px;
+  padding: 5px 10px;
   border-radius: var(--radius-sm);
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  white-space: nowrap;
   cursor: pointer;
   transition: all 0.15s ease;
 }
@@ -661,12 +736,40 @@ input, textarea, select {
   position: relative;
 }
 
+.stage-workspace {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+
+.stage-content-area {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+.stage-dock-footer {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 8px 16px 12px;
+  background: var(--bg-app);
+  border-top: 1px solid var(--border-subtle);
+  z-index: 30;
+}
+
 .video-canvas {
   flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 16px 20px 88px 20px;
+  padding: 16px 20px;
   position: relative;
   overflow-y: auto;
   overflow-x: hidden;
@@ -983,19 +1086,16 @@ input, textarea, select {
    4. Tactile Bottom Control Dock
    ========================================================================== */
 .bottom-dock {
-  position: fixed;
-  bottom: max(16px, env(safe-area-inset-bottom, 16px));
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
+  position: relative;
+  display: inline-flex;
   align-items: center;
   gap: 10px;
   background: var(--bg-surface);
   border: 1px solid var(--border-default);
   padding: 6px 10px;
   border-radius: var(--radius-lg);
-  z-index: 100;
-  box-shadow: var(--shadow-float);
+  z-index: 30;
+  box-shadow: var(--shadow-card);
 }
 
 .dock-icon-btn {
@@ -1638,16 +1738,27 @@ input, textarea, select {
 .lobby-workspace-grid {
   display: grid;
   grid-template-columns: 1.15fr 1fr;
-  gap: 28px;
+  gap: 24px;
   align-items: start;
 }
 
-.lobby-media-col,
+.lobby-media-col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
 .lobby-entry-col {
   display: flex;
   flex-direction: column;
   gap: 14px;
   min-width: 0;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 22px;
+  box-shadow: var(--shadow-card);
 }
 
 .lobby-heading-block {
@@ -1675,6 +1786,7 @@ input, textarea, select {
   background: var(--bg-surface);
   border-radius: var(--radius-lg);
   border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-card);
   overflow: hidden;
   position: relative;
   display: flex;
@@ -1740,10 +1852,11 @@ input, textarea, select {
 }
 
 .google-signin-card {
-  background: var(--bg-surface);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  padding: 14px;
+  background: var(--bg-tile);
+  border: none;
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 12px;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -1987,7 +2100,7 @@ input, textarea, select {
   height: 100%;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 16px 20px 92px;
+  padding: 16px 20px 20px;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -2003,6 +2116,8 @@ input, textarea, select {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
   padding: 14px 16px;
+  box-shadow: var(--shadow-card);
+  min-width: 0;
 }
 
 .plv-loader-row {
@@ -2272,6 +2387,7 @@ input, textarea, select {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
   padding: 12px 14px;
+  box-shadow: var(--shadow-card);
 }
 
 .scale-watcher-card.sur-locked {
@@ -2573,8 +2689,65 @@ input, textarea, select {
 
 .daw-console-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 14px;
+}
+
+.daw-btn-rec {
+  background: var(--accent-primary) !important;
+  border-color: var(--accent-primary) !important;
+  color: var(--text-on-accent) !important;
+  font-weight: 700 !important;
+  white-space: nowrap;
+}
+
+.daw-btn-rec:hover:not(:disabled) {
+  background: var(--accent-primary-hover) !important;
+  border-color: var(--accent-primary-hover) !important;
+}
+
+.daw-btn-audition {
+  background: var(--sur-bg) !important;
+  border: 1px solid var(--sur-border) !important;
+  color: var(--sur-color) !important;
+  font-weight: 700 !important;
+  white-space: nowrap;
+}
+
+.daw-btn-audition.playing {
+  background: var(--warn-bg) !important;
+  border-color: var(--warn-border) !important;
+  color: var(--warn-text) !important;
+}
+
+.daw-btn-export {
+  background: var(--indigo-soft-bg) !important;
+  border: 1px solid var(--indigo-soft-border) !important;
+  color: var(--indigo-soft-text) !important;
+  font-weight: 600 !important;
+  white-space: nowrap;
+}
+
+.daw-btn-master {
+  background: var(--accent-soft-bg) !important;
+  border: 1px solid var(--accent-soft-border) !important;
+  color: var(--accent-soft-text) !important;
+  white-space: nowrap;
+}
+
+.daw-btn-coach {
+  background: var(--accent-primary) !important;
+  border: 1px solid var(--accent-primary) !important;
+  color: var(--text-on-accent) !important;
+  white-space: nowrap;
+}
+
+.daw-btn-audition:disabled,
+.daw-btn-export:disabled,
+.daw-btn-master:disabled,
+.daw-btn-coach:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
 }
 
 .daw-panel-title {
@@ -2632,12 +2805,19 @@ input, textarea, select {
   font-weight: 600;
   color: var(--text-muted);
   margin-top: 6px;
+  min-width: 0;
+}
+
+.daw-panel input[type="range"],
+.daw-panel select {
+  width: 100%;
+  min-width: 0;
 }
 
 .daw-eq-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 10px;
 }
 
 .daw-coach-metrics {
@@ -2725,6 +2905,12 @@ input, textarea, select {
 /* ==========================================================================
    9. Responsive Breakpoints & Focus Rings
    ========================================================================== */
+@media (max-width: 1180px) {
+  .top-scale-chip {
+    display: none;
+  }
+}
+
 @media (max-width: 980px) {
   .plv-stage-grid,
   .daw-console-grid {
@@ -2732,9 +2918,6 @@ input, textarea, select {
   }
   .musical-control-strip {
     padding: 6px 10px;
-  }
-  .top-scale-chip {
-    display: none;
   }
 }
 
@@ -2853,7 +3036,7 @@ input, textarea, select {
     min-width: 100vw;
     left: 0;
     right: 0;
-    top: 54px;
+    top: 0;
     bottom: 0;
     z-index: 1500;
   }
@@ -2865,6 +3048,13 @@ input, textarea, select {
   }
   .mcs-right-tools {
     margin-left: 0;
+  }
+}
+
+@media (max-width: 560px) {
+  .room-chip,
+  .call-timer {
+    display: none;
   }
 }
 

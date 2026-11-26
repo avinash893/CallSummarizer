@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { midiToNoteName } from '../audio/sargamEngine';
 
 function getInitials(name = 'User') {
   const parts = String(name).trim().split(/\s+/).filter(Boolean);
@@ -383,17 +384,17 @@ export default function NotesDrawer({
             aria-labelledby="tab-notes"
             style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}
           >
-            {/* Active Jam Raga Snapshot */}
+            {/* Active Jam Settings Snapshot */}
             {jamState && (
               <div className="notes-card notes-raga-snapshot">
                 <div className="notes-card-title">
                   <i className="bi bi-music-note-beamed" style={{ marginRight: '6px', color: 'var(--accent-primary)' }}></i>
-                  <span>Session Scale & Taal</span>
+                  <span>Session Tempo & Scale</span>
                 </div>
                 <div className="d-flex flex-wrap gap-2" style={{ fontSize: '0.78rem', color: 'var(--text-main)' }}>
-                  <span className="notes-snap-chip accent">Raga: {jamState.raga}</span>
-                  <span className="notes-snap-chip">{jamState.taal} · {jamState.bpm} BPM</span>
-                  <span className="notes-snap-chip">{jamState.tuningMode === 'ji' ? 'JI Shruti' : 'ET'}</span>
+                  <span className="notes-snap-chip accent">Scale: {midiToNoteName(jamState.tonicMidi || 60)}</span>
+                  <span className="notes-snap-chip">{jamState.bpm || 96} BPM</span>
+                  <span className="notes-snap-chip">Tanpura {jamState.isTanpuraOn ? 'ON' : 'OFF'}</span>
                 </div>
               </div>
             )}

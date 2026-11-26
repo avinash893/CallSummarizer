@@ -89,8 +89,8 @@ export default function TopBar({
         )}
 
         <span className="call-timer" title="Active Jam Duration">
-          <i className="bi bi-clock" style={{ marginRight: '6px' }}></i>
-          {callDuration}
+          <i className="bi bi-clock"></i>
+          <span>{callDuration}</span>
         </span>
 
         {activeScaleBadge && (

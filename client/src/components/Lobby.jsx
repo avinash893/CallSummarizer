@@ -32,9 +32,9 @@ export function generateClientMeetingCode() {
 export const MUSICIAN_ROLES = [
   'Vocalist',
   'Guitarist',
-  'Tabla / Beats',
-  'Keys / Harmonium',
-  'Flute / Sitar',
+  'Drums / Beats',
+  'Keys / Piano',
+  'Winds / Strings',
   'Producer'
 ];
 

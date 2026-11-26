@@ -80,23 +80,25 @@ export default function ScaleWatcherDial({
             strokeLinecap="round"
           />
 
-          {/* Tick labels */}
-          <text x="16" y="126" fill="var(--text-muted)" fontSize="10" fontWeight="600">-50c</text>
-          <text x="103" y="15" fill={inTune ? 'var(--sur-color)' : 'var(--text-muted)'} fontSize="10" fontWeight="700" textAnchor="middle">0</text>
-          <text x="184" y="126" fill="var(--text-muted)" fontSize="10" fontWeight="600">+50c</text>
+          {/* Tick marks & labels */}
+          <line x1="110" y1="22" x2="110" y2="30" stroke={inTune ? 'var(--sur-color)' : 'var(--border-default)'} strokeWidth="1.5" />
+          <text x="14" y="126" fill="var(--text-muted)" fontSize="9.5" fontWeight="600">-50c</text>
+          <text x="110" y="14" fill={inTune ? 'var(--sur-color)' : 'var(--text-muted)'} fontSize="10" fontWeight="700" textAnchor="middle">0</text>
+          <text x="184" y="126" fill="var(--text-muted)" fontSize="9.5" fontWeight="600">+50c</text>
 
           {/* Animated Needle */}
-          <g transform={`translate(110, 112) rotate(${needleDeg})`} style={{ transition: 'transform 85ms ease-out' }}>
+          <g transform={`translate(110, 112) rotate(${hasPitch ? needleDeg : -82.5})`} style={{ transition: 'transform 85ms ease-out' }}>
             <line
               x1="0"
               y1="0"
               x2="0"
               y2="-72"
               stroke={hasPitch ? dialAccent : 'var(--border-default)'}
-              strokeWidth="3.5"
+              strokeWidth={hasPitch ? '3.5' : '2'}
               strokeLinecap="round"
+              opacity={hasPitch ? '1' : '0.45'}
             />
-            <circle cx="0" cy="-70" r="4" fill={hasPitch ? dialAccent : 'var(--border-default)'} />
+            <circle cx="0" cy="-70" r="3.5" fill={hasPitch ? dialAccent : 'var(--border-default)'} opacity={hasPitch ? '1' : '0.45'} />
           </g>
           <circle cx="110" cy="112" r="7" fill="var(--bg-surface)" stroke={hasPitch ? dialAccent : 'var(--border-default)'} strokeWidth="2.5" />
         </svg>

@@ -1887,56 +1887,78 @@ export default function App() {
           />
 
           <main className="main-stage">
-            {!isNotesOpen && (
-              <button
-                type="button"
-                className="mobile-notes-fab"
-                onClick={() => setIsNotesOpen(true)}
-                title="Open Transcript & Action Items"
-                aria-label="Open transcript and action items"
-                data-testid="mobile-notes-fab"
-              >
-                <i className="bi bi-card-checklist me-1"></i>
-                <span>Notes & Actions</span>
-              </button>
-            )}
+            <div className="stage-workspace">
+              {!isNotesOpen && (
+                <button
+                  type="button"
+                  className="mobile-notes-fab"
+                  onClick={() => setIsNotesOpen(true)}
+                  title="Open Transcript & Action Items"
+                  aria-label="Open transcript and action items"
+                  data-testid="mobile-notes-fab"
+                >
+                  <i className="bi bi-card-checklist me-1"></i>
+                  <span>Notes & Actions</span>
+                </button>
+              )}
 
-            {activeStudioTab === 'stage' && (
-              <VideoCanvas
-                isVideoOn={isVideoOn}
-                isAudioOn={isAudioOn}
-                localStream={localStream}
-                screenStream={screenStream}
-                isScreenSharing={isScreenSharing}
-                localUser={user}
-                remotePeers={remotePeers}
-                capturedPeerIds={capturedPeerIds}
-                onToggleCapturePeer={handleToggleCapturePeer}
-                localPitchInfo={liveMicPitch}
-                peerTelemetry={peerTelemetry}
-                langMode={jamState.langMode}
-                isRawAudio={isRawAudio}
-              />
-            )}
+              <div className="stage-content-area">
+                {activeStudioTab === 'stage' && (
+                  <VideoCanvas
+                    isVideoOn={isVideoOn}
+                    isAudioOn={isAudioOn}
+                    localStream={localStream}
+                    screenStream={screenStream}
+                    isScreenSharing={isScreenSharing}
+                    localUser={user}
+                    remotePeers={remotePeers}
+                    capturedPeerIds={capturedPeerIds}
+                    onToggleCapturePeer={handleToggleCapturePeer}
+                    localPitchInfo={liveMicPitch}
+                    peerTelemetry={peerTelemetry}
+                    langMode={jamState.langMode}
+                    isRawAudio={isRawAudio}
+                  />
+                )}
 
-            {activeStudioTab === 'pitch' && (
-              <PitchAndLyricsView
-                jamState={jamState}
-                onUpdateJamState={updateJamState}
-                liveMicPitch={liveMicPitch}
-                backingState={backingState}
-                onUpdateBackingState={updateBackingState}
-                onSyncBackingToRoom={syncBackingToRoom}
-              />
-            )}
+                {activeStudioTab === 'pitch' && (
+                  <PitchAndLyricsView
+                    jamState={jamState}
+                    onUpdateJamState={updateJamState}
+                    liveMicPitch={liveMicPitch}
+                    backingState={backingState}
+                    onUpdateBackingState={updateBackingState}
+                    onSyncBackingToRoom={syncBackingToRoom}
+                  />
+                )}
 
-            {activeStudioTab === 'daw' && (
-              <StudioDawView
-                jamState={jamState}
-                localStream={localStream}
-                backingState={backingState}
-              />
-            )}
+                {activeStudioTab === 'daw' && (
+                  <StudioDawView
+                    jamState={jamState}
+                    localStream={localStream}
+                    backingState={backingState}
+                  />
+                )}
+              </div>
+
+              <div className="stage-dock-footer">
+                <ControlDock
+                  isAudioOn={isAudioOn}
+                  toggleAudio={toggleAudio}
+                  isVideoOn={isVideoOn}
+                  toggleVideo={toggleVideo}
+                  isScreenSharing={isScreenSharing}
+                  toggleScreenShare={toggleScreenShare}
+                  isNotesOpen={isNotesOpen}
+                  setIsNotesOpen={setIsNotesOpen}
+                  onLeaveCall={handleLeaveCall}
+                  isTanpuraOn={jamState.isTanpuraOn}
+                  onToggleTanpura={() => updateJamState({ isTanpuraOn: !jamState.isTanpuraOn })}
+                  isMetronomeOn={jamState.isMetronomeOn}
+                  onToggleMetronome={() => updateJamState({ isMetronomeOn: !jamState.isMetronomeOn })}
+                />
+              </div>
+            </div>
 
             <NotesDrawer
               isOpen={isNotesOpen}
@@ -1959,22 +1981,6 @@ export default function App() {
               onClearSession={handleClearNotesAndTranscript}
               jamState={jamState}
               onSendClipToDaw={handleSendClipToDaw}
-            />
-
-            <ControlDock
-              isAudioOn={isAudioOn}
-              toggleAudio={toggleAudio}
-              isVideoOn={isVideoOn}
-              toggleVideo={toggleVideo}
-              isScreenSharing={isScreenSharing}
-              toggleScreenShare={toggleScreenShare}
-              isNotesOpen={isNotesOpen}
-              setIsNotesOpen={setIsNotesOpen}
-              onLeaveCall={handleLeaveCall}
-              isTanpuraOn={jamState.isTanpuraOn}
-              onToggleTanpura={() => updateJamState({ isTanpuraOn: !jamState.isTanpuraOn })}
-              isMetronomeOn={jamState.isMetronomeOn}
-              onToggleMetronome={() => updateJamState({ isMetronomeOn: !jamState.isMetronomeOn })}
             />
           </main>
         </>

@@ -88,7 +88,7 @@ SargamJam Studio transforms the collaborative jam workstation into a crisp dayli
 
 ## Colors
 
-Restrained daylight paper surfaces paired with Burnt Vermilion (`#b8390c`) reserved strictly for primary session actions, active workspace selection, and root `Sa`, Blueprint Indigo (`#1e40af`) for melody target references, and Emerald (`#047857`) exclusively for `Sur Mila` intonation lock.
+Restrained daylight paper surfaces paired with Burnt Vermilion (`#b8390c`) reserved strictly for primary session actions, active workspace selection, and scale root notes, Blueprint Indigo (`#1e40af`) for melody target references, and Emerald (`#047857`) exclusively for `IN TUNE` intonation lock.
 
 ## Typography
 

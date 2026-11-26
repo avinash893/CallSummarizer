@@ -548,7 +548,7 @@ export default function StudioDawView({
         <div className="daw-actions-row">
           <button
             type="button"
-            className={`btn btn-sm ${isRecordingTake ? 'btn-danger pulse-btn' : 'btn-primary'}`}
+            className={`btn btn-sm daw-btn-rec ${isRecordingTake ? 'btn-danger pulse-btn' : ''}`}
             onClick={toggleRecordTake}
             data-testid="btn-daw-record"
           >
@@ -568,7 +568,7 @@ export default function StudioDawView({
 
           <button
             type="button"
-            className={`btn btn-sm ${isPlayingMix ? 'btn-warning' : 'btn-success'}`}
+            className={`btn btn-sm daw-btn-audition ${isPlayingMix ? 'playing' : ''}`}
             disabled={!vocalBuffer}
             onClick={togglePlayStudioMix}
           >
@@ -592,13 +592,13 @@ export default function StudioDawView({
               </small>
             )}
           </span>
-          <div className="d-flex gap-2">
-            <button type="button" className="btn btn-outline-secondary btn-sm" disabled={!vocalBuffer} onClick={handleAutoCutSilence}>
+          <div className="d-flex flex-wrap gap-2">
+            <button type="button" className="btn btn-outline-secondary btn-secondary-action btn-sm" disabled={!vocalBuffer} onClick={handleAutoCutSilence}>
               Auto-Cut Silence
             </button>
             <button
               type="button"
-              className="btn btn-outline-info btn-sm"
+              className="btn btn-sm daw-btn-export"
               disabled={!vocalBuffer}
               onClick={() => handleExportWav(true)}
             >
@@ -606,7 +606,7 @@ export default function StudioDawView({
             </button>
             <button
               type="button"
-              className="btn btn-warning btn-sm fw-bold"
+              className="btn btn-sm daw-btn-master fw-bold"
               disabled={!vocalBuffer}
               onClick={() => handleExportWav(false)}
             >
@@ -734,16 +734,16 @@ export default function StudioDawView({
 
         {/* AI Vocal Coach & Pitch Audit */}
         <div className="daw-panel daw-coach-panel">
-          <div className="daw-panel-title d-flex justify-content-between align-items-center">
-            <span><i className="bi bi-stars me-2 text-warning"></i>Gemini Vocal Coach</span>
+          <div className="daw-panel-title d-flex justify-content-between align-items-center gap-2">
+            <span><i className="bi bi-stars me-2" style={{ color: 'var(--accent-primary)' }}></i>Gemini Vocal Coach</span>
             <button
               type="button"
-              className="btn btn-sm btn-warning fw-semibold"
+              className="btn btn-sm daw-btn-coach fw-semibold"
               disabled={!vocalBuffer || isCoachBusy}
               onClick={handleCompareAndCoach}
               data-testid="btn-ai-vocal-coach"
             >
-              {isCoachBusy ? 'Analyzing...' : 'Analyze Pitch & Coach'}
+              {isCoachBusy ? 'Analyzing...' : 'Analyze Pitch'}
             </button>
           </div>
 
@@ -776,7 +776,7 @@ export default function StudioDawView({
             </div>
           ) : (
             <p className="text-muted small mb-2">
-              Run &ldquo;Analyze Pitch & Coach&rdquo; on your vocal take for intonation scoring, stability feedback, and customized vocal drills.
+              Run &ldquo;Analyze Pitch&rdquo; on your vocal take for intonation scoring, stability feedback, and customized vocal drills.
             </p>
           )}
 

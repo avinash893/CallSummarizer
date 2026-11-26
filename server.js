@@ -251,12 +251,12 @@ function normalizeRoomId(raw) {
 function createDefaultJamState() {
     return {
         tonicMidi: 60, // C4
-        raga: 'Bilawal',
-        tuningMode: 'ji',
+        raga: 'All Notes',
+        tuningMode: 'et',
         langMode: 'en',
         isTanpuraOn: false,
         tanpuraVol: 0.45,
-        taal: 'Teentaal (16)',
+        taal: '4/4 Studio Click',
         bpm: 96,
         isMetronomeOn: false,
         updatedAt: Date.now()

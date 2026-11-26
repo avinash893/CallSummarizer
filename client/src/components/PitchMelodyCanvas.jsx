@@ -121,11 +121,29 @@ export default function PitchMelodyCanvas({
       }
     });
 
-    // Window around current playback time (-3s left to +7s right)
+    // Window around current playback time (-2.6s left to +7.4s right)
     const windowSec = 10;
     const viewStart = Math.max(0, currentTime - 2.6);
     const playheadX = 46 + ((currentTime - viewStart) / windowSec) * (width - 54);
     const timeToX = (t) => 46 + ((t - viewStart) / windowSec) * (width - 54);
+
+    // Subtle vertical time measure lines every 2 seconds
+    const firstTickSec = Math.ceil(viewStart / 2) * 2;
+    ctx.font = '500 9px "JetBrains Mono", monospace';
+    for (let ts = firstTickSec; ts <= viewStart + windowSec; ts += 2) {
+      const tx = timeToX(ts);
+      if (tx < 48 || tx > width - 6) continue;
+      ctx.beginPath();
+      ctx.moveTo(tx, 14);
+      ctx.lineTo(tx, height - 8);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.045)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      const mins = Math.floor(ts / 60);
+      const secs = Math.floor(ts % 60);
+      ctx.fillStyle = 'rgba(154, 163, 178, 0.45)';
+      ctx.fillText(`${mins}:${String(secs).padStart(2, '0')}`, tx + 3, 11);
+    }
 
     // Draw reference song melody bars
     const activeTargetBar = findActiveTargetBar(noteBars, currentTime);

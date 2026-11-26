@@ -8,16 +8,16 @@ web
 
 ## Users
 
-- **Singers, instrumentalists, and ensemble jam groups** practicing Hindustani classical riyaz, bandishes, and collaborative songs remotely from desktop or mobile browsers.
+- **Singers, instrumentalists, and ensemble jam groups** practicing songs, scales, and collaborative sessions remotely from desktop or mobile browsers.
 - **Remote meeting participants** capturing live transcripts, AI summaries, and Google Calendar action items inside the same room session.
 
 ## Product Purpose
 
-SargamJam Studio combines low-latency WebRTC video/audio jamming with real-time Swara pitch watching, acoustic Tanpura/Taal synthesis, cloud stem separation, multi-track DAW mixing, and automated meeting notes in one browser workspace.
+SargamJam Studio combines low-latency WebRTC video/audio jamming with real-time pitch watching, acoustic Tanpura synthesis, BPM metronome, cloud stem separation, multi-track DAW mixing, and automated meeting notes in one browser workspace.
 
 ## Positioning
 
-Unlike generic video-call tools or single-player tuners, SargamJam synchronizes room-wide `Sa` tonic, Raga scale, acoustic Tanpura/Taal accompaniment, and 10%-tolerance vocal pitch bars across live collaborators with server-side YouTube/audio stem separation.
+Unlike generic video-call tools or single-player tuners, SargamJam synchronizes room-wide musical Scale, acoustic Tanpura accompaniment, BPM tempo, and 10%-tolerance vocal pitch bars across live collaborators with server-side YouTube/audio stem separation.
 
 ## Operating Context
 

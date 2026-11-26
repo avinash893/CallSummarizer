@@ -377,7 +377,7 @@ export default function PitchMelodyCanvas({
             Target Vocal Bar (Pre-loaded)
           </span>
           <span className="pmc-legend-item">
-            <span className="pmc-legend-dot" style={{ background: '#2ecc71', boxShadow: '0 0 6px #2ecc71' }} />
+            <span className="pmc-legend-dot" style={{ background: '#2ecc71' }} />
             Sur Mila (Within {tolLabel}% Match)
           </span>
           <span className="pmc-legend-item">

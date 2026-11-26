@@ -10,7 +10,9 @@ export default function TopBar({
   participantCount = 1,
   activeTab = 'stage',
   onChangeTab = null,
-  activeScaleBadge = ''
+  activeScaleBadge = '',
+  theme = 'light',
+  onToggleTheme = null
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -101,6 +103,19 @@ export default function TopBar({
 
       <div className="top-nav-right">
         <div className="btn-group btn-group-sm" role="group" aria-label="Workspace actions">
+          {onToggleTheme && (
+            <button
+              type="button"
+              className="btn btn-outline-secondary nav-btn"
+              onClick={onToggleTheme}
+              title={theme === 'light' ? 'Switch to Dark Stage theme' : 'Switch to Light Studio theme'}
+              aria-label={theme === 'light' ? 'Switch to Dark Stage theme' : 'Switch to Light Studio theme'}
+              data-testid="btn-toggle-theme"
+            >
+              <i className={`bi ${theme === 'light' ? 'bi-moon-stars' : 'bi-sun'}`}></i>
+              <span className="nav-theme-label">{theme === 'light' ? 'Dark' : 'Light'}</span>
+            </button>
+          )}
           <button
             type="button"
             className="btn btn-outline-secondary nav-btn nav-btn-services"

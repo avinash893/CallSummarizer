@@ -143,7 +143,7 @@ function RemotePeerTile({ peer, isCaptured = false, onToggleCapture, telemetry =
           {peer.speaking && (
             <i
               className="bi bi-circle-fill"
-              style={{ fontSize: '0.45rem', color: '#ff7b24', marginLeft: '4px' }}
+              style={{ fontSize: '0.45rem', color: 'var(--accent-primary)', marginLeft: '4px' }}
               title="Playing / Speaking"
             ></i>
           )}

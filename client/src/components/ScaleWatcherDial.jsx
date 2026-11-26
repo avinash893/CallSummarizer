@@ -5,7 +5,7 @@ export default function ScaleWatcherDial({
   subtitle = 'Mic Sur',
   pitchInfo = null,
   langMode = 'en',
-  accentColor = '#ff7b24',
+  accentColor = 'var(--accent-primary)',
   emptyLabel = 'Sing or play a note...'
 }) {
   const hasPitch = Boolean(pitchInfo && pitchInfo.freq > 0);
@@ -23,7 +23,7 @@ export default function ScaleWatcherDial({
     ? `${pitchInfo.noteName || ''}${pitchInfo.octaveLabel || ''}`
     : emptyLabel;
 
-  const dialAccent = inTune ? '#10b981' : accentColor;
+  const dialAccent = inTune ? 'var(--sur-color)' : accentColor;
 
   return (
     <div
@@ -47,11 +47,11 @@ export default function ScaleWatcherDial({
         <svg viewBox="0 0 220 132" className="sw-svg" aria-label={title}>
           <defs>
             <linearGradient id={`arc-${title.replace(/\W+/g, '')}`} x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="#ef4444" stopOpacity="0.85" />
-              <stop offset="35%" stopColor="#f59e0b" stopOpacity="0.9" />
-              <stop offset="50%" stopColor="#10b981" stopOpacity="1" />
-              <stop offset="65%" stopColor="#f59e0b" stopOpacity="0.9" />
-              <stop offset="100%" stopColor="#ef4444" stopOpacity="0.85" />
+              <stop offset="0%" stopColor="#dc2626" stopOpacity="0.85" />
+              <stop offset="35%" stopColor="#d97706" stopOpacity="0.9" />
+              <stop offset="50%" stopColor="#059669" stopOpacity="1" />
+              <stop offset="65%" stopColor="#d97706" stopOpacity="0.9" />
+              <stop offset="100%" stopColor="#dc2626" stopOpacity="0.85" />
             </linearGradient>
           </defs>
 
@@ -59,7 +59,7 @@ export default function ScaleWatcherDial({
           <path
             d="M 24 112 A 86 86 0 0 1 196 112"
             fill="none"
-            stroke="rgba(255,255,255,0.08)"
+            stroke="var(--border-subtle)"
             strokeWidth="12"
             strokeLinecap="round"
           />
@@ -73,20 +73,20 @@ export default function ScaleWatcherDial({
             strokeLinecap="round"
           />
 
-          {/* Center Sweet Spot Glow */}
+          {/* Center Sweet Spot */}
           <path
             d="M 92 27.5 A 86 86 0 0 1 128 27.5"
             fill="none"
             stroke="#10b981"
             strokeWidth="11"
-            strokeOpacity={inTune ? '0.6' : '0.18'}
+            strokeOpacity={inTune ? '0.6' : '0.2'}
             strokeLinecap="round"
           />
 
           {/* Tick labels */}
-          <text x="16" y="126" fill="#7a8299" fontSize="10" fontWeight="600">-50c</text>
-          <text x="103" y="15" fill={inTune ? '#10b981' : '#8b93a8'} fontSize="10" fontWeight="700" textAnchor="middle">0</text>
-          <text x="184" y="126" fill="#7a8299" fontSize="10" fontWeight="600">+50c</text>
+          <text x="16" y="126" fill="var(--text-muted)" fontSize="10" fontWeight="600">-50c</text>
+          <text x="103" y="15" fill={inTune ? 'var(--sur-color)' : 'var(--text-muted)'} fontSize="10" fontWeight="700" textAnchor="middle">0</text>
+          <text x="184" y="126" fill="var(--text-muted)" fontSize="10" fontWeight="600">+50c</text>
 
           {/* Animated Needle */}
           <g transform={`translate(110, 112) rotate(${needleDeg})`} style={{ transition: 'transform 85ms ease-out' }}>
@@ -95,17 +95,17 @@ export default function ScaleWatcherDial({
               y1="0"
               x2="0"
               y2="-72"
-              stroke={hasPitch ? dialAccent : '#4b5563'}
+              stroke={hasPitch ? dialAccent : 'var(--border-default)'}
               strokeWidth="3.5"
               strokeLinecap="round"
             />
-            <circle cx="0" cy="-70" r="4" fill={hasPitch ? dialAccent : '#4b5563'} />
+            <circle cx="0" cy="-70" r="4" fill={hasPitch ? dialAccent : 'var(--border-default)'} />
           </g>
-          <circle cx="110" cy="112" r="7" fill="#181b22" stroke={hasPitch ? dialAccent : '#4b5563'} strokeWidth="2.5" />
+          <circle cx="110" cy="112" r="7" fill="var(--bg-surface)" stroke={hasPitch ? dialAccent : 'var(--border-default)'} strokeWidth="2.5" />
         </svg>
 
         <div className="sw-readout">
-          <div className="sw-main-note" style={{ color: hasPitch ? dialAccent : '#8b93a8' }}>
+          <div className="sw-main-note" style={{ color: hasPitch ? dialAccent : 'var(--text-muted)' }}>
             {primaryLabel}
           </div>
           <div className="sw-sub-note">{secondaryLabel}</div>

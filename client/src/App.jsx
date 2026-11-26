@@ -113,6 +113,27 @@ export default function App() {
 
   // SargamJam Studio Music & Jamming State
   const [activeStudioTab, setActiveStudioTab] = useState('stage'); // 'stage' | 'pitch' | 'daw'
+  const [theme, setTheme] = useState(() => {
+    try {
+      return localStorage.getItem('sargamjam_theme') || 'light';
+    } catch (e) {
+      return 'light';
+    }
+  });
+
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      document.documentElement.setAttribute('data-theme', theme);
+      document.documentElement.setAttribute('data-bs-theme', theme);
+    }
+    try {
+      localStorage.setItem('sargamjam_theme', theme);
+    } catch (e) {}
+  }, [theme]);
+
+  const toggleTheme = useCallback(() => {
+    setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
+  }, []);
   const [jamState, setJamState] = useState({
     tonicMidi: 60, // C4
     raga: 'Bilawal',
@@ -1810,6 +1831,8 @@ export default function App() {
             onToggleNotes={() => setIsNotesOpen((prev) => !prev)}
             onClearNotes={handleClearNotesAndTranscript}
             liveMicPitch={liveMicPitch}
+            theme={theme}
+            onToggleTheme={toggleTheme}
           />
         {isNotesOpen && (tasks.length > 0 || transcript.length > 0) && (
           <NotesDrawer
@@ -1849,6 +1872,8 @@ export default function App() {
             activeTab={activeStudioTab}
             onChangeTab={setActiveStudioTab}
             activeScaleBadge={`${midiToNoteName(jamState.tonicMidi)} · ${jamState.raga}`}
+            theme={theme}
+            onToggleTheme={toggleTheme}
           />
 
           <MusicalControlStrip

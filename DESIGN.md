@@ -1,29 +1,30 @@
 ---
 name: SargamJam Studio
-description: Operate-mode dark workstation for collaborative Hindustani music jamming, live Swara pitch watching, and meeting intelligence.
+description: Crisp Light Conservatory Paper & Brass workstation (with Dark Stage mode) for live collaborative music jamming, pitch watching, and meeting intelligence.
 colors:
-  studio-void: "#0c0d10"
-  studio-recessed: "#13151a"
-  studio-panel: "#181b21"
-  studio-elevated: "#20242c"
-  studio-hover: "#282d37"
-  hairline-subtle: "#262a33"
-  hairline-default: "#353b47"
-  hairline-focus: "#5a6375"
-  ink-primary: "#f4f6f9"
-  ink-secondary: "#b8c0cf"
-  ink-muted: "#9aa3b2"
-  signal-orange: "#ff7629"
-  signal-orange-hover: "#ff8c47"
-  ink-on-accent: "#0b0d11"
-  sur-emerald: "#34d399"
-  sur-surface: "#0d2b22"
-  amber-warn: "#fbbf24"
-  coral-danger: "#ef4444"
+  paper-ground: "#f4f5f7"
+  paper-recessed: "#eaedf2"
+  paper-surface: "#ffffff"
+  paper-elevated: "#f0f2f5"
+  paper-hover: "#e4e8ee"
+  hairline-subtle: "#dde2ea"
+  hairline-default: "#c7cedb"
+  hairline-focus: "#1e40af"
+  ink-primary: "#11141a"
+  ink-secondary: "#374151"
+  ink-muted: "#4b5563"
+  vermilion-primary: "#b8390c"
+  vermilion-hover: "#9a2f09"
+  ink-on-accent: "#ffffff"
+  blueprint-indigo: "#1e40af"
+  sur-emerald: "#047857"
+  sur-surface: "#ecfdf5"
+  amber-warn: "#92400e"
+  coral-danger: "#b91c1c"
 typography:
   headline:
     fontFamily: "Manrope, -apple-system, BlinkMacSystemFont, sans-serif"
-    fontSize: "1.35rem"
+    fontSize: "1.45rem"
     fontWeight: 700
     lineHeight: 1.25
     letterSpacing: "-0.02em"
@@ -64,14 +65,14 @@ spacing:
   xl: "24px"
 components:
   button-primary:
-    backgroundColor: "{colors.signal-orange}"
+    backgroundColor: "{colors.vermilion-primary}"
     textColor: "{colors.ink-on-accent}"
     rounded: "{rounded.sm}"
     padding: "10px 16px"
   button-primary-hover:
-    backgroundColor: "{colors.signal-orange-hover}"
+    backgroundColor: "{colors.vermilion-hover}"
   button-secondary:
-    backgroundColor: "{colors.studio-elevated}"
+    backgroundColor: "{colors.paper-surface}"
     textColor: "{colors.ink-primary}"
     rounded: "{rounded.sm}"
     padding: "8px 12px"
@@ -81,42 +82,19 @@ components:
 
 ## Overview
 
-**Creative North Star: "The Studio Patchbay"**
+**Creative North Star: "The Conservatory Sheet & Oscilloscope"**
 
-SargamJam Studio follows Operate-mode precision: low-glare neutral charcoal surfaces built for multi-hour vocal practice and ensemble calls, paired with high-contrast Signal Orange (`#ff7629`) reserved strictly for primary actions, active workspace selection, and the root `Sa` tonic.
+SargamJam Studio transforms the collaborative jam workstation into a crisp daylight studio modeled on printed music notation and precision acoustic instruments (`paper-ground: #f4f5f7`, `paper-surface: #ffffff`, `vermilion-primary: #b8390c`, `blueprint-indigo: #1e40af`), with a 1-click Dark Stage mode for low-light rehearsal rooms.
 
 ## Colors
 
-Restrained dark neutral palette with a single high-visibility Signal Orange action accent and emerald green (`#34d399`) dedicated exclusively to `Sur Mila` / verified status.
-
-### Primary
-- **Signal Orange** (`#ff7629`): Primary join/split actions, active studio mode tab, active tolerance chip, and root `Sa` indicator.
-- **Ink On Accent** (`#0b0d11`): High-contrast dark ink (>= 7:1 WCAG AAA) on Signal Orange controls.
-
-### Neutral
-- **Studio Void** (`#0c0d10`): Application shell and recessed input wells.
-- **Studio Panel** (`#181b21`): Top bars, drawers, and single-tier surface containers.
-- **Ink Primary** (`#f4f6f9`) / **Ink Secondary** (`#b8c0cf`) / **Ink Muted** (`#9aa3b2`): Minimum 5.5:1 contrast across all dark surfaces.
+Restrained daylight paper surfaces paired with Burnt Vermilion (`#b8390c`) reserved strictly for primary session actions, active workspace selection, and root `Sa`, Blueprint Indigo (`#1e40af`) for melody target references, and Emerald (`#047857`) exclusively for `Sur Mila` intonation lock.
 
 ## Typography
 
-**Body & UI Font:** Manrope (weights 500, 600, 700)
-**Data & Telemetry Font:** JetBrains Mono (`font-variant-numeric: tabular-nums` for `Hz`, `cents`, `BPM`, timers, and pitch match `%`)
+**Body & UI Font:** Manrope (weights 400–800)
+**Telemetry Font:** JetBrains Mono (`tabular-nums` for `Hz`, `cents`, `BPM`, timers, and error %)
 
-## Layout
+## Layout & Elevation
 
-Single-screen desktop viewport shell with collapsible Notes drawer, horizontal Musical Control Strip, and structurally adapting mobile layouts (`<= 850px`). Surfaces remain flat without card-inside-card nesting.
-
-## Elevation & Depth
-
-Flat tonal layering with crisp 1px borders (`#262a33` / `#353b47`) and directional drop shadows reserved for floating docks and modal dialogs. Zero zero-offset glow halos or side-tab borders.
-
-## Do's and Don'ts
-
-### Do:
-- **Do** enforce `>= 4.5:1` contrast on every label, placeholder, and accent button (`#0b0d11` on `#ff7629`).
-- **Do** separate sibling sections with whitespace and 1px hairline dividers instead of nested cards.
-
-### Don't:
-- **Don't** place uppercase eyebrow kickers above headings, side-tab `border-left` accent bars on rounded boxes, or gradients on text/UI controls.
-- **Don't** position floating badges over standby text or avatars where mobile viewports can occlude them.
+Flat single-tier studio layout using 1px `#dde2ea` structural borders, two-column pre-call workbench on desktop, responsive single-column stacking on mobile (`<= 850px`), zero nested cards, and zero overlapping/occluding floating badges.

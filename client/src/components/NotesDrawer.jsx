@@ -260,8 +260,7 @@ export default function NotesDrawer({
                     return (
                       <div
                         key={peerId}
-                        className="d-flex align-items-center justify-content-between p-2 rounded"
-                        style={{ background: 'var(--bg-surface)', border: '1px solid rgba(239, 68, 68, 0.35)' }}
+                        className="d-flex align-items-center justify-content-between p-2 rounded notes-capture-card"
                         data-testid={`active-captured-peer-${peerId}`}
                       >
                         <div className="d-flex align-items-center gap-2">
@@ -270,7 +269,7 @@ export default function NotesDrawer({
                             <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-main)' }}>
                               {peer.name || 'Participant'}
                             </div>
-                            <div style={{ fontSize: '0.7rem', color: '#fca5a5' }}>
+                            <div className="notes-capture-sub">
                               Listening privately • Recording
                             </div>
                           </div>
@@ -315,7 +314,7 @@ export default function NotesDrawer({
                             <div className="clip-meta">{clip.time} • {clip.duration}</div>
                           </div>
                         </div>
-                        <span className="badge bg-dark border border-secondary text-secondary" style={{ fontSize: '0.65rem' }}>
+                        <span className="notes-snap-chip">
                           Private
                         </span>
                       </div>
@@ -392,9 +391,9 @@ export default function NotesDrawer({
                   <span>Session Scale & Taal</span>
                 </div>
                 <div className="d-flex flex-wrap gap-2" style={{ fontSize: '0.78rem', color: 'var(--text-main)' }}>
-                  <span className="badge bg-dark border border-warning text-warning">Raga: {jamState.raga}</span>
-                  <span className="badge bg-dark border border-secondary">{jamState.taal} · {jamState.bpm} BPM</span>
-                  <span className="badge bg-dark border border-secondary">{jamState.tuningMode === 'ji' ? 'JI Shruti' : 'ET'}</span>
+                  <span className="notes-snap-chip accent">Raga: {jamState.raga}</span>
+                  <span className="notes-snap-chip">{jamState.taal} · {jamState.bpm} BPM</span>
+                  <span className="notes-snap-chip">{jamState.tuningMode === 'ji' ? 'JI Shruti' : 'ET'}</span>
                 </div>
               </div>
             )}
@@ -474,8 +473,8 @@ export default function NotesDrawer({
 
               {calendarError && (
                 <div className="calendar-error-banner" role="alert" data-testid="calendar-error-alert">
-                  <i className="bi bi-exclamation-triangle-fill" style={{ color: '#ef4444', marginRight: '6px' }}></i>
-                  <span style={{ flex: 1, fontSize: '0.78rem', color: '#fca5a5' }}>{calendarError.message}</span>
+                  <i className="bi bi-exclamation-triangle-fill notes-error-icon"></i>
+                  <span className="notes-error-text">{calendarError.message}</span>
                   <button
                     type="button"
                     className="btn btn-outline-secondary btn-sm btn-dismiss-alert"

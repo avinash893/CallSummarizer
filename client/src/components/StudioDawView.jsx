@@ -559,7 +559,7 @@ export default function StudioDawView({
           <input ref={importInputRef} type="file" accept="audio/*" className="d-none" onChange={handleImportTakeFile} />
           <button
             type="button"
-            className="btn btn-outline-light btn-sm"
+            className="btn btn-outline-secondary btn-secondary-action btn-sm"
             onClick={() => importInputRef.current?.click()}
           >
             <i className="bi bi-folder-plus me-1"></i>
@@ -759,7 +759,7 @@ export default function StudioDawView({
               </div>
               <div className="metric-chip">
                 <small>Error %</small>
-                <strong style={{ color: comparisonStats.errorPercent > 25 ? '#f87171' : '#fbbf24' }}>{comparisonStats.errorPercent}%</strong>
+                <strong className={comparisonStats.errorPercent > 25 ? 'daw-err-bad' : 'daw-err-warn'}>{comparisonStats.errorPercent}%</strong>
               </div>
               <div className="metric-chip">
                 <small>Flat / Sharp</small>

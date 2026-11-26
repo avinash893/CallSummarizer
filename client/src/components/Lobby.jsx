@@ -57,7 +57,9 @@ export default function Lobby({
   isNotesOpen = false,
   onToggleNotes,
   onClearNotes,
-  liveMicPitch = null
+  liveMicPitch = null,
+  theme = 'light',
+  onToggleTheme = null
 }) {
   const previewRef = useRef(null);
   const [showGoogleModal, setShowGoogleModal] = useState(false);
@@ -294,8 +296,20 @@ export default function Lobby({
             <span>SargamJam Studio</span>
           </div>
 
-          {/* Google Account Badge or Sign-In Button */}
+          {/* Google Account Badge + Theme Switcher */}
           <div className="google-auth-section">
+            {onToggleTheme && (
+              <button
+                type="button"
+                className="btn-theme-toggle"
+                onClick={onToggleTheme}
+                title={theme === 'light' ? 'Switch to Dark Stage theme' : 'Switch to Light Studio theme'}
+                aria-label={theme === 'light' ? 'Switch to Dark Stage theme' : 'Switch to Light Studio theme'}
+              >
+                <i className={`bi ${theme === 'light' ? 'bi-moon-stars' : 'bi-sun'}`}></i>
+                <span>{theme === 'light' ? 'Dark' : 'Light'}</span>
+              </button>
+            )}
             {isSignedInWithGoogle ? (
               <div className="google-user-pill" data-testid="google-user-pill">
                 <div className="google-avatar-mini">{displayInitials}</div>
@@ -393,7 +407,7 @@ export default function Lobby({
 
             {authError && (
               <div className="lobby-auth-error-banner" role="alert" data-testid="lobby-auth-error">
-                <i className="bi bi-shield-exclamation" style={{ marginRight: '8px', color: '#f87171', fontSize: '1.05rem' }}></i>
+                <i className="bi bi-shield-exclamation lobby-auth-err-icon"></i>
                 <span>{authError}</span>
               </div>
             )}
@@ -402,7 +416,7 @@ export default function Lobby({
             {showGoogleModal && !isSignedInWithGoogle && (
               <form onSubmit={handleGoogleAccountSubmit} className="google-signin-card" data-testid="google-signin-form">
                 <div className="google-signin-title">
-                  <i className="bi bi-google" style={{ color: '#60a5fa' }}></i>
+                  <i className="bi bi-google lobby-google-icon"></i>
                   <span>Continue with Google Account</span>
                 </div>
                 <input

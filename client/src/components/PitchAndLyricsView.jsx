@@ -505,7 +505,7 @@ export default function PitchAndLyricsView({
             />
             <button
               type="button"
-              className="btn btn-outline-light btn-sm"
+              className="btn btn-outline-secondary btn-secondary-action btn-sm"
               disabled={isBusy}
               onClick={() => fileInputRef.current?.click()}
             >
@@ -664,7 +664,7 @@ export default function PitchAndLyricsView({
             subtitle="Real-time F0 Pitch"
             pitchInfo={liveMicPitch}
             langMode={jamState.langMode}
-            accentColor="#ff6f20"
+            accentColor="var(--accent-primary)"
             emptyLabel="Sing into mic..."
           />
           <ScaleWatcherDial
@@ -672,7 +672,7 @@ export default function PitchAndLyricsView({
             subtitle="Reference Melody"
             pitchInfo={refPitchInfo}
             langMode={jamState.langMode}
-            accentColor="#38bdf8"
+            accentColor="var(--accent-secondary)"
             emptyLabel="Play track or load stems..."
           />
         </div>

@@ -173,8 +173,8 @@ export default function StudioDawView({
     ctx.fillRect(0, 0, w, h);
 
     if (!vocalBuffer) {
-      ctx.fillStyle = 'rgba(156,163,175,0.6)';
-      ctx.font = '500 12px Inter, sans-serif';
+      ctx.fillStyle = 'rgba(184, 192, 207, 0.72)';
+      ctx.font = '500 12px Manrope, sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText('Record a take or import vocal audio to open Waveform & Studio DSP Mixer', w / 2, h / 2 + 4);
       ctx.restore();

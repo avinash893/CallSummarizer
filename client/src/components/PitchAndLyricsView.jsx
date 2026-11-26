@@ -599,7 +599,7 @@ export default function PitchAndLyricsView({
           <span className="plv-match-indicator" />
           <span className="plv-match-text">
             {liveMatch?.isMatched
-              ? `✨ Sur Mila! Within ${tolLabel}% pitch tolerance (${liveMatch.errorPct}% error)`
+              ? `Sur Mila! Within ${tolLabel}% pitch tolerance (${liveMatch.errorPct}% error)`
               : liveMatch
                 ? `Adjust pitch: ${liveMatch.direction === 'flat' ? 'Flat (too low)' : 'Sharp (too high)'} (${liveMatch.errorPct}% off, need ≤ ${tolLabel}%)`
                 : liveMicPitch?.freq > 50

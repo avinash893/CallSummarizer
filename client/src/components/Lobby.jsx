@@ -288,14 +288,10 @@ export default function Lobby({
   return (
     <main className="lobby-screen">
       <div className="lobby-box">
-        <div className="lobby-header-row">
-          <div>
-            <div className="lobby-brand-kicker">
-              <i className="bi bi-music-note-beamed me-1"></i>
-              <span>SargamJam Studio</span>
-            </div>
-            <h2 className="lobby-title">Ready to join?</h2>
-            <p className="lobby-subtitle">Check your camera and microphone</p>
+        <header className="lobby-header-row">
+          <div className="lobby-brand-wordmark">
+            <i className="bi bi-music-note-beamed brand-icon-accent"></i>
+            <span>SargamJam Studio</span>
           </div>
 
           {/* Google Account Badge or Sign-In Button */}
@@ -328,212 +324,216 @@ export default function Lobby({
               </button>
             )}
           </div>
-        </div>
+        </header>
 
-        {authError && (
-          <div className="lobby-auth-error-banner" role="alert" data-testid="lobby-auth-error">
-            <i className="bi bi-shield-exclamation" style={{ marginRight: '8px', color: '#ef4444', fontSize: '1.1rem' }}></i>
-            <span>{authError}</span>
-          </div>
-        )}
-
-        {/* Inline Google Sign-In Form when clicked */}
-        {showGoogleModal && !isSignedInWithGoogle && (
-          <form onSubmit={handleGoogleAccountSubmit} className="google-signin-card" data-testid="google-signin-form">
-            <div className="google-signin-title">
-              <i className="bi bi-google" style={{ color: '#3b82f6' }}></i>
-              <span>Continue with Google Account</span>
+        <div className="lobby-workspace-grid">
+          {/* Left Column: Camera Preview + Non-overlapping Media & Tuner Bar */}
+          <div className="lobby-media-col">
+            <div className="lobby-camera-preview">
+              {localStream && isVideoOn ? (
+                <video
+                  ref={previewRef}
+                  autoPlay
+                  muted
+                  playsInline
+                  className="video-element"
+                />
+              ) : (
+                <div className="avatar-standby">
+                  <div className="avatar-circle host">{displayInitials}</div>
+                  <span className="standby-text">
+                    {isVideoOn ? 'Camera on' : 'Camera off'}
+                  </span>
+                </div>
+              )}
             </div>
-            <input
-              type="text"
-              className="lobby-input"
-              placeholder="Your Full Name (e.g. Avinash)"
-              aria-label="Your full name"
-              value={googleName}
-              onChange={(e) => setGoogleName(e.target.value)}
-              required
-            />
-            <input
-              type="email"
-              className="lobby-input"
-              placeholder="Google Email (e.g. name@gmail.com)"
-              aria-label="Google email address"
-              value={googleEmail}
-              onChange={(e) => setGoogleEmail(e.target.value)}
-              required
-            />
-            <div className="btn-group btn-group-sm" style={{ display: 'flex', gap: '8px' }}>
-              <button type="submit" className="btn btn-join" style={{ flex: 1, padding: '9px' }} disabled={authLoading}>
-                <i className="bi bi-check2-circle" style={{ marginRight: '6px' }}></i>
-                <span>{authLoading ? 'Signing in...' : 'Continue'}</span>
-              </button>
-              <button
-                type="button"
-                className="btn btn-outline-secondary btn-secondary-action"
-                onClick={() => setShowGoogleModal(false)}
-              >
-                <i className="bi bi-x-lg" style={{ marginRight: '4px' }}></i>
-                <span>Cancel</span>
-              </button>
-            </div>
-          </form>
-        )}
 
-        {/* Camera Preview */}
-        <div className="lobby-camera-preview">
-          {localStream && isVideoOn ? (
-            <video
-              ref={previewRef}
-              autoPlay
-              muted
-              playsInline
-              className="video-element"
-            />
-          ) : (
-            <div className="avatar-standby">
-              <div className="avatar-circle host">{displayInitials}</div>
-              <span className="standby-text">
-                {isVideoOn ? 'Camera on' : 'Camera off'}
-              </span>
-            </div>
-          )}
+            <div className="lobby-media-toolbar">
+              <div className="lobby-controls-bar" role="group" aria-label="Camera preview controls">
+                <button
+                  type="button"
+                  className={`btn btn-outline-secondary dock-icon-btn ${!isAudioOn ? 'muted' : ''}`}
+                  onClick={toggleAudio}
+                  title={isAudioOn ? 'Mute microphone' : 'Unmute microphone'}
+                  aria-label={isAudioOn ? 'Mute microphone' : 'Unmute microphone'}
+                >
+                  <i className={`bi ${isAudioOn ? 'bi-mic-fill' : 'bi-mic-mute-fill'}`}></i>
+                </button>
+                <button
+                  type="button"
+                  className={`btn btn-outline-secondary dock-icon-btn ${!isVideoOn ? 'muted' : ''}`}
+                  onClick={toggleVideo}
+                  title={isVideoOn ? 'Turn off camera' : 'Turn on camera'}
+                  aria-label={isVideoOn ? 'Turn off camera' : 'Turn on camera'}
+                >
+                  <i className={`bi ${isVideoOn ? 'bi-camera-video-fill' : 'bi-camera-video-off-fill'}`}></i>
+                </button>
+              </div>
 
-          <div className="lobby-controls-bar btn-group btn-group-sm" role="group" aria-label="Camera preview controls">
-            <button
-              type="button"
-              className={`btn btn-outline-secondary dock-icon-btn ${!isAudioOn ? 'muted' : ''}`}
-              onClick={toggleAudio}
-              title={isAudioOn ? 'Mute microphone' : 'Unmute microphone'}
-              aria-label={isAudioOn ? 'Mute microphone' : 'Unmute microphone'}
-            >
-              <i className={`bi ${isAudioOn ? 'bi-mic-fill' : 'bi-mic-mute-fill'}`}></i>
-            </button>
-            <button
-              type="button"
-              className={`btn btn-outline-secondary dock-icon-btn ${!isVideoOn ? 'muted' : ''}`}
-              onClick={toggleVideo}
-              title={isVideoOn ? 'Turn off camera' : 'Turn on camera'}
-              aria-label={isVideoOn ? 'Turn off camera' : 'Turn on camera'}
-            >
-              <i className={`bi ${isVideoOn ? 'bi-camera-video-fill' : 'bi-camera-video-off-fill'}`}></i>
-            </button>
+              {/* Pre-Join Live Pitch Tuner Readout (docked outside preview so it never occludes standby text) */}
+              {isAudioOn && (
+                <div className={`lobby-tuner-pill ${liveMicPitch?.inTune ? 'sur-locked' : ''}`} data-testid="lobby-tuner-pill">
+                  <i className="bi bi-soundwave"></i>
+                  <span>
+                    {liveMicPitch
+                      ? `${liveMicPitch.sargam} · ${liveMicPitch.noteName} (${liveMicPitch.inTune ? 'In Sur' : `${liveMicPitch.cents > 0 ? '+' : ''}${liveMicPitch.cents}c`})`
+                      : 'Mic ready · Sing Sa to check tuning'}
+                  </span>
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* Pre-Join Live Pitch Tuner Pill */}
-          {isAudioOn && (
-            <div className={`lobby-tuner-pill ${liveMicPitch?.inTune ? 'sur-locked' : ''}`} data-testid="lobby-tuner-pill">
-              <i className="bi bi-soundwave"></i>
-              <span>
-                {liveMicPitch
-                  ? `${liveMicPitch.sargam} · ${liveMicPitch.noteName} (${liveMicPitch.inTune ? 'In Sur' : `${liveMicPitch.cents > 0 ? '+' : ''}${liveMicPitch.cents}c`})`
-                  : 'Mic ready · Sing Sa to check tuning'}
-              </span>
+          {/* Right Column: Session Entry, Role Picker, & Security */}
+          <div className="lobby-entry-col">
+            <div className="lobby-heading-block">
+              <h2 className="lobby-title">Ready to join?</h2>
+              <p className="lobby-subtitle">Check your camera and microphone</p>
             </div>
-          )}
-        </div>
 
-        {/* Musician Role / Instrument Selector */}
-        {onUserChange && (
-          <div className="lobby-instrument-row" aria-label="Select your musician role">
-            <span className="lobby-inst-label">Playing as:</span>
-            <div className="lobby-inst-chips">
-              {MUSICIAN_ROLES.map((role) => {
-                const active = (user?.instrument || 'Vocalist') === role;
-                return (
-                  <button
-                    key={role}
-                    type="button"
-                    className={`lobby-inst-pill ${active ? 'active' : ''}`}
-                    onClick={() => onUserChange({ ...user, instrument: role })}
-                    aria-pressed={active}
-                  >
-                    {role}
+            {authError && (
+              <div className="lobby-auth-error-banner" role="alert" data-testid="lobby-auth-error">
+                <i className="bi bi-shield-exclamation" style={{ marginRight: '8px', color: '#f87171', fontSize: '1.05rem' }}></i>
+                <span>{authError}</span>
+              </div>
+            )}
+
+            {/* Inline Google Sign-In Form when clicked */}
+            {showGoogleModal && !isSignedInWithGoogle && (
+              <form onSubmit={handleGoogleAccountSubmit} className="google-signin-card" data-testid="google-signin-form">
+                <div className="google-signin-title">
+                  <i className="bi bi-google" style={{ color: '#60a5fa' }}></i>
+                  <span>Continue with Google Account</span>
+                </div>
+                <input
+                  type="text"
+                  className="lobby-input"
+                  placeholder="Your Full Name (e.g. Avinash)"
+                  aria-label="Your full name"
+                  value={googleName}
+                  onChange={(e) => setGoogleName(e.target.value)}
+                  required
+                />
+                <input
+                  type="email"
+                  className="lobby-input"
+                  placeholder="Google Email (e.g. name@gmail.com)"
+                  aria-label="Google email address"
+                  value={googleEmail}
+                  onChange={(e) => setGoogleEmail(e.target.value)}
+                  required
+                />
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button type="submit" className="btn btn-join" style={{ flex: 1, padding: '9px' }} disabled={authLoading}>
+                    <i className="bi bi-check2-circle" style={{ marginRight: '6px' }}></i>
+                    <span>{authLoading ? 'Signing in...' : 'Continue'}</span>
                   </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
+                  <button
+                    type="button"
+                    className="btn btn-outline-secondary btn-secondary-action"
+                    onClick={() => setShowGoogleModal(false)}
+                  >
+                    <i className="bi bi-x-lg" style={{ marginRight: '4px' }}></i>
+                    <span>Cancel</span>
+                  </button>
+                </div>
+              </form>
+            )}
 
-        {/* Meeting Management Form (New Meeting, Code or Shareable Link) */}
-        <form onSubmit={handleSubmit} className="lobby-form">
-          <div className="meeting-actions-row btn-group btn-group-sm" role="group" aria-label="Meeting link actions">
-            <button
-              type="button"
-              className="btn btn-outline-secondary btn-secondary-action"
-              onClick={handleNewMeeting}
-              title="Generate a new meeting code"
-            >
-              <i className="bi bi-plus-lg"></i>
-              <span>New meeting</span>
-            </button>
+            {/* Musician Role / Instrument Selector */}
+            {onUserChange && (
+              <div className="lobby-instrument-row" aria-label="Select your musician role">
+                <span className="lobby-inst-label">Playing as</span>
+                <div className="lobby-inst-chips">
+                  {MUSICIAN_ROLES.map((role) => {
+                    const active = (user?.instrument || 'Vocalist') === role;
+                    return (
+                      <button
+                        key={role}
+                        type="button"
+                        className={`lobby-inst-pill ${active ? 'active' : ''}`}
+                        onClick={() => onUserChange({ ...user, instrument: role })}
+                        aria-pressed={active}
+                      >
+                        {role}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
-            <button
-              type="button"
-              className="btn btn-outline-secondary btn-secondary-action"
-              onClick={handleCopyShareLink}
-              title="Copy shareable meeting link"
-            >
-              <i className={`bi ${linkCopied ? 'bi-check2' : 'bi-link-45deg'}`}></i>
-              <span>{linkCopied ? 'Link copied' : 'Copy link'}</span>
-            </button>
-          </div>
+            {/* Meeting Management Form (New Meeting, Code or Shareable Link) */}
+            <form onSubmit={handleSubmit} className="lobby-form">
+              <div className="meeting-actions-row" role="group" aria-label="Meeting link actions">
+                <button
+                  type="button"
+                  className="btn btn-outline-secondary btn-secondary-action"
+                  onClick={handleNewMeeting}
+                  title="Generate a new meeting code"
+                >
+                  <i className="bi bi-plus-lg"></i>
+                  <span>New meeting</span>
+                </button>
 
-          <div className="input-group">
-            <span className="input-group-text" style={{ background: 'var(--bg-app)', borderColor: 'var(--border-subtle)', color: 'var(--text-muted)' }}>
-              <i className="bi bi-hash"></i>
-            </span>
-            <input
-              type="text"
-              className="form-control lobby-input"
-              placeholder="Meeting name, code, or link (e.g. abc-defg-hij)"
-              aria-label="Meeting name, code, or link"
-              value={roomName}
-              onChange={handleRoomInputChange}
-              required
+                <button
+                  type="button"
+                  className="btn btn-outline-secondary btn-secondary-action"
+                  onClick={handleCopyShareLink}
+                  title="Copy shareable meeting link"
+                >
+                  <i className={`bi ${linkCopied ? 'bi-check2' : 'bi-link-45deg'}`}></i>
+                  <span>{linkCopied ? 'Link copied' : 'Copy link'}</span>
+                </button>
+              </div>
+
+              <div className="input-group">
+                <span className="input-group-text lobby-hash-addon">
+                  <i className="bi bi-hash"></i>
+                </span>
+                <input
+                  type="text"
+                  className="form-control lobby-input"
+                  placeholder="Meeting name, code, or link (e.g. abc-defg-hij)"
+                  aria-label="Meeting name, code, or link"
+                  value={roomName}
+                  onChange={handleRoomInputChange}
+                  required
+                />
+              </div>
+
+              <button type="submit" className="btn btn-join" disabled={!roomName.trim()}>
+                <i className="bi bi-box-arrow-in-right" style={{ marginRight: '6px' }}></i>
+                <span>Join now</span>
+              </button>
+            </form>
+
+            {hasSessionNotes && (
+              <div className="lobby-session-notes-box">
+                <button
+                  type="button"
+                  className="btn btn-outline-secondary btn-secondary-action w-100"
+                  onClick={onToggleNotes}
+                  data-testid="lobby-session-notes-btn"
+                  title="View notes and action items from this meeting"
+                >
+                  <i className="bi bi-card-checklist" style={{ marginRight: '6px' }}></i>
+                  <span>{isNotesOpen ? 'Hide Meeting Notes & Actions' : 'View Meeting Notes & Actions'}</span>
+                </button>
+              </div>
+            )}
+
+            {/* Cloudflare Turnstile Security Verification */}
+            <TurnstileWidget
+              siteKey={turnstileSiteKey}
+              onVerified={(token) => {
+                setTurnstileVerified(true);
+                if (onTurnstileVerified) onTurnstileVerified(token);
+                setAuthError((prev) => (prev && prev.includes('Turnstile') ? '' : prev));
+              }}
             />
           </div>
-
-          <button type="submit" className="btn btn-join" disabled={!roomName.trim()}>
-            <i className="bi bi-box-arrow-in-right" style={{ marginRight: '6px' }}></i>
-            <span>Join now</span>
-          </button>
-        </form>
-
-        {hasSessionNotes && (
-          <div className="lobby-session-notes-box" style={{ marginTop: '12px', width: '100%' }}>
-            <button
-              type="button"
-              className="btn btn-outline-secondary w-100"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: '8px 14px',
-                fontSize: '0.85rem',
-                borderRadius: '8px',
-                borderColor: 'var(--border-subtle)',
-                backgroundColor: 'rgba(255, 255, 255, 0.04)'
-              }}
-              onClick={onToggleNotes}
-              data-testid="lobby-session-notes-btn"
-              title="View notes and action items from this meeting"
-            >
-              <i className="bi bi-card-checklist" style={{ marginRight: '6px', color: 'var(--brand-primary, #6366f1)' }}></i>
-              <span>{isNotesOpen ? 'Hide Meeting Notes & Actions' : 'View Meeting Notes & Actions'}</span>
-            </button>
-          </div>
-        )}
-
-        {/* Cloudflare Turnstile Security Verification */}
-        <TurnstileWidget
-          siteKey={turnstileSiteKey}
-          onVerified={(token) => {
-            setTurnstileVerified(true);
-            if (onTurnstileVerified) onTurnstileVerified(token);
-            setAuthError((prev) => (prev && prev.includes('Turnstile') ? '' : prev));
-          }}
-        />
+        </div>
       </div>
     </main>
   );

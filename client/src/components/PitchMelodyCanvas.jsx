@@ -173,7 +173,7 @@ export default function PitchMelodyCanvas({
 
         if (bw > 22 && sw) {
           ctx.fillStyle = barMatched ? '#072310' : '#ffffff';
-          ctx.font = '700 9px "Inter", sans-serif';
+          ctx.font = '700 9px "Manrope", sans-serif';
           ctx.fillText(langMode === 'hi' ? sw.devanagari : sw.shortSargam, x1 + 5, y + 3);
         }
         ctx.restore();
@@ -212,11 +212,11 @@ export default function PitchMelodyCanvas({
       ctx.stroke();
 
       ctx.textAlign = 'center';
-      ctx.font = '700 12px "Inter", sans-serif';
+      ctx.font = '700 12px "Manrope", sans-serif';
       ctx.fillStyle = '#fbbf24';
-      ctx.fillText(`🎵 Instrumental Intro... Singing starts in ${remaining}s`, width / 2, 28);
+      ctx.fillText(`Instrumental Intro — Singing starts in ${remaining}s`, width / 2, 28);
 
-      ctx.font = '500 10px "Inter", sans-serif';
+      ctx.font = '500 10px "Manrope", sans-serif';
       ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
       ctx.fillText(`First Note: ${swName} (${noteName}) — Click canvas to jump`, width / 2, 45);
       ctx.restore();
@@ -289,7 +289,7 @@ export default function PitchMelodyCanvas({
       ctx.stroke();
 
       ctx.fillStyle = isUserMatched ? '#072310' : '#ffffff';
-      ctx.font = '700 9px "Inter", sans-serif';
+      ctx.font = '700 9px "Manrope", sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(isUserMatched ? '✓ SUR' : 'YOU', px, py);
@@ -297,14 +297,14 @@ export default function PitchMelodyCanvas({
       ctx.textAlign = 'left';
       ctx.textBaseline = 'alphabetic';
       ctx.fillStyle = isUserMatched ? '#6ee7b7' : '#fde68a';
-      ctx.font = '700 10px "Inter", sans-serif';
+      ctx.font = '700 10px "Manrope", sans-serif';
       const swLabel = langMode === 'hi' ? liveMicPitch.devanagari : liveMicPitch.shortSargam;
       const errLabel = activeMatch ? `${activeMatch.errorPct}% err` : (liveMicPitch.inTune ? '✓ SUR' : `${liveMicPitch.cents > 0 ? '+' : ''}${liveMicPitch.cents}c`);
       ctx.fillText(`${swLabel} ${errLabel}`, Math.min(width - 88, px + 24), Math.max(18, py - 8));
       ctx.restore();
     } else if (!noteBars || noteBars.length === 0) {
-      ctx.fillStyle = 'rgba(156, 163, 175, 0.6)';
-      ctx.font = '500 12px "Inter", sans-serif';
+      ctx.fillStyle = 'rgba(184, 192, 207, 0.72)';
+      ctx.font = '500 12px "Manrope", sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText('Sing/play into mic OR separate/load a song to see live Swara bars scroll here', width / 2 + 16, height / 2);
     }
@@ -337,9 +337,9 @@ export default function PitchMelodyCanvas({
             data-testid="pmc-live-diff"
           >
             {liveMatch?.isMatched
-              ? `✨ SUR MILA! (${liveMatch.errorPct}% error ≤ ${tolLabel}%) ✓`
+              ? `SUR MILA (${liveMatch.errorPct}% error ≤ ${tolLabel}%)`
               : liveMatch
-                ? `⚠️ ${Math.round(liveMatch.errorPct)}% Error (${liveMatch.direction === 'flat' ? 'Flat' : 'Sharp'})`
+                ? `${Math.round(liveMatch.errorPct)}% Error (${liveMatch.direction === 'flat' ? 'Flat' : 'Sharp'})`
                 : `Sing into mic to match target bars (${tolLabel}% Tolerance)`}
           </span>
           <span className="pmc-badge">{noteBars.length} Note Bars</span>

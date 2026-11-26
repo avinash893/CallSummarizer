@@ -1982,7 +1982,10 @@ async function parseUpstreamSargamResponse(upRes) {
         data = {};
     }
     const ok = upRes.ok && data.success !== false;
-    const errorText = data.detail || data.error || (raw && raw.trim().slice(0, 260)) || '';
+    let errorText = data.detail || data.error || (raw && raw.trim().slice(0, 260)) || '';
+    if (/workspace\s+\S+\s+is\s+disabled/i.test(errorText)) {
+        errorText = `Cloud AI Stems server (Modal) is disabled (${errorText}). Re-enable your Modal workspace or use "Load Audio / Song" (CPU Pitch Mode) or run locally on GPU.`;
+    }
     return { ok, status: upRes.status, data, errorText };
 }
 

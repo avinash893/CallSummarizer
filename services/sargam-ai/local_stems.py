@@ -6,6 +6,7 @@ is offline or disabled. Outputs normalized JSON on stdout.
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -14,8 +15,6 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-
-import numpy as np
 
 
 def extract_video_id(url: str) -> str:
@@ -45,6 +44,7 @@ def has_cuda() -> bool:
 
 def extract_pitch_and_bars(audio_path: Path):
     """Extract normalized F0 pitch contour and discrete vocal note bars."""
+    import numpy as np
     from scipy.io import wavfile
 
     wav_tmp = audio_path.with_suffix(".tmp.wav")
@@ -244,14 +244,19 @@ def main():
     )
     args = parser.parse_args()
 
-    use_cuda = has_cuda()
     if args.probe:
-        import demucs  # noqa: F401
-        import yt_dlp  # noqa: F401
-
+        has_demucs = importlib.util.find_spec("demucs") is not None
+        has_ytdlp = importlib.util.find_spec("yt_dlp") is not None
         has_ffmpeg = shutil.which("ffmpeg") is not None
-        print(json.dumps({"ok": has_ffmpeg, "cuda": use_cuda, "ffmpeg": has_ffmpeg}))
+        has_nvidia = bool(shutil.which("nvidia-smi"))
+        print(json.dumps({
+            "ok": bool(has_demucs and has_ytdlp and has_ffmpeg),
+            "cuda": has_nvidia,
+            "ffmpeg": has_ffmpeg
+        }))
         return
+
+    use_cuda = has_cuda()
 
     cache_dir = Path(args.cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)

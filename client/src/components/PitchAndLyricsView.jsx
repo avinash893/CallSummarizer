@@ -46,8 +46,6 @@ export default function PitchAndLyricsView({
   const [isPlaying, setIsPlaying] = useState(false);
   const [needsAudioUnlock, setNeedsAudioUnlock] = useState(false);
   const [refPitchInfo, setRefPitchInfo] = useState(null);
-  const [showLyricsEditor, setShowLyricsEditor] = useState(false);
-  const [lyricsDraft, setLyricsDraft] = useState('');
   const [needsCookieHint, setNeedsCookieHint] = useState(false);
   const [tolerancePct, setTolerancePct] = useState(0.10);
   const [sessionStats, setSessionStats] = useState({
@@ -495,10 +493,10 @@ export default function PitchAndLyricsView({
       }, { broadcast: true });
       const detectedScale = applyDetectedScale(bars);
       setStatusMsg(
-        `Shared with room: ${bars.length} pitch notes & ${lyrics.length} lyric lines${detectedScale ? ` • Scale: ${detectedScale}` : '.'}`
+        `Shared with room: ${bars.length} pitch notes${detectedScale ? ` • Scale: ${detectedScale}` : '.'}`
       );
     } catch (e) {
-      setStatusMsg('Stems loaded & shared! (Cloud lyric extractor unavailable — use CPU Pitch Fit if needed.)');
+      setStatusMsg('Stems loaded & shared! (Cloud pitch extractor unavailable — use CPU Pitch Fit if needed.)');
     }
   };
 
@@ -539,7 +537,7 @@ export default function PitchAndLyricsView({
         const detectedScale = applyDetectedScale(inlineBars);
         const sourceTag = data.cached ? 'Loaded from cache & shared with room' : 'Shared with room (Cloud AI)';
         setStatusMsg(
-          `${sourceTag}: ${inlineBars.length} note bars & ${inlineLyrics.length} lyric cues${detectedScale ? ` • Key: ${detectedScale}` : '.'}`
+          `${sourceTag}: ${inlineBars.length} note bars${detectedScale ? ` • Key: ${detectedScale}` : '.'}`
         );
       } else {
         await fetchPitchAndLyricsForVocal(data.vocalUrl, stemPatch);
@@ -671,7 +669,7 @@ export default function PitchAndLyricsView({
         if (stemPatch.noteBars.length > 0) {
           const detectedScale = applyDetectedScale(stemPatch.noteBars);
           setStatusMsg(
-            `Shared with room (Cloud AI): ${stemPatch.noteBars.length} note bars & ${stemPatch.lyrics.length} lyric cues${detectedScale ? ` • Key: ${detectedScale}` : '.'}`
+            `Shared with room (Cloud AI): ${stemPatch.noteBars.length} note bars${detectedScale ? ` • Key: ${detectedScale}` : '.'}`
           );
         } else if (data.vocalUrl) {
           await fetchPitchAndLyricsForVocal(data.vocalUrl, stemPatch);
@@ -682,30 +680,6 @@ export default function PitchAndLyricsView({
     } finally {
       setIsBusy(false);
     }
-  };
-
-  const handleAutoDetectKey = () => {
-    if (!backingState?.noteBars?.length) return;
-    const fit = autoDetectVocalScaleAndRange(backingState.noteBars);
-    onUpdateJamState({ tonicMidi: fit.tonicMidi });
-    setStatusMsg(`Detected Key: ${midiToNoteName(fit.tonicMidi)} (Confidence ${fit.confidence}%)`);
-  };
-
-  const saveManualLyrics = () => {
-    const lines = lyricsDraft
-      .split(/\r?\n/)
-      .map((l) => l.trim())
-      .filter(Boolean);
-    const total = Math.max(duration || 120, lines.length * 4);
-    const step = total / Math.max(1, lines.length);
-    const parsed = lines.map((text, idx) => ({
-      start: Number((idx * step).toFixed(2)),
-      end: Number(((idx + 1) * step).toFixed(2)),
-      text
-    }));
-    onUpdateBackingState({ lyrics: parsed }, { broadcast: true, preserveLeader: true });
-    setShowLyricsEditor(false);
-    setStatusMsg(`Updated & shared ${parsed.length} cue lines for jam room.`);
   };
 
   const activeTargetBar = findActiveTargetBar(backingState?.noteBars, currentTime);
@@ -752,10 +726,6 @@ export default function PitchAndLyricsView({
   const sessionSharpPct = sessionStats.totalFrames > 0
     ? Math.round((sessionStats.sharpFrames / sessionStats.totalFrames) * 100)
     : 0;
-
-  const activeLyricIndex = (backingState?.lyrics || []).findIndex(
-    (l) => currentTime >= (l.start || 0) && currentTime <= (l.end ?? l.start + 6)
-  );
 
   return (
     <div className="pitch-lyrics-view" data-testid="pitch-lyrics-view">
@@ -827,18 +797,12 @@ export default function PitchAndLyricsView({
                 Upload YT Cookies
               </button>
             )}
-            {backingState?.noteBars?.length > 0 && (
-              <button type="button" className="btn btn-outline-warning btn-sm" onClick={handleAutoDetectKey}>
-                <i className="bi bi-stars me-1"></i>
-                Auto-Detect Key
-              </button>
-            )}
-            {onSyncBackingToRoom && (backingState?.vocalUrl || backingState?.lyrics?.length > 0) && (
+            {onSyncBackingToRoom && (backingState?.vocalUrl || backingState?.instUrl) && (
               <button
                 type="button"
                 className="btn btn-outline-info btn-sm"
                 onClick={() => onSyncBackingToRoom()}
-                title="Re-share loaded song stems & lyrics with everyone in the room"
+                title="Re-share loaded song stems with everyone in the room"
               >
                 <i className="bi bi-share me-1"></i>
                 Share to Room
@@ -1053,62 +1017,6 @@ export default function PitchAndLyricsView({
             liveMatch={liveMatch}
           />
         </div>
-      </div>
-
-      {/* Interactive Click-to-Jump Lyrics & Cue Sheet */}
-      <div className="plv-lyrics-panel">
-        <div className="plv-lyrics-header">
-          <div>
-            <i className="bi bi-music-note-list me-2 text-warning"></i>
-            <strong>Synced Lyrics & Cue Sheet</strong>
-            <span className="ms-2 text-muted small">Click any line to seek playback</span>
-          </div>
-          <button
-            type="button"
-            className="btn btn-sm btn-outline-secondary"
-            onClick={() => {
-              setLyricsDraft((backingState?.lyrics || []).map((l) => l.text).join('\n'));
-              setShowLyricsEditor(!showLyricsEditor);
-            }}
-          >
-            {showLyricsEditor ? 'Cancel' : 'Edit / Paste Lyrics'}
-          </button>
-        </div>
-
-        {showLyricsEditor ? (
-          <div className="plv-lyrics-editor">
-            <textarea
-              className="form-control"
-              rows={3}
-              placeholder="Paste lyrics or vocal cues (one line per phrase)..."
-              value={lyricsDraft}
-              onChange={(e) => setLyricsDraft(e.target.value)}
-            />
-            <button type="button" className="btn btn-primary btn-sm mt-2" onClick={saveManualLyrics}>
-              Apply Cue Sheet
-            </button>
-          </div>
-        ) : (
-          <div className="plv-lyrics-tray">
-            {(backingState?.lyrics || []).length === 0 ? (
-              <div className="plv-lyrics-empty">
-                No synced lyrics loaded yet. Split a YouTube song with AI Stems or click &ldquo;Edit / Paste Lyrics&rdquo; to add lyrics or chord cues.
-              </div>
-            ) : (
-              backingState.lyrics.map((line, idx) => (
-                <button
-                  key={`${line.start}-${idx}`}
-                  type="button"
-                  className={`plv-lyric-pill ${idx === activeLyricIndex ? 'active' : ''}`}
-                  onClick={() => handleSeek(line.start || 0)}
-                >
-                  <span className="lyric-time">{formatClock(line.start || 0)}</span>
-                  <span className="lyric-text">{line.text}</span>
-                </button>
-              ))
-            )}
-          </div>
-        )}
       </div>
 
       {/* Hidden dual stems audio elements */}

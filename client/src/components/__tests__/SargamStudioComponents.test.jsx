@@ -57,7 +57,7 @@ describe('SargamJam Studio Components', () => {
     expect(onUpdate).toHaveBeenCalledWith({ bpm: 100 });
   });
 
-  it('renders PitchAndLyricsView with AI Stems URL splitter, Dual Watchers, and Lyrics Tray', () => {
+  it('renders PitchAndLyricsView with AI Stems URL splitter and Dual Watchers without Lyrics Tray or Auto-Detect Key button', () => {
     render(
       <PitchAndLyricsView
         jamState={{ tonicMidi: 60, raga: 'All Notes', tuningMode: 'et' }}
@@ -67,7 +67,7 @@ describe('SargamJam Studio Components', () => {
           title: 'Practice Track',
           vocalUrl: '',
           instUrl: '',
-          noteBars: [],
+          noteBars: [{ start: 1, end: 2, freq: 261.6, midi: 60 }],
           lyrics: [{ start: 1, end: 4, text: 'Verse one cue line' }]
         }}
         onUpdateBackingState={vi.fn()}
@@ -77,7 +77,8 @@ describe('SargamJam Studio Components', () => {
     expect(screen.getByTestId('pitch-lyrics-view')).toBeInTheDocument();
     expect(screen.getByText('Your Mic Pitch')).toBeInTheDocument();
     expect(screen.getByText('Target Song Vocal')).toBeInTheDocument();
-    expect(screen.getByText('Verse one cue line')).toBeInTheDocument();
+    expect(screen.queryByText('Synced Lyrics & Cue Sheet')).not.toBeInTheDocument();
+    expect(screen.queryByText('Auto-Detect Key')).not.toBeInTheDocument();
   });
 
   it('omits removed Studio DAW tab in TopBar', () => {

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   buildScaleNotes,
   findNearestSwara,
@@ -21,6 +21,17 @@ export default function PitchMelodyCanvas({
 }) {
   const canvasRef = useRef(null);
   const trailRef = useRef([]);
+  const [canvasSizeTick, setCanvasSizeTick] = useState(0);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || typeof ResizeObserver === 'undefined') return;
+    const obs = new ResizeObserver(() => {
+      setCanvasSizeTick((t) => t + 1);
+    });
+    obs.observe(canvas);
+    return () => obs.disconnect();
+  }, []);
 
   // Append recent live mic pitch frames for fluid ribbon rendering
   useEffect(() => {
@@ -325,7 +336,7 @@ export default function PitchMelodyCanvas({
     }
 
     ctx.restore();
-  }, [noteBars, currentTime, duration, tonicMidi, raga, tuningMode, liveMicPitch, tolerancePct, liveMatch]);
+  }, [noteBars, currentTime, duration, tonicMidi, raga, tuningMode, liveMicPitch, tolerancePct, liveMatch, canvasSizeTick]);
 
   const handleCanvasClick = (e) => {
     if (!onSeek || !duration || duration <= 0) return;
@@ -345,19 +356,19 @@ export default function PitchMelodyCanvas({
   return (
     <div className="pitch-canvas-shell" data-testid="pitch-melody-canvas-wrap">
       <div className="pmc-header">
-        <span className="pmc-title">Vocal Note Bars (Pre-loaded Melody vs Your Voice)</span>
+        <span className="pmc-title">Vocal Note Bars</span>
         <div className="pmc-badges">
           <span
-            className={`pmc-badge ${liveMatch ? (liveMatch.isMatched ? 'in-tune' : 'off-pitch') : ''}`}
+            className={`pmc-badge pmc-status-badge ${liveMatch ? (liveMatch.isMatched ? 'in-tune' : 'off-pitch') : ''}`}
             data-testid="pmc-live-diff"
           >
             {liveMatch?.isMatched
-              ? `IN TUNE (${liveMatch.errorPct}% error ≤ ${tolLabel}%)`
+              ? `IN TUNE (${liveMatch.errorPct}%)`
               : liveMatch
-                ? `${Math.round(liveMatch.errorPct)}% Error (${liveMatch.direction === 'flat' ? 'Flat' : 'Sharp'})`
-                : `Sing into mic to match target bars (${tolLabel}% Tolerance)`}
+                ? `${Math.round(liveMatch.errorPct)}% Err (${liveMatch.direction === 'flat' ? 'Flat' : 'Sharp'})`
+                : `Ready (${tolLabel}% Tol)`}
           </span>
-          <span className="pmc-badge">{noteBars.length} Note Bars</span>
+          <span className="pmc-badge">{noteBars.length} Bars</span>
         </div>
       </div>
 

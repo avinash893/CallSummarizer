@@ -590,7 +590,7 @@ export default function PitchAndLyricsView({
         )}
       </div>
 
-      {/* Real-Time 10% Error Pitch Tolerance Banner */}
+      {/* Real-Time Pitch Tolerance Banner (fixed metrics & stable height — zero jump when sur flips) */}
       <div
         className={`plv-match-banner ${liveMatch ? (liveMatch.isMatched ? 'matched' : 'off-pitch') : ''}`}
         data-testid="pitch-match-banner"
@@ -599,26 +599,26 @@ export default function PitchAndLyricsView({
           <span className="plv-match-indicator" />
           <span className="plv-match-text">
             {liveMatch?.isMatched
-              ? `In Tune! Within ${tolLabel}% pitch tolerance (${liveMatch.errorPct}% error)`
+              ? `In Tune · ${liveMatch.errorPct}% error (≤ ${tolLabel}%)`
               : liveMatch
-                ? `Adjust pitch: ${liveMatch.direction === 'flat' ? 'Flat (too low)' : 'Sharp (too high)'} (${liveMatch.errorPct}% off, need ≤ ${tolLabel}%)`
+                ? `${liveMatch.direction === 'flat' ? 'Too Low (Flat)' : 'Too High (Sharp)'} · ${liveMatch.errorPct}% err (need ≤ ${tolLabel}%)`
                 : liveMicPitch?.freq > 50
-                  ? `Singing at ${liveMicPitch.freq} Hz (No active note bar)`
-                  : `Sing into mic to match the reference vocal (${tolLabel}% tolerance)...`}
+                  ? `Mic ${liveMicPitch.noteName || ''} · ${liveMicPitch.freq} Hz`
+                  : `Sing into mic to match reference (${tolLabel}% tolerance)`}
           </span>
         </div>
 
         <div className="plv-match-metrics">
-          <span className={`plv-metric-pill ${liveMatch ? (liveMatch.isMatched ? 'ok' : 'warn') : ''}`} data-testid="pitch-diff-badge">
-            {liveMatch ? `Error: ${liveMatch.errorPct}%` : 'Diff: --'}
+          <span className={`plv-metric-pill plv-metric-err ${liveMatch ? (liveMatch.isMatched ? 'ok' : 'warn') : ''}`} data-testid="pitch-diff-badge">
+            {liveMatch ? `Err: ${liveMatch.errorPct}%` : 'Diff: --'}
           </span>
-          <span className="plv-metric-pill" data-testid="pitch-accuracy-badge">
-            {sessionAcc !== null ? `Accuracy: ${sessionAcc}%` : 'Accuracy: --'}
+          <span className="plv-metric-pill plv-metric-acc" data-testid="pitch-accuracy-badge">
+            {sessionAcc !== null ? `Acc: ${sessionAcc}%` : 'Acc: --'}
           </span>
-          <span className="plv-metric-pill">
-            Flat: {sessionFlatPct}% · Sharp: {sessionSharpPct}%
+          <span className="plv-metric-pill plv-metric-fs">
+            F {sessionFlatPct}% · S {sessionSharpPct}%
           </span>
-          <span className="plv-metric-pill">
+          <span className="plv-metric-pill plv-metric-stk">
             Streak: {sessionStats.streak}
           </span>
           <div className="plv-tolerance-group" role="group" aria-label="Pitch error tolerance">
@@ -633,26 +633,25 @@ export default function PitchAndLyricsView({
               </button>
             ))}
           </div>
-          {sessionStats.totalFrames > 0 && (
-            <button
-              type="button"
-              className="plv-tol-btn"
-              onClick={() =>
-                setSessionStats({
-                  totalFrames: 0,
-                  matchedFrames: 0,
-                  flatFrames: 0,
-                  sharpFrames: 0,
-                  errorSum: 0,
-                  streak: 0,
-                  bestStreak: 0
-                })
-              }
-              title="Reset pitch accuracy session counters"
-            >
-              Reset
-            </button>
-          )}
+          <button
+            type="button"
+            className="plv-tol-btn plv-reset-btn"
+            disabled={sessionStats.totalFrames === 0}
+            onClick={() =>
+              setSessionStats({
+                totalFrames: 0,
+                matchedFrames: 0,
+                flatFrames: 0,
+                sharpFrames: 0,
+                errorSum: 0,
+                streak: 0,
+                bestStreak: 0
+              })
+            }
+            title="Reset pitch accuracy session counters"
+          >
+            Reset
+          </button>
         </div>
       </div>
 

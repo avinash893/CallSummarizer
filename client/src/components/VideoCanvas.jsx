@@ -87,24 +87,26 @@ function RemotePeerTile({ peer, isCaptured = false, onToggleCapture, telemetry =
         </div>
       )}
 
-      {/* Live Jam Pitch Badge */}
-      {pitchActive && (
-        <div className={`tile-pitch-badge ${inTune ? 'in-sur' : ''}`}>
-          <i className="bi bi-music-note-beamed"></i>
-          <span>{noteBadgeText}</span>
-          <small>{inTune ? 'IN TUNE' : `${telemetry.cents > 0 ? '+' : ''}${telemetry.cents}c`}</small>
-        </div>
-      )}
-
-      {/* Private Audio Capture indicator badge on top-left if active */}
-      {isCaptured && (
-        <div
-          className="tile-capture-badge"
-          title="Private audio capture active (listening privately)"
-          data-testid={`capture-badge-${peer.peerId}`}
-        >
-          <i className="bi bi-disc-fill pulse-record-dot"></i>
-          <span>Listening Privately</span>
+      {/* Top-Left Stacked Badges (Pitch + Capture — never overlap) */}
+      {(pitchActive || isCaptured) && (
+        <div className="tile-top-left-badges">
+          {pitchActive && (
+            <div className={`tile-pitch-badge ${inTune ? 'in-sur' : ''}`}>
+              <i className="bi bi-music-note-beamed"></i>
+              <span>{noteBadgeText}</span>
+              <small>{inTune ? 'IN TUNE' : `${telemetry.cents > 0 ? '+' : ''}${telemetry.cents}c`}</small>
+            </div>
+          )}
+          {isCaptured && (
+            <div
+              className="tile-capture-badge"
+              title="Private live speech transcription active"
+              data-testid={`capture-badge-${peer.peerId}`}
+            >
+              <i className="bi bi-disc-fill pulse-record-dot"></i>
+              <span>Transcribing</span>
+            </div>
+          )}
         </div>
       )}
 
@@ -258,12 +260,26 @@ export default function VideoCanvas({
             </div>
           )}
 
-          {/* Local Live Jam Pitch Badge */}
-          {localPitchInfo && (
-            <div className={`tile-pitch-badge ${localInTune ? 'in-sur' : ''}`}>
-              <i className="bi bi-music-note-beamed"></i>
-              <span>{localNoteText}</span>
-              <small>{localInTune ? 'IN TUNE' : `${localPitchInfo.cents > 0 ? '+' : ''}${localPitchInfo.cents}c`}</small>
+          {/* Top-Left Stacked Badges (Live Pitch + Speech Recognition — never overlap) */}
+          {(localPitchInfo || capturedPeerIds.includes('local')) && (
+            <div className="tile-top-left-badges">
+              {localPitchInfo && (
+                <div className={`tile-pitch-badge ${localInTune ? 'in-sur' : ''}`}>
+                  <i className="bi bi-music-note-beamed"></i>
+                  <span>{localNoteText}</span>
+                  <small>{localInTune ? 'IN TUNE' : `${localPitchInfo.cents > 0 ? '+' : ''}${localPitchInfo.cents}c`}</small>
+                </div>
+              )}
+              {capturedPeerIds.includes('local') && (
+                <div
+                  className="tile-capture-badge"
+                  title="Speech recognition active"
+                  data-testid="capture-badge-local"
+                >
+                  <i className="bi bi-disc-fill pulse-record-dot"></i>
+                  <span>Recognizing Speech</span>
+                </div>
+              )}
             </div>
           )}
 
@@ -271,18 +287,6 @@ export default function VideoCanvas({
             <div className="tile-raw-badge" title="Raw Instrument/Vocal mode enabled">
               <i className="bi bi-stars"></i>
               <span>Raw Audio</span>
-            </div>
-          )}
-
-          {/* Local Speech Capture indicator */}
-          {capturedPeerIds.includes('local') && (
-            <div
-              className="tile-capture-badge"
-              title="Speech recognition active"
-              data-testid="capture-badge-local"
-            >
-              <i className="bi bi-disc-fill pulse-record-dot"></i>
-              <span>Recognizing Speech</span>
             </div>
           )}
 

@@ -103,7 +103,7 @@ describe('VideoCanvas Component', () => {
 
     const badge = screen.getByTestId('capture-badge-peer-bob');
     expect(badge).toBeInTheDocument();
-    expect(badge).toHaveTextContent(/Listening Privately/i);
+    expect(badge).toHaveTextContent(/Transcribing/i);
 
     const captureBtn = screen.getByTestId('btn-capture-peer-bob');
     expect(captureBtn).toHaveClass('active');

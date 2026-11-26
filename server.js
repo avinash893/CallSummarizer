@@ -1833,9 +1833,9 @@ app.get('/api/sargam/get-pitch-and-lyrics', async (req, res) => {
 
 app.post('/api/ai-vocal-coach', async (req, res) => {
     const {
-        raga = 'Bilawal (Ionian)',
+        raga = 'Standard',
         tonicLabel = 'C4',
-        taal = 'Teentaal (16)',
+        taal = '4/4 Studio Click',
         bpm = 96,
         userAvgHz = 0,
         refAvgHz = 0,
@@ -1865,14 +1865,14 @@ app.post('/api/ai-vocal-coach', async (req, res) => {
 
     const apiKey = process.env.GEMINI_API_KEY || geminiApiKey || req.headers['x-gemini-api-key'];
     if (apiKey) {
-        const prompt = `You are a master Hindustani Classical Vocal Guru & Studio Producer.
-Analyze this musician's riyaz take and give concrete, warm, encouraging technical feedback:
-- Raga: ${raga} | Sa Tonic: ${tonicLabel} | Taal: ${taal} (${bpm} BPM)
-- Musician Mean Pitch: ${Number(userAvgHz || 0).toFixed(1)} Hz vs Reference: ${Number(refAvgHz || 0).toFixed(1)} Hz
-- Mean Pitch Offset: ${Number(avgCentsOffset || 0).toFixed(1)} cents (${avgCentsOffset > 12 ? 'tends Sharp/Chadha' : avgCentsOffset < -12 ? 'tends Flat/Utara' : 'well centered'})
-- Sur Accuracy (<=15c): ${Math.round(Number(inTunePercent || 0))}% | Pitch Stability StdDev: ${Number(stabilityCents || 0).toFixed(1)} cents
+        const prompt = `You are a professional Studio Vocal Coach & Audio Producer.
+Analyze this vocalist's take and give concrete, warm, encouraging technical feedback:
+- Scale: ${raga} | Key / Tonic: ${tonicLabel} | Meter: ${taal} (${bpm} BPM)
+- Vocalist Mean Pitch: ${Number(userAvgHz || 0).toFixed(1)} Hz vs Reference: ${Number(refAvgHz || 0).toFixed(1)} Hz
+- Mean Pitch Offset: ${Number(avgCentsOffset || 0).toFixed(1)} cents (${avgCentsOffset > 12 ? 'tends sharp' : avgCentsOffset < -12 ? 'tends flat' : 'well centered'})
+- In Tune Accuracy (<=15c): ${Math.round(Number(inTunePercent || 0))}% | Pitch Stability StdDev: ${Number(stabilityCents || 0).toFixed(1)} cents
 - Take Duration: ${Number(durationSec || 0).toFixed(1)}s
-- Swaras sung: ${Array.isArray(sampleNotes) ? sampleNotes.slice(0, 12).join(', ') : 'N/A'}
+- Notes sung: ${Array.isArray(sampleNotes) ? sampleNotes.slice(0, 12).join(', ') : 'N/A'}
 
 Return ONLY strict JSON (no markdown fences) with keys:
 {
@@ -1907,9 +1907,9 @@ Return ONLY strict JSON (no markdown fences) with keys:
                         analysis: {
                             score: Number(parsed.score) || computedScore,
                             pitchVerdict: parsed.pitchVerdict || 'Balanced tonal alignment with room for finer sustain.',
-                            strengths: Array.isArray(parsed.strengths) ? parsed.strengths : ['Steady breath support around tonic Sa'],
-                            drills: Array.isArray(parsed.drills) ? parsed.drills : ['Hold Sa-Pa-Sa with Tanpura for 8 cycles at 80 BPM'],
-                            raagTip: parsed.raagTip || `Focus on resting phrases gently on the Vadi swara of ${raga}.`
+                            strengths: Array.isArray(parsed.strengths) ? parsed.strengths : ['Steady breath support around the key center'],
+                            drills: Array.isArray(parsed.drills) ? parsed.drills : [`Sustained scale hold on ${tonicLabel} for 8 bars at ${bpm} BPM`],
+                            raagTip: parsed.raagTip || `Focus on settling cleanly onto target anchor notes in ${raga}.`
                         }
                     });
                 }
@@ -1921,32 +1921,32 @@ Return ONLY strict JSON (no markdown fences) with keys:
 
     const tendency =
         avgCentsOffset > 12
-            ? 'slightly sharp (Chadha swar) — relax throat tension on upper transitions'
+            ? 'slightly sharp — relax throat tension on upper transitions'
             : avgCentsOffset < -12
-              ? 'slightly flat (Utara swar) — engage diaphragmatic breath support'
-              : 'well centered inside the 15-cent Sur pocket';
+              ? 'slightly flat — engage diaphragmatic breath support'
+              : 'well centered inside the 15-cent In Tune pocket';
 
     return res.json({
         success: true,
         source: 'local-dsp-coach',
         analysis: {
             score: computedScore,
-            pitchVerdict: `Your phrasing in ${raga} is ${tendency} (${Math.round(Number(inTunePercent || 65))}% in-Sur).`,
+            pitchVerdict: `Your phrasing in ${raga} is ${tendency} (${Math.round(Number(inTunePercent || 65))}% In Tune).`,
             strengths: [
                 centsAbs <= 15
                     ? `Strong tonal center lock around ${tonicLabel} (${avgCentsOffset >= 0 ? '+' : ''}${Number(avgCentsOffset || 0).toFixed(1)}c avg)`
                     : `Consistent melodic contour tracked across ${Number(durationSec || 0).toFixed(1)}s take`,
                 stabilityCents <= 25
                     ? 'Smooth vibrato/sustain stability with low micro-jitter'
-                    : 'Expressive dynamic phrasing across swara transitions'
+                    : 'Expressive dynamic phrasing across note transitions'
             ],
             drills: [
-                `Slow Aakaar Kharaj Riyaz: hold Sa (${tonicLabel}) with Tanpura ON for 2 Teentaal cycles before ascending.`,
+                `Sustained scale hold: hold ${tonicLabel} with reference drone ON for 2 bars at ${bpm} BPM before ascending.`,
                 avgCentsOffset > 12
-                    ? 'Pitch Calibration Drill: hum descending Pa-Ma-Ga-Re-Sa slowly while watching the dial needle sit dead-center.'
-                    : 'Breath & Projection Drill: sing Sa-Re-Ga-Pa-Dha-Sa in staccato then sustained long notes.'
+                    ? 'Pitch calibration drill: hum descending 5-4-3-2-1 slowly while watching the tuner needle sit dead-center.'
+                    : 'Breath & projection drill: sing scale degrees 1-2-3-5-6-8 in staccato, then sustained long notes.'
             ],
-            raagTip: `${raga}: Approach Vadi swaras via subtle Meend (glide) rather than snapping sharply onto frets.`
+            raagTip: `${raga}: Approach anchor notes via smooth pitch calibration glides rather than snapping abruptly.`
         }
     });
 });
@@ -2288,4 +2288,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { app, server, rooms, sessions, generateMeetingCode, normalizeRoomId, normalizeSargamPayload };
+module.exports = { app, server, wss, rooms, sessions, generateMeetingCode, normalizeRoomId, normalizeSargamPayload };

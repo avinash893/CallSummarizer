@@ -12,6 +12,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const {
     startServer,
+    stopServer,
     resetServerState,
     createWsClient,
     waitForMessage,
@@ -26,6 +27,10 @@ test('Tier 2: Boundary & Corner Cases Suite', async (suite) => {
 
     suite.before(async () => {
         ctx = await startServer();
+    });
+
+    suite.after(async () => {
+        await stopServer();
     });
 
     suite.beforeEach(() => {
@@ -130,20 +135,33 @@ test('Tier 2: Boundary & Corner Cases Suite', async (suite) => {
         await closeWs(client);
     });
 
-    await suite.test('B1.6: Non-JSON raw text message sent to WebSocket server does not crash the server and falls back to safe generic broadcast', async () => {
+    await suite.test('B1.6: Malformed non-JSON messages sent to WebSocket server do not crash the server and do not leak to unjoined clients', async () => {
         const client1 = await createWsClient(ctx.wsUrl);
         const client2 = await createWsClient(ctx.wsUrl);
 
-        const rawString = 'NON-JSON-MALFORMED-SIGNAL-PAYLOAD-@@##';
-        const receivedPromise = new Promise((resolve) => {
-            client2.on('message', (data) => {
-                resolve(data.toString());
-            });
+        let leaked = false;
+        client2.on('message', () => {
+            leaked = true;
         });
 
+        const rawString = 'NON-JSON-MALFORMED-SIGNAL-PAYLOAD-@@##';
         client1.send(rawString);
-        const received = await receivedPromise;
-        assert.strictEqual(received, rawString);
+
+        await new Promise((r) => setTimeout(r, 120));
+        assert.strictEqual(leaked, false, 'Malformed non-JSON message must not leak to unjoined clients');
+        assert.strictEqual(client1.readyState, 1, 'Sender connection should remain open');
+        assert.strictEqual(client2.readyState, 1, 'Unjoined client connection should remain open');
+
+        // Verify server remains responsive to valid JSON signaling after malformed input
+        const joinPromise = waitForMessage(client1, (m) => m.type === 'room-users');
+        client1.send(JSON.stringify({
+            type: 'join-room',
+            roomId: 'post-malformed-check',
+            user: { name: 'Resilient Peer' }
+        }));
+        const joinAck = await joinPromise;
+        assert.strictEqual(joinAck.roomId, 'post-malformed-check');
+        assert.strictEqual(leaked, false);
 
         await closeWs(client1);
         await closeWs(client2);

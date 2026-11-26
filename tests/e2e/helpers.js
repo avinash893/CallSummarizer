@@ -3,7 +3,7 @@
  * Supports testing Unified Server, WebSocket Signaling, Turnstile, Google OAuth/Calendar, and NLP.
  */
 const { WebSocket } = require('ws');
-const { app, server, rooms, sessions, generateMeetingCode, normalizeRoomId } = require('../../server');
+const { app, server, wss, rooms, sessions, generateMeetingCode, normalizeRoomId } = require('../../server');
 
 let runningServer = null;
 let serverPort = null;
@@ -36,6 +36,28 @@ async function startServer() {
 function resetServerState() {
     rooms.clear();
     sessions.clear();
+}
+
+async function stopServer() {
+    if (wss && wss.clients) {
+        wss.clients.forEach((client) => {
+            try {
+                client.terminate();
+            } catch (e) {}
+        });
+    }
+    if (typeof server.closeAllConnections === 'function') {
+        server.closeAllConnections();
+    }
+    if (server.listening) {
+        await new Promise((resolve) => {
+            server.close(() => resolve());
+        });
+    }
+    runningServer = null;
+    serverPort = null;
+    baseUrl = null;
+    wsUrl = null;
 }
 
 function createWsClient(url) {
@@ -148,6 +170,7 @@ class SelectiveAudioCaptureSession {
 
 module.exports = {
     startServer,
+    stopServer,
     resetServerState,
     createWsClient,
     waitForMessage,

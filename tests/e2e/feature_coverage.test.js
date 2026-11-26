@@ -11,6 +11,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const {
     startServer,
+    stopServer,
     resetServerState,
     createWsClient,
     waitForMessage,
@@ -24,6 +25,10 @@ test('Tier 1: Feature Coverage Suite', async (suite) => {
 
     suite.before(async () => {
         ctx = await startServer();
+    });
+
+    suite.after(async () => {
+        await stopServer();
     });
 
     suite.beforeEach(() => {
@@ -544,11 +549,11 @@ test('Tier 1: Feature Coverage Suite', async (suite) => {
         assert.ok(calData.event);
         assert.strictEqual(calData.event.summary, 'Review E2E Test Suite and Turnstile Integration');
 
-        // Check 15-minute popup reminder
+        // Check 5-minute popup reminder
         const { reminders } = calData.event;
         assert.strictEqual(reminders.useDefault, false);
         assert.deepStrictEqual(reminders.overrides, [
-            { method: 'popup', minutes: 15 }
+            { method: 'popup', minutes: 5 }
         ]);
     });
 

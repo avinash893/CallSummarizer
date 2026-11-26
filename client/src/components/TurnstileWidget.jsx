@@ -33,6 +33,7 @@ export default function TurnstileWidget({ siteKey = DEFAULT_SITE_KEY, onVerified
   };
 
   useEffect(() => {
+    isMountedRef.current = true;
     if (verifiedRef.current) {
       if (onVerified) onVerified('turnstile_fallback_token');
       return;
@@ -52,9 +53,13 @@ export default function TurnstileWidget({ siteKey = DEFAULT_SITE_KEY, onVerified
         if (widgetIdRef.current !== null) {
           window.turnstile.remove(widgetIdRef.current);
         }
+        const activeTheme =
+          typeof document !== 'undefined' && document?.documentElement?.getAttribute('data-theme') === 'dark'
+            ? 'dark'
+            : 'light';
         widgetIdRef.current = window.turnstile.render(containerRef.current, {
           sitekey: siteKey,
-          theme: 'dark',
+          theme: activeTheme,
           size: 'normal',
           callback: (token) => {
             completeVerification(token);

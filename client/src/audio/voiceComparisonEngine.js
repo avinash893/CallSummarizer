@@ -31,7 +31,8 @@ function computePitchStats(samples, sampleRate, tonicMidi, ragaName, tuningMode,
       const info = findNearestSwaraFn(pt.freq, tonicMidi, tuningMode, ragaName);
       if (info) {
         centsList.push(info.cents);
-        if (info.sargam) swaraSet.add(info.sargam);
+        const noteLabel = info.noteName || info.sargam;
+        if (noteLabel) swaraSet.add(noteLabel);
       }
     }
   }
@@ -104,16 +105,16 @@ export function analyzeAndCompareVoices({
   const overallScore = Math.round(inTunePercent * 0.7 + stabilityScore * 0.3);
   const overallGrade =
     overallScore >= 90
-      ? 'S · Ustad'
+      ? 'S · Pro'
       : overallScore >= 78
-        ? 'A · Concert'
+        ? 'A · Tight'
         : overallScore >= 65
           ? 'B · Solid'
           : overallScore >= 50
             ? 'C · Practice'
             : 'D · Warmup';
 
-  let verdictTag = 'Sur Locked';
+  let verdictTag = 'In Tune';
   if (avgCentsOffset > 14) verdictTag = 'Sharp Tendency (+c)';
   else if (avgCentsOffset < -14) verdictTag = 'Flat Tendency (-c)';
   else if (inTunePercent < 55) verdictTag = 'Wide Vibrato / Pitch Search';

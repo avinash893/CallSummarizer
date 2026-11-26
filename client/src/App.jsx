@@ -899,16 +899,7 @@ export default function App() {
         }
 
         case 'remote-transcribe-toggle': {
-          const currentlyCapturingLocal = capturedPeerIdsRef.current.includes('local');
-          if (typeof msg.enabled === 'boolean') {
-            if (msg.enabled && !currentlyCapturingLocal) {
-              handleToggleCapturePeer('local');
-            } else if (!msg.enabled && currentlyCapturingLocal) {
-              handleToggleCapturePeer('local');
-            }
-          } else {
-            handleToggleCapturePeer('local');
-          }
+          // Remote capture must stay strictly private to the capturing client; ignore inbound toggle requests
           break;
         }
 
@@ -1398,12 +1389,6 @@ export default function App() {
         localRecognitionRef.current = null;
       }
 
-      if (!isLocal && wsRef.current && wsRef.current.readyState === 1) {
-        try {
-          wsRef.current.send(JSON.stringify({ type: 'remote-transcribe-toggle', targetPeerId: peerId, enabled: false }));
-        } catch (e) {}
-      }
-
       const activeSession = peerAudioRecordersRef.current.get(peerId);
       if (activeSession) {
         if (typeof activeSession.stop === 'function') {
@@ -1505,12 +1490,6 @@ export default function App() {
           speechActive = false;
         }
       }
-    }
-
-    if (!isLocal && wsRef.current && wsRef.current.readyState === 1) {
-      try {
-        wsRef.current.send(JSON.stringify({ type: 'remote-transcribe-toggle', targetPeerId: peerId, enabled: true }));
-      } catch (e) {}
     }
 
     // Record audio clip locally (and transcribe chunks if SpeechRecognition isn't running)

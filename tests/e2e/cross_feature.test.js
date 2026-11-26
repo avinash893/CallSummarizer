@@ -12,6 +12,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const {
     startServer,
+    stopServer,
     resetServerState,
     createWsClient,
     waitForMessage,
@@ -24,6 +25,10 @@ test('Tier 3: Cross-Feature Combinations Suite', async (suite) => {
 
     suite.before(async () => {
         ctx = await startServer();
+    });
+
+    suite.after(async () => {
+        await stopServer();
     });
 
     suite.beforeEach(() => {
@@ -252,9 +257,9 @@ test('Tier 3: Cross-Feature Combinations Suite', async (suite) => {
         assert.ok(calData.event);
         assert.strictEqual(calData.event.summary, extractedTask.title);
 
-        // Verify 15-minute popup notification reminder
+        // Verify 5-minute popup notification reminder
         assert.deepStrictEqual(calData.event.reminders.overrides, [
-            { method: 'popup', minutes: 15 }
+            { method: 'popup', minutes: 5 }
         ]);
 
         // Client marks task as calendarAdded

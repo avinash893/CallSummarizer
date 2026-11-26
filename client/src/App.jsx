@@ -428,9 +428,20 @@ export default function App() {
     let source;
     let analyser;
     let timer;
+    let resumeHandler;
 
     try {
       ctx = new Ctx();
+      if (ctx.state === 'suspended') {
+        ctx.resume?.().catch(() => {});
+        resumeHandler = () => {
+          if (ctx && ctx.state === 'suspended') {
+            ctx.resume?.().catch(() => {});
+          }
+        };
+        window.addEventListener('pointerdown', resumeHandler, { passive: true });
+        window.addEventListener('keydown', resumeHandler, { passive: true });
+      }
       const audioOnlyStream = typeof MediaStream !== 'undefined' ? new MediaStream(audioTracks) : localStream;
       source = ctx.createMediaStreamSource(audioOnlyStream);
       analyser = ctx.createAnalyser();
@@ -441,6 +452,9 @@ export default function App() {
       let silentFrames = 0;
       timer = setInterval(() => {
         if (!analyser) return;
+        if (ctx && ctx.state === 'suspended') {
+          ctx.resume?.().catch(() => {});
+        }
         analyser.getFloatTimeDomainData(buf);
         const hz = autoCorrelate(buf, ctx.sampleRate || 44100);
         if (hz > 0) {
@@ -472,7 +486,7 @@ export default function App() {
           }
         } else {
           silentFrames += 1;
-          if (silentFrames >= 3) {
+          if (silentFrames >= 12) {
             setLiveMicPitch((prev) => (prev === null ? null : null));
           }
         }
@@ -483,6 +497,10 @@ export default function App() {
 
     return () => {
       if (timer) clearInterval(timer);
+      if (resumeHandler) {
+        window.removeEventListener('pointerdown', resumeHandler);
+        window.removeEventListener('keydown', resumeHandler);
+      }
       try { source?.disconnect(); } catch (e) {}
       try { if (ctx && ctx.state !== 'closed') ctx.close(); } catch (e) {}
     };

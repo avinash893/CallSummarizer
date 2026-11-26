@@ -56,6 +56,14 @@ describe('Sargam Music Theory & DSP Engine', () => {
 
     const silence = new Float32Array(len);
     expect(autoCorrelate(silence, sampleRate)).toBe(-1);
+
+    // Softer vocal amplitude (RMS ~0.008) with harmonics still detects pitch cleanly
+    const softVocal = new Float32Array(len);
+    for (let i = 0; i < len; i++) {
+      softVocal[i] = 0.01 * Math.sin((2 * Math.PI * 220 * i) / sampleRate) + 0.003 * Math.sin((2 * Math.PI * 440 * i) / sampleRate);
+    }
+    const softDetected = autoCorrelate(softVocal, sampleRate);
+    expect(Math.abs(softDetected - 220)).toBeLessThan(3);
   });
 
   it('rejects single-frame octave spikes and decays cleanly to silence via createPitchSmoother', () => {

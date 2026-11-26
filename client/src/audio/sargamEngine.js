@@ -204,7 +204,7 @@ export function autoCorrelate(buf, sampleRate = 44100) {
     rms += buf[i] * buf[i];
   }
   rms = Math.sqrt(rms / SIZE);
-  if (rms < 0.015) return -1;
+  if (rms < 0.0045) return -1;
 
   const minPeriod = Math.max(2, Math.floor(sampleRate / 1050));
   const maxPeriod = Math.min(SIZE - 2, Math.floor(sampleRate / 65));
@@ -239,10 +239,10 @@ export function autoCorrelate(buf, sampleRate = 44100) {
     }
   }
 
-  if (bestCorr < 0.80) return -1;
+  if (bestCorr < 0.62) return -1;
 
   // Pick the first strong local peak (prevents octave-down subharmonic jumps)
-  const peakThreshold = Math.max(0.80, bestCorr * 0.94);
+  const peakThreshold = Math.max(0.62, bestCorr * 0.92);
   let chosenLag = -1;
   for (let lag = minPeriod + 1; lag < maxPeriod; lag++) {
     const val = corrs[lag];

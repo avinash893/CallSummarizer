@@ -164,4 +164,107 @@ test('SargamJam Unified Server - Sargam APIs, Vocal Coach & Jam WebSocket Sync',
         ws2.close();
         rooms.delete('yaman-riyaz-session');
     });
+
+    await t.test('shared audio upload & range streaming plus backing-sync & leader playback control', async (sub) => {
+        const roomKey = 'leader-sync-room';
+        const uploadRes = await fetch(`${baseUrl}/api/rooms/${roomKey}/shared-audio`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'audio/mpeg' },
+            body: Buffer.from('ID3mockaudio12345')
+        });
+        assert.strictEqual(uploadRes.status, 201);
+        const uploadData = await uploadRes.json();
+        assert.ok(uploadData.url.includes(`/api/rooms/${roomKey}/shared-audio/`));
+
+        const rangeRes = await fetch(`${baseUrl}${uploadData.url}`, {
+            headers: { Range: 'bytes=0-2' }
+        });
+        assert.strictEqual(rangeRes.status, 206);
+        assert.strictEqual(await rangeRes.text(), 'ID3');
+
+        const ws1 = new WebSocket(wsUrl);
+        const ws2 = new WebSocket(wsUrl);
+        sub.after(() => {
+            try { ws1.close(); } catch (e) {}
+            try { ws2.close(); } catch (e) {}
+            rooms.delete(roomKey);
+        });
+
+        await Promise.all([
+            new Promise((res) => ws1.once('open', res)),
+            new Promise((res) => ws2.once('open', res))
+        ]);
+
+        const waitMsg = (sock, type, pred = null) => new Promise((res) => {
+            const handler = (raw) => {
+                const msg = JSON.parse(raw.toString());
+                if (msg.type === type && (!pred || pred(msg))) {
+                    sock.off('message', handler);
+                    res(msg);
+                }
+            };
+            sock.on('message', handler);
+        });
+
+        const p1Ack = waitMsg(ws1, 'room-users');
+        ws1.send(JSON.stringify({ type: 'join-room', roomId: roomKey, user: { name: 'Asha' } }));
+        const ack1 = await p1Ack;
+        assert.strictEqual(ack1.leaderPeerId, ack1.selfPeerId);
+
+        const p2Ack = waitMsg(ws2, 'room-users');
+        ws2.send(JSON.stringify({ type: 'join-room', roomId: roomKey, user: { name: 'Dev' } }));
+        const ack2 = await p2Ack;
+        assert.strictEqual(ack2.leaderPeerId, ack1.selfPeerId);
+
+        // Peer 2 extracts/loads a track and broadcasts it -> Peer 1 receives it and Peer 2 becomes Leader
+        const p1Backing = waitMsg(ws1, 'backing-sync');
+        ws2.send(JSON.stringify({
+            type: 'backing-sync',
+            backingState: {
+                title: 'Synced Track',
+                vocalUrl: uploadData.url,
+                instUrl: '',
+                noteBars: [{ start: 0, end: 1, freq: 261.63 }],
+                lyrics: []
+            }
+        }));
+        const synced = await p1Backing;
+        assert.strictEqual(synced.backingState.vocalUrl, uploadData.url);
+        assert.strictEqual(synced.leaderPeerId, ack2.selfPeerId);
+
+        // Non-leader (ws1) trying to start playback is ignored, while Leader (ws2) start/stop relays cleanly
+        let unauthorizedRelayed = false;
+        const guardHandler = (raw) => {
+            const msg = JSON.parse(raw.toString());
+            if (msg.type === 'backing-control' && msg.senderPeerId === ack1.selfPeerId) {
+                unauthorizedRelayed = true;
+            }
+        };
+        ws2.on('message', guardHandler);
+        ws1.send(JSON.stringify({ type: 'backing-control', action: 'play', currentTime: 5 }));
+
+        const p1Play = waitMsg(ws1, 'backing-control', (m) => m.action === 'play');
+        ws2.send(JSON.stringify({ type: 'backing-control', action: 'play', currentTime: 12 }));
+        const playEvt = await p1Play;
+        ws2.off('message', guardHandler);
+        assert.strictEqual(unauthorizedRelayed, false);
+        assert.strictEqual(playEvt.isPlaying, true);
+        assert.strictEqual(playEvt.currentTime, 12);
+
+        // Peer 1 claims Leader and issues stop
+        const pLeaderChange = Promise.all([
+            waitMsg(ws1, 'room-leader-changed'),
+            waitMsg(ws2, 'room-leader-changed')
+        ]);
+        ws1.send(JSON.stringify({ type: 'claim-leader' }));
+        const [l1, l2] = await pLeaderChange;
+        assert.strictEqual(l1.leaderPeerId, ack1.selfPeerId);
+        assert.strictEqual(l2.leaderPeerId, ack1.selfPeerId);
+
+        const p2Stop = waitMsg(ws2, 'backing-control', (m) => m.action === 'stop');
+        ws1.send(JSON.stringify({ type: 'backing-control', action: 'stop', currentTime: 0 }));
+        const stopEvt = await p2Stop;
+        assert.strictEqual(stopEvt.isPlaying, false);
+        assert.strictEqual(stopEvt.currentTime, 0);
+    });
 });

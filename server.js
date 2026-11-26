@@ -358,6 +358,9 @@ function createDefaultBackingState() {
         instUrl: '',
         isPlaying: false,
         currentTime: 0,
+        vocalVol: 0.85,
+        instVol: 0.75,
+        playbackSeq: 0,
         noteBars: [],
         lyrics: [],
         updatedAt: Date.now()
@@ -370,10 +373,12 @@ function getOrCreateRoom(roomId, hostName = 'Host') {
         rooms.set(normalized, {
             roomId: normalized,
             host: hostName,
+            leaderPeerId: null,
             createdAt: new Date().toISOString(),
             participants: new Map(),
             transcript: [],
             tasks: [],
+            sharedAudioFiles: new Map(),
             jamState: createDefaultJamState(),
             backingState: createDefaultBackingState(),
             emptySince: null,
@@ -1296,6 +1301,55 @@ app.delete('/api/rooms/:id/session', (req, res) => {
     res.json({ success: true, message: `Room ${normalized} session cleared` });
 });
 
+// Room-scoped shared audio relay for locally uploaded backing tracks when offline
+app.post('/api/rooms/:id/shared-audio', express.raw({ type: '*/*', limit: '25mb' }), (req, res) => {
+    const normalized = normalizeRoomId(req.params.id);
+    if (!req.body || !Buffer.isBuffer(req.body) || req.body.length === 0) {
+        return res.status(400).json({ error: 'Uploaded audio is empty.' });
+    }
+    const room = getOrCreateRoom(normalized);
+    if (!room.sharedAudioFiles) room.sharedAudioFiles = new Map();
+    // Retain at most 3 files per room to bound memory
+    while (room.sharedAudioFiles.size >= 3) {
+        const oldestKey = room.sharedAudioFiles.keys().next().value;
+        room.sharedAudioFiles.delete(oldestKey);
+    }
+    const fileId = crypto.randomUUID().slice(0, 12);
+    const mimeType = String(req.headers['content-type'] || 'audio/mpeg').split(';')[0].trim();
+    room.sharedAudioFiles.set(fileId, { buffer: req.body, mimeType });
+    return res.status(201).json({
+        success: true,
+        url: `/api/rooms/${encodeURIComponent(normalized)}/shared-audio/${fileId}`
+    });
+});
+
+app.get('/api/rooms/:id/shared-audio/:fileId', (req, res) => {
+    const normalized = normalizeRoomId(req.params.id);
+    const room = rooms.get(normalized);
+    const entry = room?.sharedAudioFiles?.get(String(req.params.fileId || ''));
+    if (!entry) {
+        return res.status(404).json({ error: 'Shared audio not found' });
+    }
+    const { buffer, mimeType } = entry;
+    const total = buffer.length;
+    const range = req.headers.range;
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Content-Type', mimeType || 'audio/mpeg');
+    if (range) {
+        const m = range.match(/bytes=(\d+)-(\d*)/);
+        if (m) {
+            const start = Math.min(total - 1, parseInt(m[1], 10));
+            const end = m[2] ? Math.min(total - 1, parseInt(m[2], 10)) : total - 1;
+            res.status(206);
+            res.setHeader('Content-Range', `bytes ${start}-${end}/${total}`);
+            res.setHeader('Content-Length', end - start + 1);
+            return res.send(buffer.subarray(start, end + 1));
+        }
+    }
+    res.setHeader('Content-Length', total);
+    return res.send(buffer);
+});
+
 app.post('/api/rooms', async (req, res) => {
     const session = getSession(req);
     const turnstileToken = req.body?.turnstileToken || req.body?.token || req.headers?.['x-turnstile-token'];
@@ -2214,17 +2268,57 @@ function sendToPeer(roomId, targetPeerId, payload) {
     });
 }
 
+function getLeaderInfo(room) {
+    if (!room) return { leaderPeerId: null, leaderName: null };
+    if (room.leaderPeerId && room.participants.has(room.leaderPeerId)) {
+        return {
+            leaderPeerId: room.leaderPeerId,
+            leaderName: room.participants.get(room.leaderPeerId)?.name || 'Leader'
+        };
+    }
+    const firstPeerId = room.participants.keys().next().value || null;
+    room.leaderPeerId = firstPeerId;
+    return {
+        leaderPeerId: firstPeerId,
+        leaderName: firstPeerId ? (room.participants.get(firstPeerId)?.name || 'Leader') : null
+    };
+}
+
+function getLiveBackingSnapshot(room) {
+    const base = room?.backingState || createDefaultBackingState();
+    if (!base.isPlaying) return base;
+    const elapsedSec = Math.max(0, (Date.now() - (base.updatedAt || Date.now())) / 1000);
+    return {
+        ...base,
+        currentTime: Number((Number(base.currentTime || 0) + elapsedSec).toFixed(3))
+    };
+}
+
 function handlePeerLeave(ws) {
     if (!ws.roomId || !ws.peerId) return;
     const room = rooms.get(ws.roomId);
     if (room && room.participants.has(ws.peerId)) {
+        const wasLeader = room.leaderPeerId === ws.peerId;
         room.participants.delete(ws.peerId);
-        const remaining = Array.from(room.participants.values());
+        if (wasLeader) {
+            room.leaderPeerId = room.participants.keys().next().value || null;
+        }
+        const { leaderPeerId, leaderName } = getLeaderInfo(room);
+        const remaining = Array.from(room.participants.values()).map(sanitizePublicParticipant);
         broadcastToRoom(ws.roomId, {
             type: 'user-left',
             peerId: ws.peerId,
-            participants: remaining
+            participants: remaining,
+            leaderPeerId,
+            leaderName
         }, ws);
+        if (wasLeader && leaderPeerId) {
+            broadcastToRoom(ws.roomId, {
+                type: 'room-leader-changed',
+                leaderPeerId,
+                leaderName
+            });
+        }
 
         // When all participants have left, start 5-minute timer to delete session notes & actions
         if (room.participants.size === 0) {
@@ -2236,6 +2330,8 @@ function handlePeerLeave(ws) {
                 if (room.participants.size === 0) {
                     room.transcript = [];
                     room.tasks = [];
+                    room.sharedAudioFiles?.clear();
+                    room.leaderPeerId = null;
                     room.emptySince = null;
                     room.cleanupTimer = null;
                 }
@@ -2288,6 +2384,10 @@ wss.on('connection', (ws) => {
                 };
 
                 room.participants.set(ws.peerId, participant);
+                if (!room.leaderPeerId || !room.participants.has(room.leaderPeerId)) {
+                    room.leaderPeerId = ws.peerId;
+                }
+                const { leaderPeerId, leaderName } = getLeaderInfo(room);
                 const participantsList = Array.from(room.participants.values()).map(sanitizePublicParticipant);
 
                 // Acknowledge join to the connecting client with current room state
@@ -2296,11 +2396,13 @@ wss.on('connection', (ws) => {
                         type: 'room-users',
                         roomId: room.roomId,
                         selfPeerId: ws.peerId,
+                        leaderPeerId,
+                        leaderName,
                         participants: participantsList,
                         transcript: room.transcript,
                         tasks: room.tasks,
                         jamState: room.jamState || createDefaultJamState(),
-                        backingState: room.backingState || createDefaultBackingState()
+                        backingState: getLiveBackingSnapshot(room)
                     }), () => {});
                 } catch (e) {}
 
@@ -2308,7 +2410,9 @@ wss.on('connection', (ws) => {
                 broadcastToRoom(room.roomId, {
                     type: 'user-joined',
                     peer: participant,
-                    participants: participantsList
+                    participants: participantsList,
+                    leaderPeerId,
+                    leaderName
                 }, ws);
                 break;
             }
@@ -2389,21 +2493,85 @@ wss.on('connection', (ws) => {
                 break;
             }
 
+            case 'claim-leader': {
+                if (!ws.roomId) break;
+                const room = rooms.get(ws.roomId);
+                if (room && room.participants.has(ws.peerId)) {
+                    room.leaderPeerId = ws.peerId;
+                    const { leaderPeerId, leaderName } = getLeaderInfo(room);
+                    broadcastToRoom(ws.roomId, {
+                        type: 'room-leader-changed',
+                        leaderPeerId,
+                        leaderName
+                    });
+                }
+                break;
+            }
+
             case 'backing-sync': {
                 if (!ws.roomId || !data.backingState) break;
                 const room = rooms.get(ws.roomId);
                 if (room) {
+                    if (!data.preserveLeader || !room.leaderPeerId || !room.participants.has(room.leaderPeerId)) {
+                        room.leaderPeerId = ws.peerId;
+                    }
+                    const { leaderPeerId, leaderName } = getLeaderInfo(room);
                     room.backingState = {
                         ...(room.backingState || createDefaultBackingState()),
                         ...data.backingState,
+                        playbackSeq: ((room.backingState?.playbackSeq || 0) + 1),
                         updatedAt: Date.now()
                     };
                     broadcastToRoom(ws.roomId, {
                         type: 'backing-sync',
                         backingState: room.backingState,
+                        leaderPeerId,
+                        leaderName,
                         senderPeerId: ws.peerId
                     }, ws);
                 }
+                break;
+            }
+
+            case 'backing-control': {
+                if (!ws.roomId || !data.action) break;
+                const room = rooms.get(ws.roomId);
+                if (!room) break;
+                const { leaderPeerId, leaderName } = getLeaderInfo(room);
+                if (leaderPeerId && leaderPeerId !== ws.peerId) {
+                    break;
+                }
+                const prev = room.backingState || createDefaultBackingState();
+                const action = String(data.action);
+                const nextTime = Number.isFinite(Number(data.currentTime)) ? Math.max(0, Number(data.currentTime)) : prev.currentTime;
+                let nextPlaying = prev.isPlaying;
+                if (action === 'play') nextPlaying = true;
+                else if (action === 'pause') nextPlaying = false;
+                else if (action === 'stop') nextPlaying = false;
+
+                room.backingState = {
+                    ...prev,
+                    isPlaying: nextPlaying,
+                    currentTime: action === 'stop' ? 0 : nextTime,
+                    vocalVol: typeof data.vocalVol === 'number' ? data.vocalVol : prev.vocalVol,
+                    instVol: typeof data.instVol === 'number' ? data.instVol : prev.instVol,
+                    playbackSeq: (prev.playbackSeq || 0) + 1,
+                    updatedAt: Date.now()
+                };
+
+                broadcastToRoom(ws.roomId, {
+                    type: 'backing-control',
+                    action,
+                    isPlaying: room.backingState.isPlaying,
+                    currentTime: room.backingState.currentTime,
+                    vocalVol: room.backingState.vocalVol,
+                    instVol: room.backingState.instVol,
+                    seq: room.backingState.playbackSeq,
+                    sentAt: Date.now(),
+                    leaderPeerId,
+                    leaderName,
+                    senderPeerId: ws.peerId
+                }, ws);
                 break;
             }
 

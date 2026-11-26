@@ -2238,8 +2238,46 @@ input, textarea, select {
   cursor: pointer;
 }
 
-.plv-play-btn:hover {
+.plv-play-btn:hover:not(:disabled) {
   background: var(--accent-primary-hover);
+}
+
+.plv-play-btn:disabled,
+.plv-stop-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.plv-stop-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--border-default);
+  background: var(--bg-elevated, rgba(255, 255, 255, 0.08));
+  color: var(--text-main);
+  font-size: 0.95rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.plv-stop-btn:hover:not(:disabled) {
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+}
+
+.plv-leader-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: rgba(249, 115, 22, 0.14);
+  color: #fdba74;
+  border: 1px solid rgba(249, 115, 22, 0.35);
+  white-space: nowrap;
 }
 
 .plv-track-meta {

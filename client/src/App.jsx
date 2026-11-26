@@ -143,15 +143,22 @@ export default function App() {
     bpm: 96,
     isMetronomeOn: false
   });
+  const [selfPeerId, setSelfPeerId] = useState(null);
+  const [leaderPeerId, setLeaderPeerId] = useState(null);
+  const [leaderName, setLeaderName] = useState('');
+  const [backingControlEvent, setBackingControlEvent] = useState(null);
   const [backingState, setBackingState] = useState({
     title: '',
     vocalUrl: '',
     instUrl: '',
+    vocalVol: 0.85,
+    instVol: 0.75,
     isPlaying: false,
     currentTime: 0,
     noteBars: [],
     lyrics: []
   });
+  const backingStateRef = useRef(backingState);
   const [isRoomSynced, setIsRoomSynced] = useState(true);
   const [isRawAudio, setIsRawAudio] = useState(false);
   const [liveMicPitch, setLiveMicPitch] = useState(null);
@@ -521,17 +528,95 @@ export default function App() {
     [isInCall, isRoomSynced]
   );
 
-  const updateBackingState = useCallback((patch) => {
-    setBackingState((prev) => ({ ...prev, ...patch }));
-  }, []);
-
-  const syncBackingToRoom = useCallback(() => {
-    if (isInCall && wsRef.current && wsRef.current.readyState === 1) {
+  const updateBackingState = useCallback((patch, options = {}) => {
+    const next = { ...(backingStateRef.current || {}), ...patch };
+    backingStateRef.current = next;
+    setBackingState(next);
+    if (options?.broadcast && isInCall && wsRef.current && wsRef.current.readyState === 1) {
+      if (!options?.preserveLeader && selfPeerId) {
+        setLeaderPeerId(selfPeerId);
+        setLeaderName(user?.name || 'You');
+      }
       try {
-        wsRef.current.send(JSON.stringify({ type: 'backing-sync', backingState }));
+        wsRef.current.send(
+          JSON.stringify({
+            type: 'backing-sync',
+            backingState: next,
+            preserveLeader: Boolean(options?.preserveLeader)
+          })
+        );
       } catch (e) {}
     }
-  }, [isInCall, backingState]);
+  }, [isInCall, selfPeerId, user?.name]);
+
+  const syncBackingToRoom = useCallback((overrideState = null, options = {}) => {
+    const payloadState = overrideState || backingStateRef.current;
+    if (overrideState) {
+      backingStateRef.current = overrideState;
+      setBackingState(overrideState);
+    }
+    if (isInCall && wsRef.current && wsRef.current.readyState === 1) {
+      if (!options?.preserveLeader && selfPeerId) {
+        setLeaderPeerId(selfPeerId);
+        setLeaderName(user?.name || 'You');
+      }
+      try {
+        wsRef.current.send(
+          JSON.stringify({
+            type: 'backing-sync',
+            backingState: payloadState,
+            preserveLeader: Boolean(options?.preserveLeader)
+          })
+        );
+      } catch (e) {}
+    }
+  }, [isInCall, selfPeerId, user?.name]);
+
+  const sendBackingControl = useCallback((controlPayload) => {
+    if (!controlPayload || !controlPayload.action) return;
+    const prev = backingStateRef.current || {};
+    const nextPlaying =
+      controlPayload.action === 'play'
+        ? true
+        : controlPayload.action === 'pause' || controlPayload.action === 'stop'
+          ? false
+          : prev.isPlaying;
+    const nextTime =
+      controlPayload.action === 'stop'
+        ? 0
+        : Number.isFinite(Number(controlPayload.currentTime))
+          ? Math.max(0, Number(controlPayload.currentTime))
+          : prev.currentTime;
+    const nextState = {
+      ...prev,
+      isPlaying: nextPlaying,
+      currentTime: nextTime,
+      ...(typeof controlPayload.vocalVol === 'number' ? { vocalVol: controlPayload.vocalVol } : {}),
+      ...(typeof controlPayload.instVol === 'number' ? { instVol: controlPayload.instVol } : {})
+    };
+    backingStateRef.current = nextState;
+    setBackingState(nextState);
+
+    if (isInCall && wsRef.current && wsRef.current.readyState === 1) {
+      try {
+        wsRef.current.send(
+          JSON.stringify({
+            type: 'backing-control',
+            ...controlPayload,
+            currentTime: nextTime
+          })
+        );
+      } catch (e) {}
+    }
+  }, [isInCall]);
+
+  const claimBackingLeader = useCallback(() => {
+    if (isInCall && wsRef.current && wsRef.current.readyState === 1) {
+      try {
+        wsRef.current.send(JSON.stringify({ type: 'claim-leader' }));
+      } catch (e) {}
+    }
+  }, [isInCall]);
 
   const toggleRawAudio = useCallback(() => {
     setIsRawAudio((prev) => {
@@ -694,6 +779,13 @@ export default function App() {
         case 'room-users': {
           const others = (msg.participants || []).filter((p) => p.peerId !== msg.selfPeerId);
           setRemotePeers(others);
+          if (msg.selfPeerId) {
+            setSelfPeerId(msg.selfPeerId);
+          }
+          if (msg.leaderPeerId !== undefined) {
+            setLeaderPeerId(msg.leaderPeerId || null);
+            setLeaderName(msg.leaderName || '');
+          }
           if (Array.isArray(msg.transcript) && msg.transcript.length > 0) {
             setTranscript(msg.transcript);
           }
@@ -703,13 +795,33 @@ export default function App() {
           if (msg.jamState && typeof msg.jamState === 'object') {
             setJamState((prev) => ({ ...prev, ...msg.jamState }));
           }
-          if (msg.backingState && typeof msg.backingState === 'object' && (msg.backingState.vocalUrl || msg.backingState.title)) {
-            setBackingState((prev) => ({ ...prev, ...msg.backingState }));
+          if (msg.backingState && typeof msg.backingState === 'object' && (msg.backingState.vocalUrl || msg.backingState.instUrl || msg.backingState.title)) {
+            const nextBacking = { ...(backingStateRef.current || {}), ...msg.backingState };
+            backingStateRef.current = nextBacking;
+            setBackingState(nextBacking);
+            if (msg.backingState.isPlaying) {
+              setBackingControlEvent({
+                action: 'play',
+                isPlaying: true,
+                currentTime: msg.backingState.currentTime || 0,
+                vocalVol: msg.backingState.vocalVol,
+                instVol: msg.backingState.instVol,
+                seq: msg.backingState.playbackSeq || 1,
+                sentAt: Date.now(),
+                receivedAt: Date.now(),
+                leaderPeerId: msg.leaderPeerId || null,
+                leaderName: msg.leaderName || ''
+              });
+            }
           }
           break;
         }
 
         case 'user-joined': {
+          if (msg.leaderPeerId !== undefined) {
+            setLeaderPeerId(msg.leaderPeerId || null);
+            setLeaderName(msg.leaderName || '');
+          }
           const newPeer = msg.peer;
           if (!newPeer) break;
           setRemotePeers((prev) => {
@@ -830,6 +942,10 @@ export default function App() {
           setCapturedPeerIds((prev) => prev.filter((id) => id !== leftId));
           remoteStreamsRef.current.delete(leftId);
           setRemotePeers((prev) => prev.filter((p) => p.peerId !== leftId));
+          if (msg.leaderPeerId !== undefined) {
+            setLeaderPeerId(msg.leaderPeerId || null);
+            setLeaderName(msg.leaderName || '');
+          }
           break;
         }
 
@@ -872,10 +988,57 @@ export default function App() {
           break;
         }
 
-        case 'backing-sync': {
-          if (msg.backingState && typeof msg.backingState === 'object') {
-            setBackingState((prev) => ({ ...prev, ...msg.backingState }));
+        case 'room-leader-changed': {
+          if (msg.leaderPeerId !== undefined) {
+            setLeaderPeerId(msg.leaderPeerId || null);
+            setLeaderName(msg.leaderName || '');
           }
+          break;
+        }
+
+        case 'backing-sync': {
+          if (msg.leaderPeerId !== undefined) {
+            setLeaderPeerId(msg.leaderPeerId || null);
+            setLeaderName(msg.leaderName || '');
+          }
+          if (msg.backingState && typeof msg.backingState === 'object') {
+            const nextBacking = { ...(backingStateRef.current || {}), ...msg.backingState };
+            backingStateRef.current = nextBacking;
+            setBackingState(nextBacking);
+            if (msg.backingState.isPlaying) {
+              setBackingControlEvent({
+                action: 'play',
+                isPlaying: true,
+                currentTime: msg.backingState.currentTime || 0,
+                vocalVol: msg.backingState.vocalVol,
+                instVol: msg.backingState.instVol,
+                seq: msg.backingState.playbackSeq || 1,
+                sentAt: Date.now(),
+                receivedAt: Date.now(),
+                leaderPeerId: msg.leaderPeerId || null,
+                leaderName: msg.leaderName || ''
+              });
+            }
+          }
+          break;
+        }
+
+        case 'backing-control': {
+          if (msg.leaderPeerId !== undefined) {
+            setLeaderPeerId(msg.leaderPeerId || null);
+            setLeaderName(msg.leaderName || '');
+          }
+          const prev = backingStateRef.current || {};
+          const nextBacking = {
+            ...prev,
+            isPlaying: typeof msg.isPlaying === 'boolean' ? msg.isPlaying : prev.isPlaying,
+            currentTime: typeof msg.currentTime === 'number' ? msg.currentTime : prev.currentTime,
+            ...(typeof msg.vocalVol === 'number' ? { vocalVol: msg.vocalVol } : {}),
+            ...(typeof msg.instVol === 'number' ? { instVol: msg.instVol } : {})
+          };
+          backingStateRef.current = nextBacking;
+          setBackingState(nextBacking);
+          setBackingControlEvent({ ...msg, receivedAt: Date.now() });
           break;
         }
 
@@ -1012,6 +1175,13 @@ export default function App() {
 
     setLiveInterimSpeech(null);
     setCaptureNotice('');
+    setSelfPeerId(null);
+    setLeaderPeerId(null);
+    setLeaderName('');
+    setBackingControlEvent(null);
+    const pausedBacking = { ...(backingStateRef.current || {}), isPlaying: false };
+    backingStateRef.current = pausedBacking;
+    setBackingState(pausedBacking);
     setIsInCall(false);
     setIsScreenSharing(false);
     setRemotePeers([]);
@@ -1939,7 +2109,7 @@ export default function App() {
               )}
 
               <div className="stage-content-area">
-                {activeStudioTab === 'stage' && (
+                <div style={{ display: activeStudioTab === 'stage' ? 'flex' : 'none', flex: 1, minWidth: 0, minHeight: 0, width: '100%', height: '100%' }}>
                   <VideoCanvas
                     isVideoOn={isVideoOn}
                     isAudioOn={isAudioOn}
@@ -1955,9 +2125,9 @@ export default function App() {
                     langMode={jamState.langMode}
                     isRawAudio={isRawAudio}
                   />
-                )}
+                </div>
 
-                {activeStudioTab === 'pitch' && (
+                <div style={{ display: activeStudioTab === 'pitch' ? 'flex' : 'none', flex: 1, minWidth: 0, minHeight: 0, width: '100%', height: '100%' }}>
                   <PitchAndLyricsView
                     jamState={jamState}
                     onUpdateJamState={updateJamState}
@@ -1965,8 +2135,15 @@ export default function App() {
                     backingState={backingState}
                     onUpdateBackingState={updateBackingState}
                     onSyncBackingToRoom={syncBackingToRoom}
+                    roomName={extractRoomCode(roomName) || 'strategy-sync'}
+                    selfPeerId={selfPeerId}
+                    leaderPeerId={leaderPeerId}
+                    leaderName={leaderName}
+                    onSendBackingControl={sendBackingControl}
+                    onClaimLeader={claimBackingLeader}
+                    backingControlEvent={backingControlEvent}
                   />
-                )}
+                </div>
               </div>
 
               <div className="stage-dock-footer">

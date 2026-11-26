@@ -24,17 +24,26 @@ export default function PitchAndLyricsView({
   liveMicPitch,
   backingState,
   onUpdateBackingState,
-  onSyncBackingToRoom
+  onSyncBackingToRoom,
+  roomName = '',
+  selfPeerId = null,
+  leaderPeerId = null,
+  leaderName = '',
+  onSendBackingControl = null,
+  onClaimLeader = null,
+  backingControlEvent = null
 }) {
+  const isLeader = !leaderPeerId || !selfPeerId || leaderPeerId === selfPeerId;
   const [songUrlInput, setSongUrlInput] = useState('');
   const [statusMsg, setStatusMsg] = useState('');
   const [isBusy, setIsBusy] = useState(false);
   const [backendStatus, setBackendStatus] = useState('checking'); // 'online' | 'offline' | 'checking'
-  const [vocalVol, setVocalVol] = useState(0.85);
-  const [instVol, setInstVol] = useState(0.75);
+  const [vocalVol, setVocalVol] = useState(backingState?.vocalVol ?? 0.85);
+  const [instVol, setInstVol] = useState(backingState?.instVol ?? 0.75);
   const [currentTime, setCurrentTime] = useState(backingState?.currentTime || 0);
   const [duration, setDuration] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [needsAudioUnlock, setNeedsAudioUnlock] = useState(false);
   const [refPitchInfo, setRefPitchInfo] = useState(null);
   const [showLyricsEditor, setShowLyricsEditor] = useState(false);
   const [lyricsDraft, setLyricsDraft] = useState('');
@@ -58,6 +67,7 @@ export default function PitchAndLyricsView({
   const audioCtxRef = useRef(null);
   const analyserRef = useRef(null);
   const sourceConnectedRef = useRef(false);
+  const lastAppliedSeqRef = useRef(0);
 
   // Check cloud stem separator availability
   useEffect(() => {
@@ -75,6 +85,11 @@ export default function PitchAndLyricsView({
 
   // Keep dual stem audio element volumes updated
   useEffect(() => {
+    if (typeof backingState?.vocalVol === 'number') setVocalVol(backingState.vocalVol);
+    if (typeof backingState?.instVol === 'number') setInstVol(backingState.instVol);
+  }, [backingState?.vocalVol, backingState?.instVol]);
+
+  useEffect(() => {
     if (vocalAudioRef.current) vocalAudioRef.current.volume = vocalVol;
   }, [vocalVol]);
 
@@ -82,16 +97,96 @@ export default function PitchAndLyricsView({
     if (instAudioRef.current) instAudioRef.current.volume = instVol;
   }, [instVol]);
 
-  // Synchronize remote backingState play/seek changes
+  // Synchronize shared audio sources across participants
   useEffect(() => {
     if (!backingState) return;
-    if (vocalAudioRef.current && backingState.vocalUrl && vocalAudioRef.current.src !== backingState.vocalUrl) {
-      vocalAudioRef.current.src = backingState.vocalUrl;
+    const vEl = vocalAudioRef.current;
+    const iEl = instAudioRef.current;
+    let changed = false;
+    if (vEl && backingState.vocalUrl && vEl.getAttribute('src') !== backingState.vocalUrl) {
+      vEl.src = backingState.vocalUrl;
+      changed = true;
+    } else if (vEl && !backingState.vocalUrl && vEl.getAttribute('src')) {
+      vEl.pause();
+      vEl.removeAttribute('src');
+      changed = true;
     }
-    if (instAudioRef.current && backingState.instUrl && instAudioRef.current.src !== backingState.instUrl) {
-      instAudioRef.current.src = backingState.instUrl;
+    if (iEl && backingState.instUrl && iEl.getAttribute('src') !== backingState.instUrl) {
+      iEl.src = backingState.instUrl;
+      changed = true;
+    } else if (iEl && !backingState.instUrl && iEl.getAttribute('src')) {
+      iEl.pause();
+      iEl.removeAttribute('src');
+      changed = true;
+    }
+    if (changed && !backingState.isPlaying) {
+      vEl?.pause();
+      iEl?.pause();
+      setIsPlaying(false);
+      setCurrentTime(backingState.currentTime || 0);
     }
   }, [backingState?.vocalUrl, backingState?.instUrl]);
+
+  // Synchronize Leader transport commands (play, pause, stop, seek, volume)
+  useEffect(() => {
+    if (!backingControlEvent) return;
+    if (backingControlEvent.seq && backingControlEvent.seq <= lastAppliedSeqRef.current) return;
+    if (backingControlEvent.seq) lastAppliedSeqRef.current = backingControlEvent.seq;
+
+    const vEl = vocalAudioRef.current;
+    const iEl = instAudioRef.current;
+    const driftSec =
+      backingControlEvent.isPlaying && backingControlEvent.sentAt
+        ? Math.max(0, Math.min(0.6, (Date.now() - backingControlEvent.sentAt) / 1000))
+        : 0;
+    const targetSec =
+      backingControlEvent.action === 'stop'
+        ? 0
+        : Math.max(0, Number(backingControlEvent.currentTime || 0) + driftSec);
+
+    if (typeof backingControlEvent.vocalVol === 'number') setVocalVol(backingControlEvent.vocalVol);
+    if (typeof backingControlEvent.instVol === 'number') setInstVol(backingControlEvent.instVol);
+
+    if (
+      backingControlEvent.action === 'play' ||
+      backingControlEvent.action === 'pause' ||
+      backingControlEvent.action === 'stop' ||
+      backingControlEvent.action === 'seek'
+    ) {
+      if (vEl && Math.abs((vEl.currentTime || 0) - targetSec) > 0.15) {
+        try { vEl.currentTime = targetSec; } catch (e) {}
+      }
+      if (iEl && backingState?.instUrl && Math.abs((iEl.currentTime || 0) - targetSec) > 0.15) {
+        try { iEl.currentTime = targetSec; } catch (e) {}
+      }
+      setCurrentTime(targetSec);
+    }
+
+    if (backingControlEvent.action === 'stop' || backingControlEvent.action === 'pause' || backingControlEvent.isPlaying === false) {
+      vEl?.pause();
+      iEl?.pause();
+      setIsPlaying(false);
+      setNeedsAudioUnlock(false);
+    } else if (backingControlEvent.action === 'play' || backingControlEvent.isPlaying === true) {
+      ensureVocalAnalyser();
+      if (audioCtxRef.current?.state === 'suspended') {
+        audioCtxRef.current.resume().catch(() => {});
+      }
+      Promise.all([
+        backingState?.vocalUrl && vEl ? vEl.play() : Promise.resolve(),
+        backingState?.instUrl && iEl ? iEl.play() : Promise.resolve()
+      ])
+        .then(() => {
+          setIsPlaying(true);
+          setNeedsAudioUnlock(false);
+        })
+        .catch(() => {
+          setIsPlaying(false);
+          setNeedsAudioUnlock(true);
+          setStatusMsg('Leader started playback — click Play once to unlock browser audio.');
+        });
+    }
+  }, [backingControlEvent]);
 
   const stopPlaybackLoop = () => {
     if (rafRef.current) {
@@ -157,6 +252,9 @@ export default function PitchAndLyricsView({
 
       if (vEl?.ended) {
         setIsPlaying(false);
+        if (isLeader) {
+          onSendBackingControl?.({ action: 'stop', currentTime: 0, vocalVol, instVol });
+        }
         return;
       }
       rafRef.current = requestAnimationFrame(tick);
@@ -164,17 +262,43 @@ export default function PitchAndLyricsView({
 
     rafRef.current = requestAnimationFrame(tick);
     return stopPlaybackLoop;
-  }, [isPlaying, jamState.tonicMidi, jamState.tuningMode, jamState.raga, backingState?.noteBars, backingState?.instUrl]);
+  }, [isPlaying, isLeader, vocalVol, instVol, onSendBackingControl, jamState.tonicMidi, jamState.tuningMode, jamState.raga, backingState?.noteBars, backingState?.instUrl]);
 
   const togglePlay = async () => {
     const vEl = vocalAudioRef.current;
     const iEl = instAudioRef.current;
     if (!backingState?.vocalUrl && !backingState?.instUrl) return;
 
+    if (!isLeader) {
+      if (needsAudioUnlock || (backingState?.isPlaying && !isPlaying)) {
+        ensureVocalAnalyser();
+        if (audioCtxRef.current?.state === 'suspended') {
+          audioCtxRef.current.resume().catch(() => {});
+        }
+        try {
+          const offset = Number(backingState?.currentTime || currentTime || 0);
+          if (vEl && offset > 0) try { vEl.currentTime = offset; } catch (e) {}
+          if (iEl && offset > 0) try { iEl.currentTime = offset; } catch (e) {}
+          if (backingState?.vocalUrl && vEl) await vEl.play();
+          if (backingState?.instUrl && iEl) await iEl.play();
+          setIsPlaying(true);
+          setNeedsAudioUnlock(false);
+          setStatusMsg(`Synced with Leader (${leaderName || 'Host'}).`);
+        } catch (e) {
+          setStatusMsg('Click play again to unlock browser audio.');
+        }
+        return;
+      }
+      setStatusMsg(`Only Leader (${leaderName || 'Host'}) controls playback. Click Take Leader to control.`);
+      return;
+    }
+
     if (isPlaying) {
+      const pausedAt = vEl?.currentTime || iEl?.currentTime || currentTime || 0;
       vEl?.pause();
       iEl?.pause();
       setIsPlaying(false);
+      onSendBackingControl?.({ action: 'pause', currentTime: pausedAt, vocalVol, instVol });
       return;
     }
 
@@ -183,19 +307,41 @@ export default function PitchAndLyricsView({
       audioCtxRef.current.resume().catch(() => {});
     }
     try {
+      const startAt = vEl?.currentTime || iEl?.currentTime || currentTime || 0;
       if (backingState?.vocalUrl && vEl) await vEl.play();
       if (backingState?.instUrl && iEl) await iEl.play();
       setIsPlaying(true);
+      setNeedsAudioUnlock(false);
+      onSendBackingControl?.({ action: 'play', currentTime: startAt, vocalVol, instVol });
     } catch (e) {
       setStatusMsg('Click play again after audio loads to start playback.');
     }
   };
 
+  const handleStop = () => {
+    if (!isLeader) {
+      setStatusMsg(`Only Leader (${leaderName || 'Host'}) can stop playback.`);
+      return;
+    }
+    const vEl = vocalAudioRef.current;
+    const iEl = instAudioRef.current;
+    vEl?.pause();
+    iEl?.pause();
+    if (vEl) try { vEl.currentTime = 0; } catch (e) {}
+    if (iEl) try { iEl.currentTime = 0; } catch (e) {}
+    setIsPlaying(false);
+    setCurrentTime(0);
+    setNeedsAudioUnlock(false);
+    onSendBackingControl?.({ action: 'stop', currentTime: 0, vocalVol, instVol });
+  };
+
   const handleSeek = (targetSec) => {
+    if (!isLeader) return;
     const clamped = Math.max(0, Math.min(duration || 600, targetSec));
     if (vocalAudioRef.current) vocalAudioRef.current.currentTime = clamped;
     if (instAudioRef.current) instAudioRef.current.currentTime = clamped;
     setCurrentTime(clamped);
+    onSendBackingControl?.({ action: 'seek', currentTime: clamped, vocalVol, instVol });
   };
 
   const applyDetectedScale = (bars) => {
@@ -208,7 +354,7 @@ export default function PitchAndLyricsView({
     return null;
   };
 
-  const fetchPitchAndLyricsForVocal = async (vocalUrl) => {
+  const fetchPitchAndLyricsForVocal = async (vocalUrl, basePatch = {}) => {
     if (!vocalUrl) return;
     setStatusMsg('Extracting Whisper Lyrics & YIN Pitch Contour...');
     try {
@@ -228,15 +374,16 @@ export default function PitchAndLyricsView({
 
       const lyrics = Array.isArray(data.lyrics) ? data.lyrics : [];
       onUpdateBackingState({
+        ...basePatch,
         noteBars: bars,
         lyrics
-      });
+      }, { broadcast: true });
       const detectedScale = applyDetectedScale(bars);
       setStatusMsg(
-        `Ready: ${bars.length} pitch notes & ${lyrics.length} lyric lines${detectedScale ? ` • Scale: ${detectedScale}` : '.'}`
+        `Shared with room: ${bars.length} pitch notes & ${lyrics.length} lyric lines${detectedScale ? ` • Scale: ${detectedScale}` : '.'}`
       );
     } catch (e) {
-      setStatusMsg('Stems loaded! (Cloud lyric extractor unavailable — use CPU Pitch Fit if needed.)');
+      setStatusMsg('Stems loaded & shared! (Cloud lyric extractor unavailable — use CPU Pitch Fit if needed.)');
     }
   };
 
@@ -261,22 +408,25 @@ export default function PitchAndLyricsView({
 
       const inlineBars = Array.isArray(data.noteBars) ? data.noteBars : [];
       const inlineLyrics = Array.isArray(data.lyrics) ? data.lyrics : [];
-
-      onUpdateBackingState({
+      const stemPatch = {
         title: data.title || 'AI Separated Song',
         vocalUrl: data.vocalUrl || '',
         instUrl: data.instUrl || '',
         noteBars: inlineBars,
-        lyrics: inlineLyrics
-      });
+        lyrics: inlineLyrics,
+        isPlaying: false,
+        currentTime: 0
+      };
+
+      onUpdateBackingState(stemPatch, { broadcast: true });
 
       if (inlineBars.length > 0) {
         const detectedScale = applyDetectedScale(inlineBars);
         setStatusMsg(
-          `Ready (Cloud AI): ${inlineBars.length} note bars & ${inlineLyrics.length} lyric cues${detectedScale ? ` • Key: ${detectedScale}` : '.'}`
+          `Shared with room (Cloud AI): ${inlineBars.length} note bars & ${inlineLyrics.length} lyric cues${detectedScale ? ` • Key: ${detectedScale}` : '.'}`
         );
       } else {
-        await fetchPitchAndLyricsForVocal(data.vocalUrl);
+        await fetchPitchAndLyricsForVocal(data.vocalUrl, stemPatch);
       }
     } catch (err) {
       setStatusMsg(`Error: ${err.message}`);
@@ -317,39 +467,67 @@ export default function PitchAndLyricsView({
 
     try {
       const blobUrl = URL.createObjectURL(file);
+      const trackTitle = file.name.replace(/\.[^.]+$/, '');
       onUpdateBackingState({
-        title: file.name.replace(/\.[^.]+$/, ''),
+        title: trackTitle,
         vocalUrl: blobUrl,
         instUrl: '',
         noteBars: [],
-        lyrics: []
+        lyrics: [],
+        isPlaying: false,
+        currentTime: 0
       });
 
       if (localOnly || backendStatus === 'offline') {
-        setStatusMsg('Analyzing pitch contour in-browser (no cloud needed)...');
+        setStatusMsg('Analyzing pitch contour & sharing track to room...');
+        const rawBytes = await file.arrayBuffer();
+        let shareableUrl = blobUrl;
+        if (roomName) {
+          try {
+            const shareRes = await fetch(`/api/rooms/${encodeURIComponent(roomName)}/shared-audio`, {
+              method: 'POST',
+              headers: { 'Content-Type': file.type || 'audio/mpeg' },
+              body: rawBytes
+            });
+            if (shareRes.ok) {
+              const shareData = await shareRes.json();
+              if (shareData.url) shareableUrl = shareData.url;
+            }
+          } catch (e) {}
+        }
+
         const Ctx = window.AudioContext || window.webkitAudioContext;
         if (Ctx) {
           const ctx = new Ctx();
-          const buf = await file.arrayBuffer();
-          const audioBuf = await ctx.decodeAudioData(buf);
+          const audioBuf = await ctx.decodeAudioData(rawBytes.slice(0));
           setDuration(audioBuf.duration);
           const { noteBars } = await analyzeAudioBufferPitchAsync(audioBuf, (pct) => {
             setStatusMsg(`Analyzing pitch in-browser: ${pct}%`);
           });
           const fit = autoDetectVocalScaleAndRange(noteBars);
           onUpdateBackingState({
-            title: file.name.replace(/\.[^.]+$/, ''),
-            vocalUrl: blobUrl,
+            title: trackTitle,
+            vocalUrl: shareableUrl,
             instUrl: '',
-            noteBars
-          });
+            noteBars,
+            isPlaying: false,
+            currentTime: 0
+          }, { broadcast: true });
           if (fit && fit.confidence > 25) {
             onUpdateJamState({ tonicMidi: fit.tonicMidi });
-            setStatusMsg(`Decoded ${noteBars.length} notes • Detected Key: ${midiToNoteName(fit.tonicMidi)} (${fit.confidence}% match)`);
+            setStatusMsg(`Shared ${noteBars.length} notes • Key: ${midiToNoteName(fit.tonicMidi)} (${fit.confidence}% match)`);
           } else {
-            setStatusMsg(`Decoded ${noteBars.length} pitch notes locally.`);
+            setStatusMsg(`Shared ${noteBars.length} pitch notes with room.`);
           }
           try { await ctx.close(); } catch (err) {}
+        } else {
+          onUpdateBackingState({
+            title: trackTitle,
+            vocalUrl: shareableUrl,
+            instUrl: '',
+            isPlaying: false,
+            currentTime: 0
+          }, { broadcast: true });
         }
       } else {
         setStatusMsg('Uploading track to AI Demucs GPU splitter...');
@@ -364,20 +542,23 @@ export default function PitchAndLyricsView({
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Upload separation failed');
-        onUpdateBackingState({
-          title: data.title || file.name,
+        const stemPatch = {
+          title: data.title || trackTitle,
           vocalUrl: data.vocalUrl || blobUrl,
           instUrl: data.instUrl || '',
           noteBars: Array.isArray(data.noteBars) ? data.noteBars : [],
-          lyrics: Array.isArray(data.lyrics) ? data.lyrics : []
-        });
-        if (Array.isArray(data.noteBars) && data.noteBars.length > 0) {
-          const detectedScale = applyDetectedScale(data.noteBars);
+          lyrics: Array.isArray(data.lyrics) ? data.lyrics : [],
+          isPlaying: false,
+          currentTime: 0
+        };
+        onUpdateBackingState(stemPatch, { broadcast: true });
+        if (stemPatch.noteBars.length > 0) {
+          const detectedScale = applyDetectedScale(stemPatch.noteBars);
           setStatusMsg(
-            `Ready (Cloud AI): ${data.noteBars.length} note bars & ${(data.lyrics || []).length} lyric cues${detectedScale ? ` • Key: ${detectedScale}` : '.'}`
+            `Shared with room (Cloud AI): ${stemPatch.noteBars.length} note bars & ${stemPatch.lyrics.length} lyric cues${detectedScale ? ` • Key: ${detectedScale}` : '.'}`
           );
         } else if (data.vocalUrl) {
-          await fetchPitchAndLyricsForVocal(data.vocalUrl);
+          await fetchPitchAndLyricsForVocal(data.vocalUrl, stemPatch);
         }
       }
     } catch (err) {
@@ -406,9 +587,9 @@ export default function PitchAndLyricsView({
       end: Number(((idx + 1) * step).toFixed(2)),
       text
     }));
-    onUpdateBackingState({ lyrics: parsed });
+    onUpdateBackingState({ lyrics: parsed }, { broadcast: true, preserveLeader: true });
     setShowLyricsEditor(false);
-    setStatusMsg(`Updated ${parsed.length} cue lines for jam room.`);
+    setStatusMsg(`Updated & shared ${parsed.length} cue lines for jam room.`);
   };
 
   const activeTargetBar = findActiveTargetBar(backingState?.noteBars, currentTime);
@@ -534,11 +715,28 @@ export default function PitchAndLyricsView({
               <button
                 type="button"
                 className="btn btn-outline-info btn-sm"
-                onClick={onSyncBackingToRoom}
-                title="Share loaded song stems & lyrics with everyone in the room"
+                onClick={() => onSyncBackingToRoom()}
+                title="Re-share loaded song stems & lyrics with everyone in the room"
               >
                 <i className="bi bi-share me-1"></i>
-                Sync Track to Room
+                Share to Room
+              </button>
+            )}
+            {leaderPeerId && (
+              <span className="plv-leader-pill" data-testid="backing-leader-badge">
+                <i className="bi bi-broadcast me-1"></i>
+                {isLeader ? 'Leader: You' : `Leader: ${leaderName || 'Host'}`}
+              </span>
+            )}
+            {!isLeader && onClaimLeader && (
+              <button
+                type="button"
+                className="btn btn-outline-warning btn-sm"
+                data-testid="btn-claim-leader"
+                onClick={onClaimLeader}
+                title="Take playback control for the whole room"
+              >
+                Take Leader
               </button>
             )}
           </div>
@@ -553,9 +751,22 @@ export default function PitchAndLyricsView({
                   type="button"
                   className={`plv-play-btn ${isPlaying ? 'playing' : ''}`}
                   onClick={togglePlay}
+                  disabled={!isLeader && !needsAudioUnlock && !(backingState?.isPlaying && !isPlaying)}
                   aria-label={isPlaying ? 'Pause backing stems' : 'Play backing stems'}
+                  title={isLeader ? (isPlaying ? 'Pause for room' : 'Play for room') : (needsAudioUnlock ? 'Unlock local audio sync' : `Controlled by ${leaderName || 'Leader'}`)}
                 >
                   <i className={`bi ${isPlaying ? 'bi-pause-fill' : 'bi-play-fill'}`}></i>
+                </button>
+                <button
+                  type="button"
+                  className="plv-stop-btn"
+                  data-testid="btn-backing-stop"
+                  onClick={handleStop}
+                  disabled={!isLeader}
+                  aria-label="Stop backing stems"
+                  title={isLeader ? 'Stop & reset playback for room' : `Controlled by ${leaderName || 'Leader'}`}
+                >
+                  <i className="bi bi-stop-fill"></i>
                 </button>
                 <div className="plv-track-meta">
                   <strong>{backingState.title || 'Loaded Jam Track'}</strong>
@@ -567,6 +778,7 @@ export default function PitchAndLyricsView({
                   max={duration || 100}
                   step="0.1"
                   value={currentTime}
+                  disabled={!isLeader}
                   onChange={(e) => handleSeek(Number(e.target.value))}
                   className="plv-scrubber"
                   aria-label="Track seek slider"
@@ -574,12 +786,38 @@ export default function PitchAndLyricsView({
                 <div className="plv-stem-faders">
                   <label>
                     <span>Vocal</span>
-                    <input type="range" min="0" max="1" step="0.02" value={vocalVol} onChange={(e) => setVocalVol(Number(e.target.value))} />
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.02"
+                      value={vocalVol}
+                      onChange={(e) => {
+                        const nextVal = Number(e.target.value);
+                        setVocalVol(nextVal);
+                        if (isLeader) {
+                          onSendBackingControl?.({ action: 'volume', currentTime, vocalVol: nextVal, instVol });
+                        }
+                      }}
+                    />
                   </label>
                   {backingState.instUrl && (
                     <label>
                       <span>Beat</span>
-                      <input type="range" min="0" max="1" step="0.02" value={instVol} onChange={(e) => setInstVol(Number(e.target.value))} />
+                      <input
+                        type="range"
+                        min="0"
+                        max="1"
+                        step="0.02"
+                        value={instVol}
+                        onChange={(e) => {
+                          const nextVal = Number(e.target.value);
+                          setInstVol(nextVal);
+                          if (isLeader) {
+                            onSendBackingControl?.({ action: 'volume', currentTime, vocalVol, instVol: nextVal });
+                          }
+                        }}
+                      />
                     </label>
                   )}
                 </div>

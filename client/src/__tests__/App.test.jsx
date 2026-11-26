@@ -242,10 +242,11 @@ describe('App Main Flow', () => {
     fireEvent.click(screen.getByTestId('btn-toggle-raw-audio'));
     expect(screen.getByTestId('btn-toggle-raw-audio')).toHaveAttribute('aria-pressed', 'true');
 
-    // Switch to Pitch & Lyrics tab; Studio DAW tab should be removed
+    // Switch to Pitch & Lyrics tab; Studio DAW tab should be removed and VideoCanvas stays mounted for peer audio
     expect(screen.queryByTestId('tab-studio-daw')).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId('tab-studio-pitch'));
     expect(screen.getByTestId('pitch-lyrics-view')).toBeInTheDocument();
+    expect(screen.getByTestId('local-video-tile')).toBeInTheDocument();
 
     // Return to Stage
     fireEvent.click(screen.getByTestId('tab-studio-stage'));

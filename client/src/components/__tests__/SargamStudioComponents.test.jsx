@@ -98,4 +98,63 @@ describe('SargamJam Studio Components', () => {
     expect(screen.getByTestId('tab-studio-pitch')).toBeInTheDocument();
     expect(screen.queryByTestId('tab-studio-daw')).not.toBeInTheDocument();
   });
+
+  it('locks follower transport controls while allowing Leader play/stop and Claim Leader takeover', () => {
+    const onSendControl = vi.fn();
+    const onClaimLeader = vi.fn();
+
+    const { rerender } = render(
+      <PitchAndLyricsView
+        jamState={{ tonicMidi: 60, raga: 'All Notes', tuningMode: 'et' }}
+        onUpdateJamState={vi.fn()}
+        liveMicPitch={null}
+        backingState={{
+          title: 'Leader Jam',
+          vocalUrl: '/api/rooms/r1/shared-audio/abc',
+          instUrl: '',
+          noteBars: [],
+          lyrics: []
+        }}
+        onUpdateBackingState={vi.fn()}
+        selfPeerId="peer-follower"
+        leaderPeerId="peer-leader"
+        leaderName="Riya"
+        onSendBackingControl={onSendControl}
+        onClaimLeader={onClaimLeader}
+      />
+    );
+
+    expect(screen.getByTestId('backing-leader-badge')).toHaveTextContent('Leader: Riya');
+    expect(screen.getByTestId('btn-backing-stop')).toBeDisabled();
+    expect(screen.getByLabelText('Play backing stems')).toBeDisabled();
+
+    fireEvent.click(screen.getByTestId('btn-claim-leader'));
+    expect(onClaimLeader).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <PitchAndLyricsView
+        jamState={{ tonicMidi: 60, raga: 'All Notes', tuningMode: 'et' }}
+        onUpdateJamState={vi.fn()}
+        liveMicPitch={null}
+        backingState={{
+          title: 'Leader Jam',
+          vocalUrl: '/api/rooms/r1/shared-audio/abc',
+          instUrl: '',
+          noteBars: [],
+          lyrics: []
+        }}
+        onUpdateBackingState={vi.fn()}
+        selfPeerId="peer-follower"
+        leaderPeerId="peer-follower"
+        leaderName="Dev"
+        onSendBackingControl={onSendControl}
+        onClaimLeader={onClaimLeader}
+      />
+    );
+
+    expect(screen.getByTestId('backing-leader-badge')).toHaveTextContent('Leader: You');
+    expect(screen.getByTestId('btn-backing-stop')).not.toBeDisabled();
+    fireEvent.click(screen.getByTestId('btn-backing-stop'));
+    expect(onSendControl).toHaveBeenCalledWith(expect.objectContaining({ action: 'stop', currentTime: 0 }));
+  });
 });

@@ -1323,23 +1323,23 @@ app.post('/api/rooms/:id/shared-audio', express.raw({ type: '*/*', limit: '25mb'
     });
 });
 
-app.get('/api/rooms/:id/shared-audio/:fileId', (req, res) => {
-    const normalized = normalizeRoomId(req.params.id);
-    const room = rooms.get(normalized);
-    const entry = room?.sharedAudioFiles?.get(String(req.params.fileId || ''));
-    if (!entry) {
-        return res.status(404).json({ error: 'Shared audio not found' });
-    }
-    const { buffer, mimeType } = entry;
+function sendBufferWithRange(req, res, buffer, mimeType) {
     const total = buffer.length;
     const range = req.headers.range;
     res.setHeader('Accept-Ranges', 'bytes');
     res.setHeader('Content-Type', mimeType || 'audio/mpeg');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
     if (range) {
-        const m = range.match(/bytes=(\d+)-(\d*)/);
+        const m = String(range).match(/bytes=(\d+)-(\d*)/);
         if (m) {
-            const start = Math.min(total - 1, parseInt(m[1], 10));
-            const end = m[2] ? Math.min(total - 1, parseInt(m[2], 10)) : total - 1;
+            const start = parseInt(m[1], 10);
+            const rawEnd = m[2] ? parseInt(m[2], 10) : total - 1;
+            if (!Number.isFinite(start) || start >= total || start < 0) {
+                res.status(416);
+                res.setHeader('Content-Range', `bytes */${total}`);
+                return res.end();
+            }
+            const end = Math.min(total - 1, Math.max(start, rawEnd));
             res.status(206);
             res.setHeader('Content-Range', `bytes ${start}-${end}/${total}`);
             res.setHeader('Content-Length', end - start + 1);
@@ -1348,6 +1348,16 @@ app.get('/api/rooms/:id/shared-audio/:fileId', (req, res) => {
     }
     res.setHeader('Content-Length', total);
     return res.send(buffer);
+}
+
+app.get('/api/rooms/:id/shared-audio/:fileId', (req, res) => {
+    const normalized = normalizeRoomId(req.params.id);
+    const room = rooms.get(normalized);
+    const entry = room?.sharedAudioFiles?.get(String(req.params.fileId || ''));
+    if (!entry) {
+        return res.status(404).json({ error: 'Shared audio not found' });
+    }
+    return sendBufferWithRange(req, res, entry.buffer, entry.mimeType);
 });
 
 app.post('/api/rooms', async (req, res) => {
@@ -1967,6 +1977,58 @@ app.get('/api/sargam/health', async (req, res) => {
     }
 });
 
+const sargamAudioCache = new Map();
+const sargamAudioInFlight = new Map();
+const MAX_SARGAM_CACHE_ENTRIES = 6;
+const MAX_SARGAM_CACHE_BYTES = 35 * 1024 * 1024;
+
+function getOrFetchSargamAudio(upstreamUrl) {
+    if (sargamAudioCache.has(upstreamUrl)) {
+        const hit = sargamAudioCache.get(upstreamUrl);
+        // Refresh LRU order
+        sargamAudioCache.delete(upstreamUrl);
+        sargamAudioCache.set(upstreamUrl, hit);
+        return Promise.resolve(hit);
+    }
+    if (sargamAudioInFlight.has(upstreamUrl)) {
+        return sargamAudioInFlight.get(upstreamUrl);
+    }
+    const promise = (async () => {
+        const upRes = await fetch(upstreamUrl, { signal: AbortSignal.timeout(45000) });
+        if (!upRes.ok) {
+            const err = new Error(`Upstream audio returned ${upRes.status}`);
+            err.statusCode = upRes.status;
+            throw err;
+        }
+        const mimeType = upRes.headers.get('content-type') || 'audio/mpeg';
+        const arrayBuf = await upRes.arrayBuffer();
+        const buffer = Buffer.from(arrayBuf);
+        if (buffer.length > 0 && buffer.length <= MAX_SARGAM_CACHE_BYTES) {
+            while (sargamAudioCache.size >= MAX_SARGAM_CACHE_ENTRIES) {
+                const oldestKey = sargamAudioCache.keys().next().value;
+                sargamAudioCache.delete(oldestKey);
+            }
+            sargamAudioCache.set(upstreamUrl, { buffer, mimeType });
+        }
+        return { buffer, mimeType };
+    })();
+    sargamAudioInFlight.set(upstreamUrl, promise);
+    promise.finally(() => {
+        sargamAudioInFlight.delete(upstreamUrl);
+    });
+    return promise;
+}
+
+function warmSargamAudioCache(payload, backend) {
+    if (!payload) return;
+    [payload.vocalUrl, payload.instUrl].forEach((clientUrl) => {
+        const upstream = toBackendVocalUrl(clientUrl, backend);
+        if (upstream && !sargamAudioCache.has(upstream) && !sargamAudioInFlight.has(upstream)) {
+            getOrFetchSargamAudio(upstream).catch(() => {});
+        }
+    });
+}
+
 app.post('/api/sargam/separate-stems', async (req, res) => {
     const { url, sourceUrl, backend: requestedBackend } = req.body || {};
     const targetUrl = (url || sourceUrl || '').trim();
@@ -1988,7 +2050,9 @@ app.post('/api/sargam/separate-stems', async (req, res) => {
         if (!upRes.ok || data.success === false) {
             return res.status(upRes.ok ? 422 : upRes.status).json({ error: data.detail || data.error || 'Stem separation failed.' });
         }
-        return res.json(normalizeSargamPayload(data, backend, 'AI Separated Track'));
+        const normalized = normalizeSargamPayload(data, backend, 'AI Separated Track');
+        warmSargamAudioCache(normalized, backend);
+        return res.json(normalized);
     } catch (err) {
         return res.status(502).json({ error: `Stem backend unreachable: ${err.message}` });
     }
@@ -2025,7 +2089,9 @@ app.post('/api/sargam/separate-stems-file', express.raw({ type: '*/*', limit: '6
         if (!upRes.ok || data.success === false) {
             return res.status(upRes.ok ? 422 : upRes.status).json({ error: data.detail || data.error || 'File stem separation failed.' });
         }
-        return res.json(normalizeSargamPayload(data, backend, 'Uploaded Song Stems'));
+        const normalized = normalizeSargamPayload(data, backend, 'Uploaded Song Stems');
+        warmSargamAudioCache(normalized, backend);
+        return res.json(normalized);
     } catch (err) {
         return res.status(502).json({ error: `Stem file backend unreachable: ${err.message}` });
     }
@@ -2064,23 +2130,13 @@ app.get('/api/sargam/audio', async (req, res) => {
     }
     const backend = resolveSargamBackend(req.query.backend);
     const upstreamUrl = `${backend}/api/audio?file=${encodeURIComponent(file)}`;
-    const headers = {};
-    if (req.headers.range) {
-        headers.Range = req.headers.range;
-    }
     try {
-        const upRes = await fetch(upstreamUrl, { headers });
-        res.status(upRes.status);
-        ['content-type', 'content-length', 'content-range', 'accept-ranges', 'cache-control'].forEach((h) => {
-            const val = upRes.headers.get(h);
-            if (val) res.setHeader(h, val);
-        });
-        if (!upRes.headers.get('accept-ranges')) {
-            res.setHeader('Accept-Ranges', 'bytes');
-        }
-        const arrayBuf = await upRes.arrayBuffer();
-        return res.send(Buffer.from(arrayBuf));
+        const entry = await getOrFetchSargamAudio(upstreamUrl);
+        return sendBufferWithRange(req, res, entry.buffer, entry.mimeType);
     } catch (err) {
+        if (err.statusCode) {
+            return res.status(err.statusCode).json({ error: err.message });
+        }
         return res.status(502).json({ error: `Audio stream proxy error: ${err.message}` });
     }
 });
@@ -2398,6 +2454,7 @@ wss.on('connection', (ws) => {
                         selfPeerId: ws.peerId,
                         leaderPeerId,
                         leaderName,
+                        serverTime: Date.now(),
                         participants: participantsList,
                         transcript: room.transcript,
                         tasks: room.tasks,
@@ -2493,6 +2550,17 @@ wss.on('connection', (ws) => {
                 break;
             }
 
+            case 'sync-ping': {
+                try {
+                    ws.send(JSON.stringify({
+                        type: 'sync-pong',
+                        clientSentAt: data.clientSentAt,
+                        serverTime: Date.now()
+                    }), () => {});
+                } catch (e) {}
+                break;
+            }
+
             case 'claim-leader': {
                 if (!ws.roomId) break;
                 const room = rooms.get(ws.roomId);
@@ -2545,7 +2613,7 @@ wss.on('connection', (ws) => {
                 const action = String(data.action);
                 const nextTime = Number.isFinite(Number(data.currentTime)) ? Math.max(0, Number(data.currentTime)) : prev.currentTime;
                 let nextPlaying = prev.isPlaying;
-                if (action === 'play') nextPlaying = true;
+                if (action === 'play' || action === 'sync') nextPlaying = true;
                 else if (action === 'pause') nextPlaying = false;
                 else if (action === 'stop') nextPlaying = false;
 

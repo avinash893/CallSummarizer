@@ -159,7 +159,12 @@ export default function App() {
     lyrics: []
   });
   const backingStateRef = useRef(backingState);
+  const selfPeerIdRef = useRef(null);
+  const serverClockOffsetRef = useRef(0);
+  const bestSyncRttRef = useRef(Infinity);
   const [isRoomSynced, setIsRoomSynced] = useState(true);
+
+  const getServerNowMs = useCallback(() => Date.now() + serverClockOffsetRef.current, []);
   const [isRawAudio, setIsRawAudio] = useState(false);
   const [liveMicPitch, setLiveMicPitch] = useState(null);
   const [peerTelemetry, setPeerTelemetry] = useState({});
@@ -533,8 +538,9 @@ export default function App() {
     backingStateRef.current = next;
     setBackingState(next);
     if (options?.broadcast && isInCall && wsRef.current && wsRef.current.readyState === 1) {
-      if (!options?.preserveLeader && selfPeerId) {
-        setLeaderPeerId(selfPeerId);
+      const currentSelfPeerId = selfPeerIdRef.current || selfPeerId;
+      if (!options?.preserveLeader && currentSelfPeerId) {
+        setLeaderPeerId(currentSelfPeerId);
         setLeaderName(user?.name || 'You');
       }
       try {
@@ -556,8 +562,9 @@ export default function App() {
       setBackingState(overrideState);
     }
     if (isInCall && wsRef.current && wsRef.current.readyState === 1) {
-      if (!options?.preserveLeader && selfPeerId) {
-        setLeaderPeerId(selfPeerId);
+      const currentSelfPeerId = selfPeerIdRef.current || selfPeerId;
+      if (!options?.preserveLeader && currentSelfPeerId) {
+        setLeaderPeerId(currentSelfPeerId);
         setLeaderName(user?.name || 'You');
       }
       try {
@@ -749,6 +756,7 @@ export default function App() {
     }
 
     ws.onopen = () => {
+      bestSyncRttRef.current = Infinity;
       try {
         ws.send(
           JSON.stringify({
@@ -764,6 +772,14 @@ export default function App() {
             }
           })
         );
+        const sendSyncPing = () => {
+          if (ws.readyState === 1) {
+            ws.send(JSON.stringify({ type: 'sync-ping', clientSentAt: Date.now() }));
+          }
+        };
+        sendSyncPing();
+        setTimeout(sendSyncPing, 350);
+        setTimeout(sendSyncPing, 900);
       } catch (e) {}
     };
 
@@ -776,10 +792,26 @@ export default function App() {
       }
 
       switch (msg.type) {
+        case 'sync-pong': {
+          if (typeof msg.clientSentAt === 'number' && typeof msg.serverTime === 'number') {
+            const now = Date.now();
+            const rtt = Math.max(0, now - msg.clientSentAt);
+            if (rtt <= bestSyncRttRef.current) {
+              bestSyncRttRef.current = rtt;
+              serverClockOffsetRef.current = msg.serverTime + rtt / 2 - now;
+            }
+          }
+          break;
+        }
+
         case 'room-users': {
           const others = (msg.participants || []).filter((p) => p.peerId !== msg.selfPeerId);
           setRemotePeers(others);
+          if (typeof msg.serverTime === 'number' && bestSyncRttRef.current === Infinity) {
+            serverClockOffsetRef.current = msg.serverTime - Date.now();
+          }
           if (msg.selfPeerId) {
+            selfPeerIdRef.current = msg.selfPeerId;
             setSelfPeerId(msg.selfPeerId);
           }
           if (msg.leaderPeerId !== undefined) {
@@ -807,7 +839,7 @@ export default function App() {
                 vocalVol: msg.backingState.vocalVol,
                 instVol: msg.backingState.instVol,
                 seq: msg.backingState.playbackSeq || 1,
-                sentAt: Date.now(),
+                sentAt: msg.serverTime || (Date.now() + serverClockOffsetRef.current),
                 receivedAt: Date.now(),
                 leaderPeerId: msg.leaderPeerId || null,
                 leaderName: msg.leaderName || ''
@@ -2142,6 +2174,7 @@ export default function App() {
                     onSendBackingControl={sendBackingControl}
                     onClaimLeader={claimBackingLeader}
                     backingControlEvent={backingControlEvent}
+                    getServerNowMs={getServerNowMs}
                   />
                 </div>
               </div>

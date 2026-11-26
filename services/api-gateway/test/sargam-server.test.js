@@ -210,6 +210,14 @@ test('SargamJam Unified Server - Sargam APIs, Vocal Coach & Jam WebSocket Sync',
         ws1.send(JSON.stringify({ type: 'join-room', roomId: roomKey, user: { name: 'Asha' } }));
         const ack1 = await p1Ack;
         assert.strictEqual(ack1.leaderPeerId, ack1.selfPeerId);
+        assert.strictEqual(typeof ack1.serverTime, 'number');
+
+        const pongPromise = waitMsg(ws1, 'sync-pong');
+        const pingSentAt = Date.now();
+        ws1.send(JSON.stringify({ type: 'sync-ping', clientSentAt: pingSentAt }));
+        const pong = await pongPromise;
+        assert.strictEqual(pong.clientSentAt, pingSentAt);
+        assert.strictEqual(typeof pong.serverTime, 'number');
 
         const p2Ack = waitMsg(ws2, 'room-users');
         ws2.send(JSON.stringify({ type: 'join-room', roomId: roomKey, user: { name: 'Dev' } }));
@@ -250,6 +258,12 @@ test('SargamJam Unified Server - Sargam APIs, Vocal Coach & Jam WebSocket Sync',
         assert.strictEqual(unauthorizedRelayed, false);
         assert.strictEqual(playEvt.isPlaying, true);
         assert.strictEqual(playEvt.currentTime, 12);
+
+        const p1Sync = waitMsg(ws1, 'backing-control', (m) => m.action === 'sync');
+        ws2.send(JSON.stringify({ type: 'backing-control', action: 'sync', currentTime: 13.5 }));
+        const syncEvt = await p1Sync;
+        assert.strictEqual(syncEvt.isPlaying, true);
+        assert.strictEqual(syncEvt.currentTime, 13.5);
 
         // Peer 1 claims Leader and issues stop
         const pLeaderChange = Promise.all([

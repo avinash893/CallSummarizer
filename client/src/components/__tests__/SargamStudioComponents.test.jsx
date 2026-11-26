@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import ScaleWatcherDial from '../ScaleWatcherDial';
 import MusicalControlStrip from '../MusicalControlStrip';
@@ -99,7 +99,7 @@ describe('SargamJam Studio Components', () => {
     expect(screen.queryByTestId('tab-studio-daw')).not.toBeInTheDocument();
   });
 
-  it('locks follower transport controls while allowing Leader play/stop and Claim Leader takeover', () => {
+  it('locks follower transport controls while allowing Leader play/stop and Claim Leader takeover', async () => {
     const onSendControl = vi.fn();
     const onClaimLeader = vi.fn();
 
@@ -156,5 +156,17 @@ describe('SargamJam Studio Components', () => {
     expect(screen.getByTestId('btn-backing-stop')).not.toBeDisabled();
     fireEvent.click(screen.getByTestId('btn-backing-stop'));
     expect(onSendControl).toHaveBeenCalledWith(expect.objectContaining({ action: 'stop', currentTime: 0 }));
+
+    // Verify Play works reliably even when audio elements resolve immediately or reject once
+    const playBtn = screen.getByLabelText('Play backing stems');
+    const audioEls = Array.from(document.querySelectorAll('audio'));
+    audioEls.forEach((a) => {
+      a.play = vi.fn().mockResolvedValue(undefined);
+      a.pause = vi.fn();
+    });
+    await act(async () => {
+      fireEvent.click(playBtn);
+    });
+    expect(onSendControl).toHaveBeenCalledWith(expect.objectContaining({ action: 'play' }));
   });
 });

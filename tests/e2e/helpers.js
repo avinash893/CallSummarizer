@@ -3,7 +3,7 @@
  * Supports testing Unified Server, WebSocket Signaling, Turnstile, Google OAuth/Calendar, and NLP.
  */
 const { WebSocket } = require('ws');
-const { app, server, wss, rooms, sessions, generateMeetingCode, normalizeRoomId } = require('../../server');
+const { app, server, wss, rooms, sessions, generateMeetingCode, normalizeRoomId, shutdownLocalWhisperWorker } = require('../../server');
 
 let runningServer = null;
 let serverPort = null;
@@ -39,6 +39,7 @@ function resetServerState() {
 }
 
 async function stopServer() {
+    shutdownLocalWhisperWorker?.();
     if (wss && wss.clients) {
         wss.clients.forEach((client) => {
             try {

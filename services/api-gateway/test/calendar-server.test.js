@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { app, sessions } = require('../../../server');
+const { app, sessions, shutdownLocalWhisperWorker } = require('../../../server');
 
 test('CallSummarizer Unified Server - Google Auth Session & Calendar API', async (t) => {
     let server;
@@ -15,6 +15,8 @@ test('CallSummarizer Unified Server - Google Auth Session & Calendar API', async
     });
 
     t.after(() => {
+        shutdownLocalWhisperWorker?.();
+        server.closeAllConnections?.();
         server.close();
     });
 
@@ -511,7 +513,8 @@ test('CallSummarizer Unified Server - Google Auth Session & Calendar API', async
         assert.strictEqual(data.error, 'Missing audioData base64 string');
     });
 
-    await t.test('POST /api/transcribe-audio transcribes speech snippet and attributes speaker', async () => {
+    await t.test('POST /api/transcribe-audio transcribes speech snippet and attributes speaker without throwing service-account warning', async () => {
+        // Tiny stub header returns fast
         const res = await fetch(`${baseUrl}/api/transcribe-audio`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -526,6 +529,36 @@ test('CallSummarizer Unified Server - Google Auth Session & Calendar API', async
         assert.strictEqual(data.success, true);
         assert.strictEqual(data.speaker, 'Rohan Sharma');
         assert.strictEqual(typeof data.transcript, 'string');
+
+        // Valid 0.5s silent PCM WAV falls back cleanly to Whisper STT (no Gemini warning)
+        const sampleCount = 8000;
+        const wavBuf = Buffer.alloc(44 + sampleCount * 2);
+        wavBuf.write('RIFF', 0);
+        wavBuf.writeUInt32LE(36 + sampleCount * 2, 4);
+        wavBuf.write('WAVEfmt ', 8);
+        wavBuf.writeUInt32LE(16, 16);
+        wavBuf.writeUInt16LE(1, 20);
+        wavBuf.writeUInt16LE(1, 22);
+        wavBuf.writeUInt32LE(16000, 24);
+        wavBuf.writeUInt32LE(32000, 28);
+        wavBuf.writeUInt16LE(2, 32);
+        wavBuf.writeUInt16LE(16, 34);
+        wavBuf.write('data', 36);
+        wavBuf.writeUInt32LE(sampleCount * 2, 40);
+
+        const wavRes = await fetch(`${baseUrl}/api/transcribe-audio`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                audioData: wavBuf.toString('base64'),
+                mimeType: 'audio/wav',
+                speakerName: 'Rohan Sharma'
+            })
+        });
+        assert.strictEqual(wavRes.status, 200);
+        const wavData = await wavRes.json();
+        assert.strictEqual(wavData.success, true);
+        assert.strictEqual(wavData.warning, undefined);
     });
 
     await t.test('GET /api/rooms/:id returns session notes and actions while active', async () => {

@@ -162,15 +162,24 @@ def has_nvidia_gpu() -> bool:
             return False
     return False
 
-def transcribe_lyrics(audio_path: Path):
-    try:
+_WHISPER_MODEL = None
+
+def get_whisper_model():
+    global _WHISPER_MODEL
+    if _WHISPER_MODEL is None:
         from faster_whisper import WhisperModel
         has_cuda = has_nvidia_gpu()
-        model = WhisperModel(
+        _WHISPER_MODEL = WhisperModel(
             "base" if has_cuda else "tiny",
             device="cuda" if has_cuda else "cpu",
             compute_type="float16" if has_cuda else "int8"
         )
+    return _WHISPER_MODEL
+
+def transcribe_lyrics(audio_path: Path):
+    try:
+        has_cuda = has_nvidia_gpu()
+        model = get_whisper_model()
         segments, _ = model.transcribe(str(audio_path), beam_size=1 if not has_cuda else 3)
         res = []
         for s in segments:
@@ -632,6 +641,42 @@ async def separate_stems_file(file: UploadFile = File(...)):
         import traceback
         traceback.print_exc()
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+
+@web_app.post("/api/transcribe-snippet")
+async def transcribe_snippet(file: UploadFile = File(...)):
+    tmp_in = Path(f"/tmp/stt_{uuid.uuid4().hex}.webm")
+    tmp_wav = Path(f"/tmp/stt_{uuid.uuid4().hex}.wav")
+    try:
+        content = await file.read()
+        if not content or len(content) < 256:
+            return {"success": True, "transcript": ""}
+        with open(tmp_in, "wb") as f:
+            f.write(content)
+        proc = subprocess.run(
+            ["ffmpeg", "-y", "-i", str(tmp_in), "-ar", "16000", "-ac", "1", "-f", "wav", str(tmp_wav)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        target = tmp_wav if (proc.returncode == 0 and tmp_wav.exists() and tmp_wav.stat().st_size > 64) else tmp_in
+        model = get_whisper_model()
+        segments, _ = model.transcribe(
+            str(target),
+            beam_size=1,
+            vad_filter=True,
+            vad_parameters={"min_silence_duration_ms": 250},
+        )
+        text = " ".join(s.text.strip() for s in segments if s.text and s.text.strip()).strip()
+        return {"success": True, "transcript": text}
+    except Exception as e:
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+    finally:
+        for p in (tmp_in, tmp_wav):
+            try:
+                if p.exists():
+                    p.unlink()
+            except Exception:
+                pass
+
 
 @web_app.post("/api/upload-cookies")
 async def upload_cookies(file: UploadFile = File(...)):

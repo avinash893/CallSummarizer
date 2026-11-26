@@ -5,8 +5,10 @@
  */
 const http = require('http');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
+const { spawn } = require('child_process');
 const express = require('express');
 const cors = require('cors');
 const { WebSocketServer } = require('ws');
@@ -1359,7 +1361,9 @@ app.post('/api/nlp-tasks/extract-tasks', async (req, res) => {
     }
 
     const cleanTranscript = String(transcript).trim().slice(0, 50000);
-    const geminiKey = process.env.GEMINI_API_KEY || req.headers['x-gemini-api-key'] || req.body?.geminiApiKey;
+    const reqGeminiKey = req.headers['x-gemini-api-key'] || req.body?.geminiApiKey;
+    const envGeminiKey = Date.now() > geminiEnvDisabledUntil ? process.env.GEMINI_API_KEY : '';
+    const geminiKey = reqGeminiKey || envGeminiKey;
 
     if (geminiKey) {
         const candidateModels = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-3-flash-preview'];
@@ -1428,6 +1432,9 @@ Guidelines:
                         }
                     }
                 } else if (apiRes.status === 401 || apiRes.status === 403) {
+                    if (!reqGeminiKey) {
+                        geminiEnvDisabledUntil = Date.now() + 5 * 60 * 1000;
+                    }
                     break;
                 }
             } catch (err) {
@@ -1487,6 +1494,163 @@ function isValidSpeechTranscript(text, speakerName = '') {
     return true;
 }
 
+let geminiEnvDisabledUntil = 0;
+let whisperWorker = null;
+let whisperWorkerReady = false;
+let whisperWorkerDisabled = false;
+let whisperWorkerBootPromise = null;
+const whisperPendingRequests = new Map();
+
+function ensureLocalWhisperWorker() {
+    if (whisperWorkerDisabled) return Promise.resolve(false);
+    if (whisperWorker && whisperWorkerReady && !whisperWorker.killed) {
+        return Promise.resolve(true);
+    }
+    if (whisperWorkerBootPromise) return whisperWorkerBootPromise;
+
+    const scriptPath = path.join(__dirname, 'services', 'stt-whisper-worker.py');
+    if (!fs.existsSync(scriptPath)) {
+        whisperWorkerDisabled = true;
+        return Promise.resolve(false);
+    }
+
+    whisperWorkerBootPromise = new Promise((resolve) => {
+        const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
+        let proc;
+        try {
+            proc = spawn(pythonCmd, [scriptPath], { stdio: ['pipe', 'pipe', 'ignore'] });
+        } catch (err) {
+            whisperWorkerDisabled = true;
+            whisperWorkerBootPromise = null;
+            return resolve(false);
+        }
+
+        whisperWorker = proc;
+        proc.unref?.();
+        proc.stdin?.unref?.();
+        proc.stdout?.unref?.();
+        let stdoutBuf = '';
+        let bootSettled = false;
+
+        const finishBoot = (ok) => {
+            if (!bootSettled) {
+                bootSettled = true;
+                whisperWorkerReady = ok;
+                if (!ok) whisperWorkerDisabled = true;
+                whisperWorkerBootPromise = null;
+                resolve(ok);
+            }
+        };
+
+        const bootTimer = setTimeout(() => finishBoot(false), 15000);
+        if (typeof bootTimer.unref === 'function') bootTimer.unref();
+
+        // When worker closes on idle, clean up cleanly
+        let idleTimer = null;
+        const scheduleIdleShutdown = () => {
+            if (idleTimer) clearTimeout(idleTimer);
+            idleTimer = setTimeout(() => {
+                if (whisperPendingRequests.size === 0) {
+                    shutdownLocalWhisperWorker();
+                }
+            }, 45000);
+            idleTimer.unref?.();
+        };
+
+        proc.stdout.on('data', (chunk) => {
+            stdoutBuf += chunk.toString('utf8');
+            let nlIdx;
+            while ((nlIdx = stdoutBuf.indexOf('\n')) !== -1) {
+                const line = stdoutBuf.slice(0, nlIdx).trim();
+                stdoutBuf = stdoutBuf.slice(nlIdx + 1);
+                if (!line) continue;
+                try {
+                    const msg = JSON.parse(line);
+                    if (Object.prototype.hasOwnProperty.call(msg, 'ready')) {
+                        clearTimeout(bootTimer);
+                        scheduleIdleShutdown();
+                        finishBoot(Boolean(msg.ready));
+                        continue;
+                    }
+                    if (msg.id && whisperPendingRequests.has(msg.id)) {
+                        const pending = whisperPendingRequests.get(msg.id);
+                        whisperPendingRequests.delete(msg.id);
+                        clearTimeout(pending.timer);
+                        if (whisperPendingRequests.size === 0) scheduleIdleShutdown();
+                        pending.resolve(msg);
+                    }
+                } catch (e) {}
+            }
+        });
+
+        proc.on('error', () => {
+            clearTimeout(bootTimer);
+            finishBoot(false);
+        });
+        proc.on('exit', () => {
+            clearTimeout(bootTimer);
+            whisperWorkerReady = false;
+            whisperWorker = null;
+            whisperPendingRequests.forEach((pending) => {
+                clearTimeout(pending.timer);
+                pending.resolve({ text: '', error: 'Worker exited' });
+            });
+            whisperPendingRequests.clear();
+            finishBoot(false);
+        });
+    });
+
+    return whisperWorkerBootPromise;
+}
+
+async function transcribeWithLocalWhisper(audioBuffer, cleanMime) {
+    const ok = await ensureLocalWhisperWorker();
+    if (!ok || !whisperWorker || !whisperWorker.stdin.writable) return null;
+
+    const ext = cleanMime.includes('mp4') ? '.mp4' : cleanMime.includes('wav') ? '.wav' : '.webm';
+    const tmpFile = path.join(os.tmpdir(), `cs_snip_${crypto.randomUUID()}${ext}`);
+    try {
+        fs.writeFileSync(tmpFile, audioBuffer);
+        const reqId = crypto.randomUUID();
+        const result = await new Promise((resolve) => {
+            const timer = setTimeout(() => {
+                whisperPendingRequests.delete(reqId);
+                resolve({ text: '', error: 'Local Whisper timeout' });
+            }, 15000);
+            whisperPendingRequests.set(reqId, { resolve, timer });
+            whisperWorker.stdin.write(`${JSON.stringify({ id: reqId, path: tmpFile })}\n`);
+        });
+        if (result && typeof result.text === 'string' && !result.error) {
+            return result.text;
+        }
+        return null;
+    } catch (e) {
+        return null;
+    } finally {
+        try { if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile); } catch (e) {}
+    }
+}
+
+async function transcribeWithModalWhisper(audioBuffer, cleanMime) {
+    try {
+        const formData = new FormData();
+        formData.append('file', new Blob([audioBuffer], { type: cleanMime || 'audio/webm' }), 'snippet.webm');
+        const upRes = await fetch(`${DEFAULT_SARGAM_BACKEND}/api/transcribe-snippet`, {
+            method: 'POST',
+            body: formData,
+            signal: AbortSignal.timeout(25000)
+        });
+        if (!upRes.ok) return null;
+        const data = await upRes.json().catch(() => null);
+        if (data && data.success && typeof data.transcript === 'string') {
+            return data.transcript;
+        }
+        return null;
+    } catch (e) {
+        return null;
+    }
+}
+
 // Audio transcription endpoint for captured speech snippets
 async function handleTranscribeAudio(req, res) {
     const { audioData, mimeType, speakerName } = req.body || {};
@@ -1497,7 +1661,21 @@ async function handleTranscribeAudio(req, res) {
     const cleanSpeaker = String(speakerName || 'Participant').trim();
     const cleanMime = String(mimeType || 'audio/webm').split(';')[0].trim();
     const pureBase64 = audioData.includes(',') ? audioData.split(',')[1] : audioData.replace(/^data:[^,]+,/, '');
-    const geminiKey = process.env.GEMINI_API_KEY || req.headers['x-gemini-api-key'] || req.body?.geminiApiKey;
+    const audioBuffer = Buffer.from(pureBase64, 'base64');
+
+    // Ignore empty or header-only tiny chunks (< 256 bytes)
+    if (!audioBuffer || audioBuffer.length < 256) {
+        return res.json({
+            success: true,
+            transcript: '',
+            speaker: cleanSpeaker,
+            source: 'server-stt-empty'
+        });
+    }
+
+    const reqGeminiKey = req.headers['x-gemini-api-key'] || req.body?.geminiApiKey;
+    const envGeminiKey = Date.now() > geminiEnvDisabledUntil ? process.env.GEMINI_API_KEY : '';
+    const geminiKey = reqGeminiKey || envGeminiKey;
     let lastGeminiError = '';
 
     if (geminiKey) {
@@ -1557,6 +1735,9 @@ Strict Rules:
                     const errBody = await gRes.json().catch(() => ({}));
                     lastGeminiError = errBody?.error?.message || `Gemini HTTP ${gRes.status}`;
                     if (gRes.status === 401 || gRes.status === 403) {
+                        if (!reqGeminiKey) {
+                            geminiEnvDisabledUntil = Date.now() + 5 * 60 * 1000;
+                        }
                         break;
                     }
                 }
@@ -1566,12 +1747,36 @@ Strict Rules:
         }
     }
 
+    // Tier 2: Free local faster-whisper worker (when Python + faster-whisper is installed on host)
+    const localText = await transcribeWithLocalWhisper(audioBuffer, cleanMime);
+    if (localText !== null) {
+        const trimmed = localText.replace(/^["'`«»“”„]+|["'`«»“”„]+$/g, '').trim();
+        return res.json({
+            success: true,
+            transcript: isValidSpeechTranscript(trimmed, cleanSpeaker) ? trimmed : '',
+            speaker: cleanSpeaker,
+            source: 'local-faster-whisper'
+        });
+    }
+
+    // Tier 3: Cloud Modal faster-whisper backend fallback
+    const modalText = await transcribeWithModalWhisper(audioBuffer, cleanMime);
+    if (modalText !== null) {
+        const trimmed = modalText.replace(/^["'`«»“”„]+|["'`«»“”„]+$/g, '').trim();
+        return res.json({
+            success: true,
+            transcript: isValidSpeechTranscript(trimmed, cleanSpeaker) ? trimmed : '',
+            speaker: cleanSpeaker,
+            source: 'modal-faster-whisper'
+        });
+    }
+
     return res.json({
         success: true,
         transcript: '',
         speaker: cleanSpeaker,
         source: lastGeminiError ? 'server-stt-error' : 'server-stt-empty',
-        warning: lastGeminiError || (!geminiKey ? 'GEMINI_API_KEY not configured on server' : '')
+        warning: lastGeminiError || (!geminiKey ? 'Speech-to-text backends unavailable' : '')
     });
 }
 
@@ -2303,10 +2508,21 @@ wss.on('connection', (ws) => {
     });
 });
 
+function shutdownLocalWhisperWorker() {
+    if (whisperWorker && !whisperWorker.killed) {
+        try { whisperWorker.kill(); } catch (e) {}
+        whisperWorker = null;
+        whisperWorkerReady = false;
+    }
+}
+
+server.on('close', shutdownLocalWhisperWorker);
+process.on('exit', shutdownLocalWhisperWorker);
+
 if (require.main === module) {
     server.listen(PORT, '0.0.0.0', () => {
         console.log(`[CallSummarizer Unified Server] Running on http://0.0.0.0:${PORT}`);
     });
 }
 
-module.exports = { app, server, wss, rooms, sessions, generateMeetingCode, normalizeRoomId, normalizeSargamPayload };
+module.exports = { app, server, wss, rooms, sessions, generateMeetingCode, normalizeRoomId, normalizeSargamPayload, shutdownLocalWhisperWorker };

@@ -311,7 +311,23 @@ test('CallSummarizer Unified Server - Google Auth Session & Calendar API', async
         assert.ok(endMs > startMs, 'endDateTime must be strictly greater than startDateTime');
     });
 
-    await t.test('POST /api/calendar/events returns 401 on mock-fail token without throwing uncaught exceptions', async () => {
+    await t.test('POST /api/calendar/events parses bare hour "at 5" and returns needsCalendarAuth on mock-fail', async () => {
+        const bareRes = await fetch(`${baseUrl}/api/calendar/events`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                title: 'Call Rohan at 5',
+                due: 'Tomorrow at 5 PM',
+                accessToken: 'mock-bare-hour-token',
+                timeZone: 'Asia/Kolkata',
+                requireTime: true
+            })
+        });
+        assert.strictEqual(bareRes.status, 201);
+        const bareData = await bareRes.json();
+        assert.strictEqual(bareData.success, true);
+        assert.ok(bareData.event.start.dateTime.includes('17:00:00+05:30'));
+
         const res = await fetch(`${baseUrl}/api/calendar/events`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },

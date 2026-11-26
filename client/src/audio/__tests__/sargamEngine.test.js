@@ -11,7 +11,6 @@ import {
 } from '../sargamEngine';
 import { TAAL_PRESETS, getBeatRole } from '../taalEngine';
 import { midiToTanpuraAudioKey, getTanpuraVoicingInfo } from '../tanpuraEngine';
-import { pcmFloat32ToWavBlob } from '../studioStorage';
 
 describe('Sargam Music Theory & DSP Engine', () => {
   it('computes accurate Equal Temperament and Just Intonation frequencies with 22-shruti offsets', () => {
@@ -112,7 +111,7 @@ describe('Sargam Music Theory & DSP Engine', () => {
     expect(fit.tonicMidi).toBeGreaterThanOrEqual(58 - 1);
   });
 
-  it('maps Tanpura keys, raga voicings, Taal matra roles, and encodes PCM WAV header', () => {
+  it('maps Tanpura keys, raga voicings, and Taal matra roles', () => {
     expect(midiToTanpuraAudioKey(61)).toBe('Cs');
     expect(midiToTanpuraAudioKey(69)).toBe('A');
 
@@ -132,9 +131,5 @@ describe('Sargam Music Theory & DSP Engine', () => {
     expect(getBeatRole('Teentaal (16)', 0).role).toBe('sam');
     expect(getBeatRole('Teentaal (16)', 8).role).toBe('khali');
     expect(getBeatRole('Rupak (7)', 0).role).toBe('khali');
-
-    const wavBlob = pcmFloat32ToWavBlob(new Float32Array([0, 0.5, -0.5, 0]), 44100);
-    expect(wavBlob.size).toBe(44 + 8);
-    expect(wavBlob.type).toBe('audio/wav');
   });
 });

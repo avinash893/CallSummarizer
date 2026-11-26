@@ -4,7 +4,7 @@ import { describe, it, expect, vi } from 'vitest';
 import ScaleWatcherDial from '../ScaleWatcherDial';
 import MusicalControlStrip from '../MusicalControlStrip';
 import PitchAndLyricsView from '../PitchAndLyricsView';
-import StudioDawView from '../StudioDawView';
+import TopBar from '../TopBar';
 
 describe('SargamJam Studio Components', () => {
   it('renders ScaleWatcherDial with IN TUNE badge and Western note when cents deviation <= 15', () => {
@@ -80,19 +80,22 @@ describe('SargamJam Studio Components', () => {
     expect(screen.getByText('Verse one cue line')).toBeInTheDocument();
   });
 
-  it('renders StudioDawView console controls cleanly in JSDOM', () => {
+  it('omits removed Studio DAW tab in TopBar', () => {
     render(
-      <StudioDawView
-        jamState={{ tonicMidi: 60, raga: 'Bilawal', taal: 'Teentaal (16)', bpm: 96, tuningMode: 'ji' }}
-        localStream={null}
-        backingState={{}}
+      <TopBar
+        roomName="test-jam"
+        callDuration="01:00"
+        isNotesOpen={true}
+        setIsNotesOpen={vi.fn()}
+        onOpenArchModal={vi.fn()}
+        onCopyRoom={vi.fn()}
+        activeTab="stage"
+        onChangeTab={vi.fn()}
       />
     );
 
-    expect(screen.getByTestId('studio-daw-view')).toBeInTheDocument();
-    expect(screen.getByTestId('btn-daw-record')).toHaveTextContent('Record Studio Take');
-    expect(screen.getByText('Console Channels & Latency Sync')).toBeInTheDocument();
-    expect(screen.getByText('Vocal DSP FX & 3-Band EQ')).toBeInTheDocument();
-    expect(screen.getByTestId('btn-ai-vocal-coach')).toBeDisabled();
+    expect(screen.getByTestId('tab-studio-stage')).toBeInTheDocument();
+    expect(screen.getByTestId('tab-studio-pitch')).toBeInTheDocument();
+    expect(screen.queryByTestId('tab-studio-daw')).not.toBeInTheDocument();
   });
 });

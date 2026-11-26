@@ -1,22 +1,14 @@
 import React, { useState } from 'react';
 import { midiToNoteName } from '../audio/sargamEngine';
 
-function getInitials(name = 'User') {
-  const parts = String(name).trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return 'U';
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
-
 export function taskHasTime(task) {
   if (!task) return false;
   if (task.startTime && typeof task.startTime === 'string' && !isNaN(new Date(task.startTime).getTime()) && task.startTime !== 'null' && task.startTime !== 'undefined') {
-    const d = new Date(task.startTime);
-    if (d.getUTCHours() !== 0 || d.getUTCMinutes() !== 0) return true;
+    return true;
   }
   const text = `${task.due || ''} ${task.title || ''} ${task.description || ''}`;
   return (
-    /\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b/i.test(text) ||
+    /\b\d{1,2}(?:[:.]\d{2})?\s*(?:am|pm)\b/i.test(text) ||
     /\b(?:at\s+)?([01]?\d|2[0-3]):[0-5]\d\b/i.test(text) ||
     /\bat\s+\d{1,2}\b/i.test(text)
   );
@@ -34,25 +26,26 @@ export default function NotesDrawer({
   onExtractTasks,
   isExtracting = false,
   onAddToCalendar,
+  onReconnectCalendar = null,
   capturedPeerIds = [],
-  capturedAudioClips = [],
   remotePeers = [],
   onToggleCapturePeer,
-  onDeleteClip,
   onClearSession,
   user = { name: 'You' },
   jamState = null,
   summaryBullets = [],
-  onSendClipToDaw = null
+  interimSpeech = null,
+  captureNotice = ''
 }) {
   const [activeTab, setActiveTab] = useState('notes');
-  const [actionFilter, setActionFilter] = useState(user?.email ? 'mine' : 'all'); // 'mine' for logged in users, 'all' default for overview
+  const [actionFilter, setActionFilter] = useState('all');
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTranscriptText, setNewTranscriptText] = useState('');
   const [confirmingTaskId, setConfirmingTaskId] = useState(null);
   const [calendarLoadingId, setCalendarLoadingId] = useState(null);
-  const [calendarSuccessIds, setCalendarSuccessIds] = useState([]);
+  const [calendarSuccessMap, setCalendarSuccessMap] = useState({});
   const [calendarError, setCalendarError] = useState(null);
+  const [reconnectingCalendar, setReconnectingCalendar] = useState(false);
 
   if (!isOpen) return null;
 
@@ -60,11 +53,20 @@ export default function NotesDrawer({
 
   const isTaskInMyCalendar = (task) => {
     if (!task) return false;
-    if (calendarSuccessIds.includes(task.id)) return true;
+    if (calendarSuccessMap[task.id]) return true;
     if (Array.isArray(task.calendarAddedBy)) {
       return task.calendarAddedBy.some((k) => String(k).trim().toLowerCase() === userKey);
     }
     return false;
+  };
+
+  const getTaskCalendarLink = (task) => {
+    if (!task) return null;
+    if (calendarSuccessMap[task.id]?.htmlLink) return calendarSuccessMap[task.id].htmlLink;
+    if (task.calendarLinks && typeof task.calendarLinks === 'object') {
+      return task.calendarLinks[userKey] || null;
+    }
+    return null;
   };
 
   const isTaskMine = (task) => {
@@ -100,24 +102,54 @@ export default function NotesDrawer({
       if (onAddToCalendar) {
         const result = await onAddToCalendar(task);
         if (result && result.success) {
-          setCalendarSuccessIds((prev) => [...prev, task.id]);
+          setCalendarSuccessMap((prev) => ({
+            ...prev,
+            [task.id]: {
+              htmlLink: result.event?.htmlLink || null,
+              mode: result.mode || 'google'
+            }
+          }));
           setCalendarError(null);
         } else {
           setCalendarError({
             taskId: task.id,
+            needsCalendarAuth: Boolean(result?.needsCalendarAuth),
             message: result?.error || 'Failed to add event to Google Calendar'
           });
         }
       } else {
-        setCalendarSuccessIds((prev) => [...prev, task.id]);
+        setCalendarSuccessMap((prev) => ({ ...prev, [task.id]: { htmlLink: null, mode: 'google' } }));
       }
     } catch (err) {
       setCalendarError({
         taskId: task.id,
+        needsCalendarAuth: false,
         message: err.message || 'Error connecting to Google Calendar'
       });
     } finally {
       setCalendarLoadingId(null);
+    }
+  };
+
+  const handleReconnectClick = async () => {
+    if (!onReconnectCalendar || reconnectingCalendar) return;
+    setReconnectingCalendar(true);
+    try {
+      const result = await onReconnectCalendar();
+      if (result && result.success) {
+        const pendingTaskId = calendarError?.taskId;
+        setCalendarError(null);
+        if (pendingTaskId !== undefined && pendingTaskId !== null) {
+          const targetTask = tasks.find((t) => t.id === pendingTaskId);
+          if (targetTask) {
+            await handleConfirmAddToCalendar(targetTask);
+          }
+        }
+      } else if (result?.error) {
+        setCalendarError((prev) => ({ ...(prev || {}), message: result.error, needsCalendarAuth: true }));
+      }
+    } finally {
+      setReconnectingCalendar(false);
     }
   };
 
@@ -173,39 +205,13 @@ export default function NotesDrawer({
             >
               <i className="bi bi-chat-left-text" style={{ marginRight: '6px' }}></i>
               <span>Transcript</span>
+              {capturedPeerIds.length > 0 && (
+                <span className="badge bg-danger ms-1" style={{ fontSize: '0.6rem', padding: '2px 5px' }}>
+                  LIVE
+                </span>
+              )}
             </button>
           </div>
-          {((capturedPeerIds && capturedPeerIds.length > 0) || (capturedAudioClips && capturedAudioClips.length > 0)) && (
-            <div
-              role="tab"
-              id="tab-captured"
-              aria-selected={activeTab === 'captured'}
-              aria-controls="tabpanel-captured"
-              tabIndex={activeTab === 'captured' ? 0 : -1}
-            >
-              <button
-                type="button"
-                className={`nav-link drawer-tab-btn ${activeTab === 'captured' ? 'active' : ''}`}
-                onClick={() => setActiveTab('captured')}
-                aria-selected={activeTab === 'captured'}
-                aria-controls="tabpanel-captured"
-                data-testid="tab-captured-audio"
-              >
-                <i className="bi bi-soundwave" style={{ marginRight: '6px' }}></i>
-                <span>Captured</span>
-                {capturedPeerIds.length > 0 && (
-                  <span className="badge bg-danger ms-1" style={{ fontSize: '0.6rem', padding: '2px 5px' }}>
-                    REC
-                  </span>
-                )}
-                {capturedAudioClips.length > 0 && (
-                  <span className="badge bg-secondary ms-1" style={{ fontSize: '0.6rem', padding: '2px 5px' }}>
-                    {capturedAudioClips.length}
-                  </span>
-                )}
-              </button>
-            </div>
-          )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           {onClearSession && (
@@ -238,149 +244,7 @@ export default function NotesDrawer({
       </div>
 
       <div className="drawer-body">
-        {activeTab === 'captured' ? (
-          <div
-            id="tabpanel-captured"
-            role="tabpanel"
-            aria-labelledby="tab-captured"
-            className="captured-audio-view"
-            style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}
-          >
-            {/* Active selective capture status */}
-            <div className="notes-card">
-              <div className="notes-card-title">
-                <i className="bi bi-broadcast" style={{ marginRight: '6px', color: '#ef4444' }}></i>
-                <span>Active Private Capture</span>
-              </div>
-              {capturedPeerIds.length === 0 ? (
-                <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0, lineHeight: 1.45 }}>
-                  <i className="bi bi-info-circle me-1"></i> No participants currently captured.
-                  In group calls, click the <strong>Capture</strong> button on any participant's video tile to privately listen and record their audio.
-                </p>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {capturedPeerIds.map((peerId) => {
-                    const peer = remotePeers.find((p) => p.peerId === peerId) || { name: 'Participant', peerId };
-                    return (
-                      <div
-                        key={peerId}
-                        className="d-flex align-items-center justify-content-between p-2 rounded notes-capture-card"
-                        data-testid={`active-captured-peer-${peerId}`}
-                      >
-                        <div className="d-flex align-items-center gap-2">
-                          <i className="bi bi-disc-fill pulse-record-dot"></i>
-                          <div>
-                            <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-main)' }}>
-                              {peer.name || 'Participant'}
-                            </div>
-                            <div className="notes-capture-sub">
-                              Listening privately • Recording
-                            </div>
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          className="btn btn-outline-danger btn-sm"
-                          style={{ padding: '3px 8px', fontSize: '0.72rem' }}
-                          onClick={() => onToggleCapturePeer && onToggleCapturePeer(peerId)}
-                          data-testid={`btn-stop-capture-${peerId}`}
-                          title="Stop private capture"
-                        >
-                          <i className="bi bi-stop-fill me-1"></i> Stop
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* Recorded Audio Clips */}
-            <div className="notes-card">
-              <div className="notes-card-title">
-                <i className="bi bi-music-note-list" style={{ marginRight: '6px' }}></i>
-                <span>Captured Audio Library ({capturedAudioClips.length})</span>
-              </div>
-
-              {capturedAudioClips.length === 0 ? (
-                <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0 }}>
-                  No recorded clips yet. Completed audio captures will be stored here with playback and download options.
-                </p>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  {capturedAudioClips.map((clip) => (
-                    <div key={clip.id} className="captured-clip-card" data-testid={`captured-clip-${clip.id}`}>
-                      <div className="clip-header">
-                        <div className="clip-participant-info">
-                          <span className="clip-peer-avatar">{getInitials(clip.peerName)}</span>
-                          <div>
-                            <div className="clip-peer-name">{clip.peerName}</div>
-                            <div className="clip-meta">{clip.time} • {clip.duration}</div>
-                          </div>
-                        </div>
-                        <span className="notes-snap-chip">
-                          Private
-                        </span>
-                      </div>
-
-                      {clip.url && (
-                        <div className="clip-audio-player">
-                          <audio controls src={clip.url} data-testid={`audio-player-${clip.id}`} />
-                        </div>
-                      )}
-
-                      <div className="clip-actions btn-group btn-group-sm w-100">
-                        {clip.url && (
-                          <a
-                            href={clip.url}
-                            download={`capture-${(clip.peerName || 'audio').replace(/\s+/g, '_')}-${clip.id}.webm`}
-                            className="btn btn-outline-secondary btn-sm"
-                            title="Download audio recording"
-                          >
-                            <i className="bi bi-download me-1"></i> Download
-                          </a>
-                        )}
-                        <button
-                          type="button"
-                          className="btn btn-outline-secondary btn-sm"
-                          onClick={() =>
-                            onAddTranscript &&
-                            onAddTranscript(`[Private Capture - ${clip.peerName} (${clip.duration}) at ${clip.time}]`)
-                          }
-                          title="Add reference to transcript"
-                          data-testid={`btn-add-note-${clip.id}`}
-                        >
-                          <i className="bi bi-journal-plus me-1"></i> Note
-                        </button>
-                        {onSendClipToDaw && clip.blob && (
-                          <button
-                            type="button"
-                            className="btn btn-outline-warning btn-sm"
-                            onClick={() => onSendClipToDaw(clip)}
-                            title="Load captured clip into Studio DAW"
-                          >
-                            <i className="bi bi-sliders2 me-1"></i> DAW
-                          </button>
-                        )}
-                        {onDeleteClip && (
-                          <button
-                            type="button"
-                            className="btn btn-outline-secondary btn-sm text-danger"
-                            onClick={() => onDeleteClip(clip.id)}
-                            title="Delete audio clip"
-                            data-testid={`btn-delete-clip-${clip.id}`}
-                          >
-                            <i className="bi bi-trash"></i>
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        ) : activeTab === 'notes' ? (
+        {activeTab === 'notes' ? (
           <div
             id="tabpanel-notes"
             role="tabpanel"
@@ -490,7 +354,24 @@ export default function NotesDrawer({
               {calendarError && (
                 <div className="calendar-error-banner" role="alert" data-testid="calendar-error-alert">
                   <i className="bi bi-exclamation-triangle-fill notes-error-icon"></i>
-                  <span className="notes-error-text">{calendarError.message}</span>
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <span className="notes-error-text">{calendarError.message}</span>
+                    {calendarError.needsCalendarAuth && onReconnectCalendar && (
+                      <div>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline-primary"
+                          style={{ fontSize: '0.72rem', padding: '3px 8px' }}
+                          onClick={handleReconnectClick}
+                          disabled={reconnectingCalendar}
+                          data-testid="btn-reconnect-calendar"
+                        >
+                          <i className="bi bi-google me-1"></i>
+                          {reconnectingCalendar ? 'Connecting...' : 'Reconnect Google Calendar'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
                   <button
                     type="button"
                     className="btn btn-outline-secondary btn-sm btn-dismiss-alert"
@@ -507,11 +388,13 @@ export default function NotesDrawer({
                 {displayedTasks.length === 0 ? (
                   <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                     {actionFilter === 'mine'
-                      ? 'No personal action items for you yet. Add one above or extract from transcript.'
+                      ? 'No personal action items for you yet. Switch to All or extract from transcript.'
                       : 'No action items yet. Add one above or extract from transcript.'}
                   </p>
                 ) : (
-                  displayedTasks.map((task) => (
+                  displayedTasks.map((task) => {
+                    const calLink = getTaskCalendarLink(task);
+                    return (
                     <div key={task.id} className="list-group-item task-item-container" data-testid={`task-item-${task.id}`}>
                       <label className="task-row">
                         <input
@@ -533,10 +416,24 @@ export default function NotesDrawer({
                       {taskHasTime(task) && (
                         <div className="task-calendar-controls">
                           {isTaskInMyCalendar(task) ? (
-                            <span className="calendar-badge-success" title="Added to Google Calendar with 5-minute popup alarm reminder">
-                              <i className="bi bi-calendar-check-fill" style={{ marginRight: '4px' }}></i>
-                              In Calendar
-                            </span>
+                            <div className="d-flex align-items-center gap-2 flex-wrap">
+                              <span className="calendar-badge-success" title="Added to Google Calendar with 5-minute popup alarm reminder">
+                                <i className="bi bi-calendar-check-fill" style={{ marginRight: '4px' }}></i>
+                                In Calendar
+                              </span>
+                              {calLink && (
+                                <a
+                                  href={calLink}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="btn btn-outline-secondary btn-sm"
+                                  style={{ fontSize: '0.7rem', padding: '2px 7px' }}
+                                >
+                                  <i className="bi bi-box-arrow-up-right me-1"></i>
+                                  Open
+                                </a>
+                              )}
+                            </div>
                           ) : confirmingTaskId === task.id ? (
                             <div className="calendar-confirm-box" role="dialog" aria-label="Confirm adding event to Google Calendar">
                               <span className="calendar-confirm-prompt">
@@ -580,7 +477,8 @@ export default function NotesDrawer({
                         </div>
                       )}
                     </div>
-                  ))
+                  );
+                  })
                 )}
               </div>
             </div>
@@ -599,33 +497,85 @@ export default function NotesDrawer({
             aria-labelledby="tab-transcript"
             className="transcript-box"
           >
-            {capturedPeerIds.includes('local') && (
-              <div className="notes-capture-card p-2 rounded-2 d-flex align-items-center justify-content-between" data-testid="live-capture-indicator">
-                <span className="notes-capture-sub d-flex align-items-center gap-2">
-                  <i className="bi bi-disc-fill pulse-record-dot"></i>
-                  Capturing live speech & extracting action items...
-                </span>
+            {capturedPeerIds.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {capturedPeerIds.map((peerId) => {
+                  const isLocalCapture = peerId === 'local';
+                  const peerName = isLocalCapture
+                    ? (user?.name || 'You')
+                    : (remotePeers.find((p) => p.peerId === peerId)?.name || 'Participant');
+                  return (
+                    <div
+                      key={peerId}
+                      className="notes-capture-card p-2 rounded-2 d-flex align-items-center justify-content-between"
+                      data-testid={isLocalCapture ? 'live-capture-indicator' : `active-captured-peer-${peerId}`}
+                    >
+                      <span className="notes-capture-sub d-flex align-items-center gap-2">
+                        <i className="bi bi-disc-fill pulse-record-dot"></i>
+                        <span>
+                          {isLocalCapture
+                            ? 'Transcribing live speech & extracting action items...'
+                            : `Transcribing ${peerName}...`}
+                        </span>
+                      </span>
+                      {onToggleCapturePeer && (
+                        <button
+                          type="button"
+                          className="btn btn-outline-danger btn-sm"
+                          style={{ padding: '2px 7px', fontSize: '0.7rem' }}
+                          onClick={() => onToggleCapturePeer(peerId)}
+                          data-testid={`btn-stop-capture-${peerId}`}
+                          title="Stop transcribing"
+                        >
+                          Stop
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
-            {transcript.length === 0 ? (
+
+            {captureNotice && (
+              <div className="calendar-error-banner" role="status" data-testid="transcript-notice-banner">
+                <i className="bi bi-info-circle-fill notes-error-icon"></i>
+                <span className="notes-error-text">{captureNotice}</span>
+              </div>
+            )}
+
+            {transcript.length === 0 && !interimSpeech?.text ? (
               <div className="transcript-message">
                 <p className="message-text" style={{ color: 'var(--text-muted)' }}>
-                  No transcript lines recorded yet. Speak into your microphone or add a meeting statement below.
+                  No transcript lines recorded yet. Click <strong>Capture</strong> on a tile or type a meeting statement below.
                 </p>
               </div>
             ) : (
-              transcript.map((item) => (
-                <div key={item.id} className="transcript-message">
-                  <div className="speaker-line">
-                    <span className="speaker-name">
-                      <i className="bi bi-person-badge" style={{ marginRight: '4px' }}></i>
-                      {item.speaker}
-                    </span>
-                    <span className="speaker-time">{item.time}</span>
+              <>
+                {transcript.map((item) => (
+                  <div key={item.id} className="transcript-message">
+                    <div className="speaker-line">
+                      <span className="speaker-name">
+                        <i className="bi bi-person-badge" style={{ marginRight: '4px' }}></i>
+                        {item.speaker}
+                      </span>
+                      <span className="speaker-time">{item.time}</span>
+                    </div>
+                    <p className="message-text">"{item.text}"</p>
                   </div>
-                  <p className="message-text">"{item.text}"</p>
-                </div>
-              ))
+                ))}
+                {interimSpeech?.text && (
+                  <div className="transcript-message" style={{ opacity: 0.72 }} data-testid="live-interim-speech">
+                    <div className="speaker-line">
+                      <span className="speaker-name">
+                        <i className="bi bi-soundwave" style={{ marginRight: '4px' }}></i>
+                        {interimSpeech.speaker || 'You'}
+                      </span>
+                      <span className="speaker-time">Listening...</span>
+                    </div>
+                    <p className="message-text">"{interimSpeech.text}"</p>
+                  </div>
+                )}
+              </>
             )}
 
             {onAddTranscript && (

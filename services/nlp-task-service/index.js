@@ -36,10 +36,23 @@ function normalizePersonName(rawName) {
 }
 
 function parseDueDate(trimmed) {
-    // Match 12h time ("1 pm", "1:30 pm", "at 5pm") OR 24h time ("at 14:30", "14:30")
-    const match12h = trimmed.match(/\b(?:at\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i);
+    // Match 12h time ("1 pm", "1:30 pm", "1.30pm", "at 5pm") OR 24h time ("at 14:30", "14:30") OR bare hour ("at 5")
+    const match12h = trimmed.match(/\b(?:at\s+)?(\d{1,2}(?:[:.]\d{2})?\s*(?:am|pm))\b/i);
     const match24h = !match12h ? trimmed.match(/\b(?:at\s+)?((?:[01]?\d|2[0-3]):[0-5]\d)\b/i) : null;
-    const rawTime = match12h ? match12h[1].trim().toUpperCase().replace(/\s+/g, ' ') : match24h ? match24h[1] : '';
+    const matchBareHour = !match12h && !match24h ? trimmed.match(/\bat\s+(\d{1,2})\b/i) : null;
+    let rawTime = '';
+    if (match12h) {
+        rawTime = match12h[1].trim().replace('.', ':').toUpperCase().replace(/\s+/g, ' ');
+    } else if (match24h) {
+        rawTime = match24h[1];
+    } else if (matchBareHour) {
+        const h = parseInt(matchBareHour[1], 10);
+        if (h >= 1 && h <= 12) {
+            rawTime = `${h} ${h >= 1 && h <= 7 ? 'PM' : 'AM'}`;
+        } else if (h >= 13 && h <= 23) {
+            rawTime = `${h}:00`;
+        }
+    }
     const timeSuffix = rawTime ? ` at ${rawTime}` : '';
 
     const dayMatch = trimmed.match(/\b(?:by|on|before|for|due)?\s*(today|tomorrow|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday|next week)\b/i);

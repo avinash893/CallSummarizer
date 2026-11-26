@@ -815,6 +815,7 @@ app.get('/api/auth/google/callback', async (req, res) => {
             };
             const sessionToken = signSessionToken(sessionObj);
             sessionObj.token = sessionToken;
+            userObj.sessionToken = sessionToken;
             sessions.set(sessionId, sessionObj);
             sessions.set(sessionToken, sessionObj);
             saveSessionsToDisk();
@@ -860,15 +861,16 @@ app.get('/api/auth/session', (req, res) => {
     return res.json({
         authenticated: true,
         sessionId: session.sessionId,
+        sessionToken: session.token || session.sessionId,
         user: session.user,
         hasCalendarAccess: Boolean(session.tokens?.accessToken)
     });
 });
 
-// Safely extract explicit time (e.g. "at 2 pm", "2:30 pm", "14:00")
+// Safely extract explicit time (e.g. "at 2 pm", "2:30 pm", "2.30 pm", "14:00", "at 5")
 function extractTimeDetails(str) {
     if (!str || typeof str !== 'string') return null;
-    const ampmMatch = str.match(/\b(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i);
+    const ampmMatch = str.match(/\b(?:at\s+)?(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)\b/i);
     if (ampmMatch) {
         let hour = parseInt(ampmMatch[1], 10);
         const minute = ampmMatch[2] ? parseInt(ampmMatch[2], 10) : 0;
@@ -880,6 +882,12 @@ function extractTimeDetails(str) {
     const milMatch = str.match(/\b(?:at\s+)?([01]?\d|2[0-3]):([0-5]\d)\b/i);
     if (milMatch) {
         return { hour: parseInt(milMatch[1], 10), minute: parseInt(milMatch[2], 10) };
+    }
+    const bareHourMatch = str.match(/\bat\s+(\d{1,2})\b/i);
+    if (bareHourMatch) {
+        let hour = parseInt(bareHourMatch[1], 10);
+        if (hour >= 1 && hour <= 7) hour += 12;
+        if (hour >= 0 && hour <= 23) return { hour, minute: 0 };
     }
     return null;
 }
@@ -1069,6 +1077,7 @@ app.post('/api/calendar/events', async (req, res) => {
         if (!accessToken) {
             return res.status(401).json({
                 success: false,
+                needsCalendarAuth: true,
                 error: 'Google Calendar authorization required. Please sign in with Google to grant calendar access.'
             });
         }
@@ -1203,8 +1212,10 @@ app.post('/api/calendar/events', async (req, res) => {
             const errorMsg =
                 (typeof gCalData.error === 'object' ? gCalData.error?.message : gCalData.error_description || gCalData.error) ||
                 'Failed to create Google Calendar event';
+            const needsAuth = gCalRes.status === 401 || gCalRes.status === 403;
             return res.status(gCalRes.status >= 400 && gCalRes.status < 500 ? gCalRes.status : 502).json({
                 success: false,
+                needsCalendarAuth: needsAuth,
                 error: `Google Calendar API error: ${errorMsg}`
             });
         }
@@ -1416,6 +1427,8 @@ Guidelines:
                             return res.json({ tasks: normalizedTasks, summary, source: modelName });
                         }
                     }
+                } else if (apiRes.status === 401 || apiRes.status === 403) {
+                    break;
                 }
             } catch (err) {
                 // Try next candidate model
@@ -1485,6 +1498,7 @@ async function handleTranscribeAudio(req, res) {
     const cleanMime = String(mimeType || 'audio/webm').split(';')[0].trim();
     const pureBase64 = audioData.includes(',') ? audioData.split(',')[1] : audioData.replace(/^data:[^,]+,/, '');
     const geminiKey = process.env.GEMINI_API_KEY || req.headers['x-gemini-api-key'] || req.body?.geminiApiKey;
+    let lastGeminiError = '';
 
     if (geminiKey) {
         const candidateModels = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-3-flash-preview'];
@@ -1539,9 +1553,15 @@ Strict Rules:
                             source: modelName
                         });
                     }
+                } else {
+                    const errBody = await gRes.json().catch(() => ({}));
+                    lastGeminiError = errBody?.error?.message || `Gemini HTTP ${gRes.status}`;
+                    if (gRes.status === 401 || gRes.status === 403) {
+                        break;
+                    }
                 }
             } catch (e) {
-                // Try next model
+                lastGeminiError = e.message || 'Gemini request failed';
             }
         }
     }
@@ -1550,7 +1570,8 @@ Strict Rules:
         success: true,
         transcript: '',
         speaker: cleanSpeaker,
-        source: 'server-stt-empty'
+        source: lastGeminiError ? 'server-stt-error' : 'server-stt-empty',
+        warning: lastGeminiError || (!geminiKey ? 'GEMINI_API_KEY not configured on server' : '')
     });
 }
 

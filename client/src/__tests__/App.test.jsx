@@ -212,7 +212,7 @@ describe('App Main Flow', () => {
     expect(screen.getByPlaceholderText(/Type a meeting note or commitment/i)).toBeInTheDocument();
   });
 
-  it('switches cleanly between Jam Stage, Pitch & Lyrics, and Studio DAW workspaces and toggles music controls', async () => {
+  it('switches cleanly between Jam Stage and Pitch & Lyrics workspaces without Studio DAW and toggles music controls', async () => {
     render(<App />);
 
     // Select instrument role in Lobby
@@ -242,20 +242,17 @@ describe('App Main Flow', () => {
     fireEvent.click(screen.getByTestId('btn-toggle-raw-audio'));
     expect(screen.getByTestId('btn-toggle-raw-audio')).toHaveAttribute('aria-pressed', 'true');
 
-    // Switch to Pitch & Lyrics tab
+    // Switch to Pitch & Lyrics tab; Studio DAW tab should be removed
+    expect(screen.queryByTestId('tab-studio-daw')).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId('tab-studio-pitch'));
     expect(screen.getByTestId('pitch-lyrics-view')).toBeInTheDocument();
-
-    // Switch to Studio DAW tab
-    fireEvent.click(screen.getByTestId('tab-studio-daw'));
-    expect(screen.getByTestId('studio-daw-view')).toBeInTheDocument();
 
     // Return to Stage
     fireEvent.click(screen.getByTestId('tab-studio-stage'));
     expect(screen.getByTestId('local-video-tile')).toBeInTheDocument();
   });
 
-  it('toggles local Capture button with SpeechRecognition cleanly and extracts NLP tasks + summary', async () => {
+  it('toggles local Capture button for live SpeechRecognition (interim + final) without audio clip storage and extracts NLP tasks + summary', async () => {
     let activeRecInstance = null;
     class MockSpeechRecognition {
       constructor() {
@@ -280,7 +277,7 @@ describe('App Main Flow', () => {
           json: () =>
             Promise.resolve({
               summary: ['Avinash agreed to upload stems tomorrow.'],
-              tasks: [{ id: 'nlp-1', title: 'Upload stems', assignee: 'Avinash Kumar', due: 'Tomorrow at 5 PM' }]
+              tasks: [{ id: 'nlp-1', title: 'Upload stems', assignee: 'Rohan Sharma', due: 'Tomorrow at 5 PM' }]
             })
         });
       }
@@ -299,28 +296,43 @@ describe('App Main Flow', () => {
       const captureBtn = screen.getByTestId('btn-capture-local');
       expect(captureBtn).toHaveTextContent('Capture');
 
-      // Start local speech capture (must stay active and NOT revert to undefined!)
+      // Start local speech capture (must stay active and NOT show any Captured Audio Library tab)
       fireEvent.click(captureBtn);
       expect(captureBtn).toHaveTextContent('Capturing');
       expect(screen.getByTestId('capture-badge-local')).toBeInTheDocument();
-      expect(screen.getByTestId('tab-captured-audio')).toBeInTheDocument();
+      expect(screen.queryByTestId('tab-captured-audio')).not.toBeInTheDocument();
 
-      // Simulate speech recognition result and manual transcript extraction
+      // Switch to Transcript tab and check interim speech -> final speech
+      fireEvent.click(screen.getByRole('button', { name: /^Transcript/i }));
+      expect(screen.getByTestId('live-capture-indicator')).toBeInTheDocument();
+
       await act(async () => {
+        const interimItem = [{ transcript: 'I will upload' }];
+        interimItem.isFinal = false;
         activeRecInstance.onresult({
           resultIndex: 0,
-          results: [[{ transcript: 'I will upload the stems tomorrow at 5 pm' }]]
+          results: [interimItem]
+        });
+      });
+      expect(screen.getByTestId('live-interim-speech')).toHaveTextContent(/I will upload/i);
+
+      await act(async () => {
+        const finalItem = [{ transcript: 'Rohan will upload the stems tomorrow at 5 pm' }];
+        finalItem.isFinal = true;
+        activeRecInstance.onresult({
+          resultIndex: 0,
+          results: [finalItem]
         });
       });
 
-      fireEvent.click(screen.getByRole('button', { name: 'Transcript' }));
-      expect(screen.getByTestId('live-capture-indicator')).toBeInTheDocument();
-      expect(screen.getByText(/I will upload the stems tomorrow at 5 pm/i)).toBeInTheDocument();
+      expect(screen.queryByTestId('live-interim-speech')).not.toBeInTheDocument();
+      expect(screen.getByText(/Rohan will upload the stems tomorrow at 5 pm/i)).toBeInTheDocument();
 
       await act(async () => {
         fireEvent.click(screen.getByRole('button', { name: /Extract Tasks from Transcript/i }));
       });
 
+      // Extracted task for Rohan Sharma must be visible immediately under default 'All' filter!
       fireEvent.click(screen.getByRole('button', { name: 'Notes' }));
       expect(screen.getByText('Upload stems')).toBeInTheDocument();
       expect(screen.getByText('Avinash agreed to upload stems tomorrow.')).toBeInTheDocument();

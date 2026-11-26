@@ -258,25 +258,17 @@ describe('NotesDrawer Component', () => {
     expect(await screen.findByText(/In Calendar/i)).toBeInTheDocument();
   });
 
-  it('renders Captured Audio tab and allows stopping active capture and managing clips', () => {
+  it('displays live transcription status and Reconnect Calendar action on auth error without Captured Audio Library tab', async () => {
     const handleToggleCapture = vi.fn();
-    const handleDeleteClip = vi.fn();
-    const handleAddTranscript = vi.fn();
-
-    const sampleClips = [
-      {
-        id: 'clip-1',
-        peerId: 'peer-alice',
-        peerName: 'Alice Smith',
-        url: 'blob:mock-audio-alice',
-        duration: '14s',
-        time: '10:05:00 AM'
-      }
-    ];
+    const handleAddToCalendar = vi.fn().mockResolvedValue({
+      success: false,
+      needsCalendarAuth: true,
+      error: 'Google Calendar authorization expired.'
+    });
+    const handleReconnectCalendar = vi.fn().mockResolvedValue({ success: true });
 
     const remotePeers = [
-      { peerId: 'peer-alice', name: 'Alice Smith' },
-      { peerId: 'peer-bob', name: 'Bob Jones' }
+      { peerId: 'peer-alice', name: 'Alice Smith' }
     ];
 
     render(
@@ -285,38 +277,35 @@ describe('NotesDrawer Component', () => {
         tasks={sampleTasks}
         transcript={sampleTranscript}
         capturedPeerIds={['peer-alice']}
-        capturedAudioClips={sampleClips}
         remotePeers={remotePeers}
         onToggleCapturePeer={handleToggleCapture}
-        onDeleteClip={handleDeleteClip}
-        onAddTranscript={handleAddTranscript}
+        onAddToCalendar={handleAddToCalendar}
+        onReconnectCalendar={handleReconnectCalendar}
+        interimSpeech={{ speaker: 'You', text: 'Scheduling deployment at 5 pm' }}
+        captureNotice="Server STT ready"
       />
     );
 
-    // Switch to Captured tab
-    const capturedTabBtn = screen.getByTestId('tab-captured-audio');
-    expect(capturedTabBtn).toBeInTheDocument();
-    fireEvent.click(capturedTabBtn);
+    // No Captured Audio Library tab
+    expect(screen.queryByTestId('tab-captured-audio')).not.toBeInTheDocument();
 
-    // Verify active capture section
+    // Test Calendar reconnect button on auth error
+    const addCalButtons = screen.getAllByRole('button', { name: /Add to Google Calendar/i });
+    fireEvent.click(addCalButtons[0]);
+    fireEvent.click(screen.getByRole('button', { name: /Confirm/i }));
+
+    const reconnectBtn = await screen.findByTestId('btn-reconnect-calendar');
+    expect(reconnectBtn).toBeInTheDocument();
+
+    // Switch to Transcript tab and verify active capture & stop button
+    fireEvent.click(screen.getByRole('button', { name: /Transcript/i }));
     expect(screen.getByTestId('active-captured-peer-peer-alice')).toBeInTheDocument();
+    expect(screen.getByTestId('live-interim-speech')).toHaveTextContent(/Scheduling deployment at 5 pm/i);
+    expect(screen.getByTestId('transcript-notice-banner')).toHaveTextContent('Server STT ready');
+
     const stopBtn = screen.getByTestId('btn-stop-capture-peer-alice');
     fireEvent.click(stopBtn);
     expect(handleToggleCapture).toHaveBeenCalledWith('peer-alice');
-
-    // Verify audio clip card
-    expect(screen.getByTestId('captured-clip-clip-1')).toBeInTheDocument();
-    expect(screen.getByTestId('audio-player-clip-1')).toBeInTheDocument();
-
-    // Verify note creation from clip
-    const noteBtn = screen.getByTestId('btn-add-note-clip-1');
-    fireEvent.click(noteBtn);
-    expect(handleAddTranscript).toHaveBeenCalled();
-
-    // Verify delete clip
-    const deleteBtn = screen.getByTestId('btn-delete-clip-clip-1');
-    fireEvent.click(deleteBtn);
-    expect(handleDeleteClip).toHaveBeenCalledWith('clip-1');
   });
 
   it('renders close button in drawer top and triggers onClose when clicked', () => {

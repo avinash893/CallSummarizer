@@ -74,17 +74,6 @@ export default function TopBar({
               <i className="bi bi-soundwave"></i>
               <span>Pitch & Lyrics</span>
             </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeTab === 'daw'}
-              className={`studio-mode-tab ${activeTab === 'daw' ? 'active' : ''}`}
-              onClick={() => onChangeTab('daw')}
-              data-testid="tab-studio-daw"
-            >
-              <i className="bi bi-sliders2"></i>
-              <span>Studio DAW</span>
-            </button>
           </div>
         )}
 

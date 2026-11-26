@@ -149,4 +149,36 @@ describe('VideoCanvas Component', () => {
     expect(audioEl).toBeInTheDocument();
     expect(audioEl).toHaveAttribute('playsinline');
   });
+
+  it('mutes remote <video> while keeping remote <audio> unmuted to prevent double-playback clipping', () => {
+    const fakeRemoteStream = { id: 'remote-stream-1', getTracks: () => [] };
+    const remotePeers = [
+      {
+        peerId: 'peer-dana',
+        name: 'Dana Ray',
+        initials: 'DR',
+        isAudioOn: true,
+        isVideoOn: true,
+        stream: fakeRemoteStream
+      }
+    ];
+
+    const { container } = render(
+      <VideoCanvas
+        isVideoOn={false}
+        isAudioOn={true}
+        localStream={null}
+        remotePeers={remotePeers}
+      />
+    );
+
+    const tile = screen.getByTestId('peer-tile-peer-dana');
+    const videoEl = tile.querySelector('video');
+    const audioEl = tile.querySelector('audio');
+
+    expect(videoEl).toBeInTheDocument();
+    expect(audioEl).toBeInTheDocument();
+    expect(videoEl.muted).toBe(true);
+    expect(audioEl.muted).toBe(false);
+  });
 });

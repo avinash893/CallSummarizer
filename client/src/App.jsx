@@ -22,6 +22,39 @@ const DEFAULT_ICE_SERVERS = [
   }
 ];
 
+/**
+ * Tune Opus SDP fmtp line for low-latency, packet-loss-resilient voice.
+ */
+export function preferLowLatencyOpus(sdp) {
+  if (!sdp || typeof sdp !== 'string') return sdp;
+  const match = sdp.match(/a=rtpmap:(\d+)\s+opus\/48000/i);
+  if (!match) return sdp;
+  const pt = match[1];
+  const extraParams = ['minptime=10', 'useinbandfec=1', 'maxaveragebitrate=64000'];
+  const fmtpRegex = new RegExp(`a=fmtp:${pt}\\s+([^\\r\\n]+)`, 'g');
+
+  if (fmtpRegex.test(sdp)) {
+    return sdp.replace(new RegExp(`a=fmtp:${pt}\\s+([^\\r\\n]+)`, 'g'), (_, existing) => {
+      const parts = existing.split(';').map((p) => p.trim()).filter(Boolean);
+      for (const param of extraParams) {
+        const key = param.split('=')[0];
+        const idx = parts.findIndex((p) => p.split('=')[0] === key);
+        if (idx !== -1) {
+          parts[idx] = param;
+        } else {
+          parts.push(param);
+        }
+      }
+      return `a=fmtp:${pt} ${parts.join(';')}`;
+    });
+  }
+
+  return sdp.replace(
+    new RegExp(`(a=rtpmap:${pt}\\s+opus\\/48000[^\\r\\n]*\\r?\\n)`, 'i'),
+    `$1a=fmtp:${pt} minptime=10;useinbandfec=1;maxaveragebitrate=64000\r\n`
+  );
+}
+
 function ensureUniqueTaskIds(taskList = []) {
   const seen = new Set();
   return taskList.map((t, idx) => {
@@ -351,7 +384,25 @@ export default function App() {
     async function initCamera() {
       try {
         if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-          const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+          let stream;
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: {
+                width: { ideal: 640, max: 1280 },
+                height: { ideal: 480, max: 720 },
+                frameRate: { ideal: 24, max: 30 }
+              },
+              audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true,
+                channelCount: 1,
+                sampleRate: 48000
+              }
+            });
+          } catch (constraintErr) {
+            stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+          }
           if (isMounted) {
             activeStream = stream;
             setLocalStream(stream);
@@ -457,7 +508,7 @@ export default function App() {
       const audioOnlyStream = typeof MediaStream !== 'undefined' ? new MediaStream(audioTracks) : localStream;
       source = ctx.createMediaStreamSource(audioOnlyStream);
       analyser = ctx.createAnalyser();
-      analyser.fftSize = 4096;
+      analyser.fftSize = 2048;
       source.connect(analyser);
 
       const buf = new Float32Array(analyser.fftSize);
@@ -502,7 +553,7 @@ export default function App() {
             setLiveMicPitch((prev) => (prev === null ? null : null));
           }
         }
-      }, 30);
+      }, 60);
     } catch (e) {
       // JSDOM or audio context restriction
     }
@@ -667,7 +718,26 @@ export default function App() {
 
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach((track) => {
-        pc.addTrack(track, localStreamRef.current);
+        const sender = pc.addTrack(track, localStreamRef.current);
+        if (sender && typeof sender.getParameters === 'function' && typeof sender.setParameters === 'function') {
+          try {
+            const params = sender.getParameters() || {};
+            if (!Array.isArray(params.encodings) || params.encodings.length === 0) {
+              params.encodings = [{}];
+            }
+            if (track.kind === 'video') {
+              params.encodings[0].maxBitrate = 450000;
+            } else if (track.kind === 'audio') {
+              params.encodings[0].priority = 'high';
+              params.encodings[0].networkPriority = 'high';
+              params.encodings[0].maxBitrate = 64000;
+            }
+            const setRes = sender.setParameters(params);
+            if (setRes && typeof setRes.catch === 'function') {
+              setRes.catch(() => {});
+            }
+          } catch (e) {}
+        }
       });
       const activeScreenTrack = screenStreamRef.current?.getVideoTracks()[0];
       if (activeScreenTrack) {
@@ -699,6 +769,16 @@ export default function App() {
     const peerMediaStream = remoteStreamsRef.current.get(remotePeerId);
 
     pc.ontrack = (event) => {
+      if (event.receiver && event.track?.kind === 'audio') {
+        try {
+          if ('playoutDelayHint' in event.receiver) {
+            event.receiver.playoutDelayHint = 0.08;
+          }
+          if ('jitterBufferTarget' in event.receiver) {
+            event.receiver.jitterBufferTarget = 80;
+          }
+        } catch (e) {}
+      }
       if (event.track) {
         if (!peerMediaStream.getTracks().some((t) => t.id === event.track.id)) {
           peerMediaStream.addTrack(event.track);
@@ -865,7 +945,14 @@ export default function App() {
           if (pc) {
             try {
               const offer = await pc.createOffer();
-              await pc.setLocalDescription(offer);
+              const tunedOffer = offer?.sdp && offer?.type
+                ? { type: offer.type, sdp: preferLowLatencyOpus(offer.sdp) }
+                : offer;
+              try {
+                await pc.setLocalDescription(tunedOffer);
+              } catch (sdpErr) {
+                await pc.setLocalDescription(offer);
+              }
               ws.send(
                 JSON.stringify({
                   type: 'webrtc-offer',
@@ -897,7 +984,14 @@ export default function App() {
               }
               pendingCandidatesRef.current.delete(senderId);
               const answer = await pc.createAnswer();
-              await pc.setLocalDescription(answer);
+              const tunedAnswer = answer?.sdp && answer?.type
+                ? { type: answer.type, sdp: preferLowLatencyOpus(answer.sdp) }
+                : answer;
+              try {
+                await pc.setLocalDescription(tunedAnswer);
+              } catch (sdpErr) {
+                await pc.setLocalDescription(answer);
+              }
               ws.send(
                 JSON.stringify({
                   type: 'webrtc-answer',

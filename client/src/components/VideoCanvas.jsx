@@ -9,6 +9,7 @@ function RemotePeerTile({ peer, isCaptured = false, onToggleCapture, telemetry =
   useEffect(() => {
     if (remoteVideoRef.current) {
       if (peer.stream && peer.isVideoOn !== false) {
+        remoteVideoRef.current.muted = true;
         remoteVideoRef.current.srcObject = peer.stream;
         try {
           const playPromise = remoteVideoRef.current.play?.();
@@ -67,6 +68,7 @@ function RemotePeerTile({ peer, isCaptured = false, onToggleCapture, telemetry =
         ref={remoteAudioRef}
         autoPlay
         playsInline
+        muted={isLocalMuted}
         style={{ display: 'none' }}
         aria-hidden="true"
       />
@@ -75,6 +77,7 @@ function RemotePeerTile({ peer, isCaptured = false, onToggleCapture, telemetry =
         <video
           ref={remoteVideoRef}
           autoPlay
+          muted
           playsInline
           className="video-element"
           aria-label={`${peer.name || 'Participant'} video stream`}

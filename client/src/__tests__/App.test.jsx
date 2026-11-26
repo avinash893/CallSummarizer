@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import App from '../App';
+import App, { preferLowLatencyOpus } from '../App';
 
 const authUser = {
   name: 'Avinash Kumar',
@@ -346,5 +346,21 @@ describe('App Main Flow', () => {
       delete window.SpeechRecognition;
       global.fetch = originalFetch;
     }
+  });
+
+  it('tunes Opus SDP parameters for low-latency FEC voice without duplicating keys', () => {
+    const rawSdp = [
+      'v=0',
+      'a=rtpmap:111 opus/48000/2',
+      'a=fmtp:111 minptime=20;useinbandfec=0'
+    ].join('\r\n');
+    const tuned = preferLowLatencyOpus(rawSdp);
+    expect(tuned).toContain('minptime=10');
+    expect(tuned).toContain('useinbandfec=1');
+    expect(tuned).toContain('maxaveragebitrate=64000');
+    expect(tuned).not.toContain('minptime=20');
+
+    const bareSdp = 'a=rtpmap:111 opus/48000/2\r\n';
+    expect(preferLowLatencyOpus(bareSdp)).toContain('a=fmtp:111 minptime=10;useinbandfec=1;maxaveragebitrate=64000');
   });
 });

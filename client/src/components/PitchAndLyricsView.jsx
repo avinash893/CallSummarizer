@@ -590,7 +590,7 @@ export default function PitchAndLyricsView({
         )}
       </div>
 
-      {/* Real-Time Pitch Tolerance Banner (fixed metrics & stable height — zero jump when sur flips) */}
+      {/* Real-Time Pitch Tolerance Banner (fixed pixel tracks — zero jiggle on state change) */}
       <div
         className={`plv-match-banner ${liveMatch ? (liveMatch.isMatched ? 'matched' : 'off-pitch') : ''}`}
         data-testid="pitch-match-banner"
@@ -599,27 +599,27 @@ export default function PitchAndLyricsView({
           <span className="plv-match-indicator" />
           <span className="plv-match-text">
             {liveMatch?.isMatched
-              ? `In Tune · ${liveMatch.errorPct}% error (≤ ${tolLabel}%)`
+              ? `In Tune · ${liveMatch.errorPct}% error`
               : liveMatch
-                ? `${liveMatch.direction === 'flat' ? 'Too Low (Flat)' : 'Too High (Sharp)'} · ${liveMatch.errorPct}% err (need ≤ ${tolLabel}%)`
+                ? `${liveMatch.direction === 'flat' ? 'Flat (Too Low)' : 'Sharp (Too High)'} · ${liveMatch.errorPct}% err`
                 : liveMicPitch?.freq > 50
-                  ? `Mic ${liveMicPitch.noteName || ''} · ${liveMicPitch.freq} Hz`
-                  : `Sing into mic to match reference (${tolLabel}% tolerance)`}
+                  ? `${liveMicPitch.noteName || ''} · ${liveMicPitch.freq} Hz`
+                  : `Sing to match (≤ ${tolLabel}% tol)`}
           </span>
         </div>
 
         <div className="plv-match-metrics">
           <span className={`plv-metric-pill plv-metric-err ${liveMatch ? (liveMatch.isMatched ? 'ok' : 'warn') : ''}`} data-testid="pitch-diff-badge">
-            {liveMatch ? `Err: ${liveMatch.errorPct}%` : 'Diff: --'}
+            {liveMatch ? `Err ${liveMatch.errorPct}%` : 'Diff --'}
           </span>
           <span className="plv-metric-pill plv-metric-acc" data-testid="pitch-accuracy-badge">
-            {sessionAcc !== null ? `Acc: ${sessionAcc}%` : 'Acc: --'}
+            {sessionAcc !== null ? `Acc ${sessionAcc}%` : 'Acc --'}
           </span>
           <span className="plv-metric-pill plv-metric-fs">
             F {sessionFlatPct}% · S {sessionSharpPct}%
           </span>
           <span className="plv-metric-pill plv-metric-stk">
-            Streak: {sessionStats.streak}
+            Streak {sessionStats.streak}
           </span>
           <div className="plv-tolerance-group" role="group" aria-label="Pitch error tolerance">
             {[0.05, 0.10, 0.15].map((tol) => (

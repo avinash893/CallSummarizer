@@ -363,12 +363,12 @@ export default function PitchMelodyCanvas({
             data-testid="pmc-live-diff"
           >
             {liveMatch?.isMatched
-              ? `IN TUNE (${liveMatch.errorPct}%)`
+              ? `IN TUNE ${liveMatch.errorPct}%`
               : liveMatch
-                ? `${Math.round(liveMatch.errorPct)}% Err (${liveMatch.direction === 'flat' ? 'Flat' : 'Sharp'})`
-                : `Ready (${tolLabel}% Tol)`}
+                ? `${Math.round(liveMatch.errorPct)}% ${liveMatch.direction === 'flat' ? 'Flat' : 'Sharp'}`
+                : `Ready (${tolLabel}%)`}
           </span>
-          <span className="pmc-badge">{noteBars.length} Bars</span>
+          <span className="pmc-badge pmc-count-badge">{noteBars.length} Bars</span>
         </div>
       </div>
 

@@ -2118,10 +2118,10 @@ input, textarea, select {
   height: 100%;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 16px 20px 20px;
+  padding: 12px 16px 16px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
   background: var(--bg-app);
 }
 
@@ -2289,13 +2289,12 @@ input, textarea, select {
 }
 
 .plv-match-banner {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px 12px;
-  padding: 9px 14px;
-  min-height: 50px;
+  padding: 8px 12px;
+  min-height: 44px;
   border-radius: var(--radius-md);
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
@@ -2313,13 +2312,12 @@ input, textarea, select {
 }
 
 .plv-match-status {
-  flex: 1 1 240px;
   min-width: 0;
-  min-height: 22px;
+  height: 24px;
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   font-weight: 700;
   color: var(--text-main);
 }
@@ -2333,8 +2331,8 @@ input, textarea, select {
 }
 
 .plv-match-indicator {
-  width: 10px;
-  height: 10px;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
   background: var(--text-muted);
   flex-shrink: 0;
@@ -2350,7 +2348,7 @@ input, textarea, select {
 
 .plv-match-metrics {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
@@ -2358,31 +2356,34 @@ input, textarea, select {
 
 .plv-metric-pill {
   font-family: var(--font-mono);
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   font-weight: 600;
-  padding: 3px 8px;
+  padding: 3px 6px;
   border-radius: 999px;
   background: var(--bg-tile);
   color: var(--text-secondary);
   border: 1px solid var(--border-subtle);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   text-align: center;
+  flex-shrink: 0;
 }
 
 .plv-metric-err {
-  min-width: 78px;
+  width: 72px;
 }
 
 .plv-metric-acc {
-  min-width: 78px;
+  width: 72px;
 }
 
 .plv-metric-fs {
-  min-width: 98px;
+  width: 102px;
 }
 
 .plv-metric-stk {
-  min-width: 76px;
+  width: 78px;
 }
 
 .plv-metric-pill.ok {
@@ -2402,16 +2403,18 @@ input, textarea, select {
   border-radius: var(--radius-sm);
   overflow: hidden;
   border: 1px solid var(--border-default);
+  flex-shrink: 0;
 }
 
 .plv-tol-btn {
   background: var(--bg-tile);
   color: var(--text-secondary);
   border: none;
-  padding: 3px 8px;
+  padding: 3px 7px;
   font-size: 0.7rem;
   font-weight: 700;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .plv-tol-btn.active {
@@ -2422,6 +2425,9 @@ input, textarea, select {
 .plv-reset-btn {
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-default);
+  width: 52px;
+  text-align: center;
+  flex-shrink: 0;
 }
 
 .plv-reset-btn:disabled {
@@ -2431,8 +2437,8 @@ input, textarea, select {
 
 .plv-stage-grid {
   display: grid;
-  grid-template-columns: minmax(210px, 248px) minmax(0, 1fr);
-  gap: 14px;
+  grid-template-columns: minmax(205px, 238px) minmax(0, 1fr);
+  gap: 12px;
   align-items: stretch;
   min-width: 0;
 }
@@ -2448,9 +2454,10 @@ input, textarea, select {
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
-  padding: 10px 12px;
+  padding: 9px 11px;
   box-shadow: var(--shadow-card);
   min-width: 0;
+  overflow: hidden;
 }
 
 .scale-watcher-card.sur-locked {
@@ -2468,22 +2475,22 @@ input, textarea, select {
 
 .sw-title {
   display: block;
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   font-weight: 700;
   color: var(--text-main);
 }
 
 .sw-sub {
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   color: var(--text-muted);
 }
 
 .sw-sur-pill {
-  padding: 2px 8px;
-  min-width: 68px;
+  padding: 2px 6px;
+  width: 72px;
   text-align: center;
   border-radius: 999px;
-  font-size: 0.68rem;
+  font-size: 0.66rem;
   font-weight: 700;
   font-family: var(--font-mono);
   white-space: nowrap;
@@ -2516,35 +2523,36 @@ input, textarea, select {
 
 .sw-svg {
   width: 100%;
-  max-width: 176px;
+  max-width: 156px;
   height: auto;
 }
 
 .sw-readout {
   text-align: center;
-  margin-top: -6px;
+  margin-top: -4px;
   width: 100%;
   min-width: 0;
 }
 
 .sw-main-note {
-  font-size: 1.25rem;
+  font-size: 1.15rem;
   font-weight: 800;
   line-height: 1.15;
 }
 
 .sw-sub-note {
-  font-size: 0.74rem;
+  font-size: 0.72rem;
   color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  min-height: 18px;
+  height: 18px;
+  line-height: 18px;
 }
 
 .sw-freq-line {
   font-family: var(--font-mono);
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   color: var(--text-muted);
 }
 
@@ -2564,7 +2572,7 @@ input, textarea, select {
   flex-direction: column;
   height: 100%;
   min-width: 0;
-  min-height: 290px;
+  min-height: 270px;
 }
 
 .pmc-header {
@@ -2573,14 +2581,14 @@ input, textarea, select {
   justify-content: space-between;
   align-items: center;
   gap: 8px;
-  padding: 7px 12px;
-  min-height: 38px;
+  padding: 6px 12px;
+  height: 36px;
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border-subtle);
 }
 
 .pmc-title {
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   font-weight: 700;
   color: var(--text-main);
   min-width: 0;
@@ -2598,7 +2606,7 @@ input, textarea, select {
 }
 
 .pmc-badge {
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   font-weight: 600;
   padding: 2px 8px;
   border-radius: 999px;
@@ -2609,7 +2617,14 @@ input, textarea, select {
 }
 
 .pmc-status-badge {
-  min-width: 112px;
+  width: 112px;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pmc-count-badge {
+  width: 76px;
   text-align: center;
 }
 
@@ -3000,6 +3015,16 @@ input, textarea, select {
 @media (max-width: 1180px) {
   .top-scale-chip {
     display: none;
+  }
+}
+
+@media (max-width: 1260px) {
+  .plv-match-banner {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .plv-match-metrics {
+    flex-wrap: wrap;
   }
 }
 

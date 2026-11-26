@@ -42,6 +42,7 @@ export default function NotesDrawer({
   onClearSession,
   user = { name: 'You' },
   jamState = null,
+  summaryBullets = [],
   onSendClipToDaw = null
 }) {
   const [activeTab, setActiveTab] = useState('notes');
@@ -174,7 +175,7 @@ export default function NotesDrawer({
               <span>Transcript</span>
             </button>
           </div>
-          {capturedAudioClips && capturedAudioClips.length > 0 && (
+          {((capturedPeerIds && capturedPeerIds.length > 0) || (capturedAudioClips && capturedAudioClips.length > 0)) && (
             <div
               role="tab"
               id="tab-captured"
@@ -197,9 +198,11 @@ export default function NotesDrawer({
                     REC
                   </span>
                 )}
-                <span className="badge bg-secondary ms-1" style={{ fontSize: '0.6rem', padding: '2px 5px' }}>
-                  {capturedAudioClips.length}
-                </span>
+                {capturedAudioClips.length > 0 && (
+                  <span className="badge bg-secondary ms-1" style={{ fontSize: '0.6rem', padding: '2px 5px' }}>
+                    {capturedAudioClips.length}
+                  </span>
+                )}
               </button>
             </div>
           )}
@@ -405,18 +408,30 @@ export default function NotesDrawer({
                 <i className="bi bi-file-text" style={{ marginRight: '6px' }}></i>
                 <span>Summary</span>
               </div>
-              {transcript.length > 0 ? (
-                <ul className="notes-list">
-                  {transcript.slice(-3).map((item) => (
+              {summaryBullets && summaryBullets.length > 0 ? (
+                <ul className="notes-list" data-testid="nlp-summary-list">
+                  {summaryBullets.map((bullet, idx) => (
+                    <li key={idx}>{bullet}</li>
+                  ))}
+                </ul>
+              ) : transcript.length > 0 ? (
+                <ul className="notes-list" data-testid="nlp-summary-list">
+                  <li>
+                    {Array.from(new Set(transcript.map((t) => t.speaker).filter(Boolean))).length} active speaker(s) across {transcript.length} statement{transcript.length === 1 ? '' : 's'}.
+                  </li>
+                  {transcript.slice(-2).map((item) => (
                     <li key={item.id}>
                       <strong>{item.speaker}:</strong> {item.text}
                     </li>
                   ))}
+                  {tasks.length > 0 && (
+                    <li>{tasks.length} action item{tasks.length === 1 ? '' : 's'} tracked ({tasks.filter((t) => t.completed).length} done).</li>
+                  )}
                 </ul>
               ) : (
                 <ul className="notes-list">
                   <li>Meeting room active and ready for discussion.</li>
-                  <li>Use the Transcript tab or microphone to capture notes and action items.</li>
+                  <li>Click <strong>Capture</strong> on a video tile or type in Transcript to capture notes and action items.</li>
                 </ul>
               )}
             </div>
@@ -584,6 +599,14 @@ export default function NotesDrawer({
             aria-labelledby="tab-transcript"
             className="transcript-box"
           >
+            {capturedPeerIds.includes('local') && (
+              <div className="notes-capture-card p-2 rounded-2 d-flex align-items-center justify-content-between" data-testid="live-capture-indicator">
+                <span className="notes-capture-sub d-flex align-items-center gap-2">
+                  <i className="bi bi-disc-fill pulse-record-dot"></i>
+                  Capturing live speech & extracting action items...
+                </span>
+              </div>
+            )}
             {transcript.length === 0 ? (
               <div className="transcript-message">
                 <p className="message-text" style={{ color: 'var(--text-muted)' }}>

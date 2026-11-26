@@ -254,4 +254,84 @@ describe('App Main Flow', () => {
     fireEvent.click(screen.getByTestId('tab-studio-stage'));
     expect(screen.getByTestId('local-video-tile')).toBeInTheDocument();
   });
+
+  it('toggles local Capture button with SpeechRecognition cleanly and extracts NLP tasks + summary', async () => {
+    let activeRecInstance = null;
+    class MockSpeechRecognition {
+      constructor() {
+        this.continuous = false;
+        this.interimResults = false;
+        this.lang = '';
+        this.onresult = null;
+        this.onerror = null;
+        this.onend = null;
+        activeRecInstance = this;
+      }
+      start() {}
+      stop() {}
+    }
+    window.SpeechRecognition = MockSpeechRecognition;
+
+    const originalFetch = global.fetch;
+    global.fetch = vi.fn().mockImplementation((url) => {
+      if (String(url).includes('/api/nlp-tasks/extract-tasks')) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              summary: ['Avinash agreed to upload stems tomorrow.'],
+              tasks: [{ id: 'nlp-1', title: 'Upload stems', assignee: 'Avinash Kumar', due: 'Tomorrow at 5 PM' }]
+            })
+        });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+    });
+
+    try {
+      render(<App />);
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 60));
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /Join now/i }));
+      });
+
+      const captureBtn = screen.getByTestId('btn-capture-local');
+      expect(captureBtn).toHaveTextContent('Capture');
+
+      // Start local speech capture (must stay active and NOT revert to undefined!)
+      fireEvent.click(captureBtn);
+      expect(captureBtn).toHaveTextContent('Capturing');
+      expect(screen.getByTestId('capture-badge-local')).toBeInTheDocument();
+      expect(screen.getByTestId('tab-captured-audio')).toBeInTheDocument();
+
+      // Simulate speech recognition result and manual transcript extraction
+      await act(async () => {
+        activeRecInstance.onresult({
+          resultIndex: 0,
+          results: [[{ transcript: 'I will upload the stems tomorrow at 5 pm' }]]
+        });
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Transcript' }));
+      expect(screen.getByTestId('live-capture-indicator')).toBeInTheDocument();
+      expect(screen.getByText(/I will upload the stems tomorrow at 5 pm/i)).toBeInTheDocument();
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /Extract Tasks from Transcript/i }));
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Notes' }));
+      expect(screen.getByText('Upload stems')).toBeInTheDocument();
+      expect(screen.getByText('Avinash agreed to upload stems tomorrow.')).toBeInTheDocument();
+
+      // Stop capture cleanly
+      fireEvent.click(screen.getByTestId('btn-capture-local'));
+      expect(screen.getByTestId('btn-capture-local')).toHaveTextContent('Capture');
+      expect(screen.queryByTestId('capture-badge-local')).not.toBeInTheDocument();
+    } finally {
+      delete window.SpeechRecognition;
+      global.fetch = originalFetch;
+    }
+  });
 });

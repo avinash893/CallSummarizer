@@ -170,6 +170,7 @@ export default function App() {
   const [capturedAudioClips, setCapturedAudioClips] = useState([]);
   const [transcript, setTranscript] = useState([]);
   const [tasks, setTasks] = useState([]);
+  const [summaryBullets, setSummaryBullets] = useState([]);
   const [appConfig, setAppConfig] = useState({
     googleClientId: import.meta.env.VITE_GOOGLE_CLIENT_ID || '',
     turnstileSiteKey: import.meta.env.VITE_CLOUDFLARE_TURNSTILE_SITE_KEY || '',
@@ -182,10 +183,11 @@ export default function App() {
   const peerAudioRecordersRef = useRef(new Map());
   const remoteStreamsRef = useRef(new Map());
   const localRecognitionRef = useRef(null);
-  const isCapturingLocalRef = useRef(false);
   const localStreamRef = useRef(null);
   const screenStreamRef = useRef(null);
   const capturedAudioClipsRef = useRef(capturedAudioClips);
+  const capturedPeerIdsRef = useRef(capturedPeerIds);
+  const transcriptRef = useRef(transcript);
   const iceServersRef = useRef(DEFAULT_ICE_SERVERS);
   const utteranceDebounceRef = useRef(new Map());
 
@@ -200,6 +202,14 @@ export default function App() {
   useEffect(() => {
     capturedAudioClipsRef.current = capturedAudioClips;
   }, [capturedAudioClips]);
+
+  useEffect(() => {
+    capturedPeerIdsRef.current = capturedPeerIds;
+  }, [capturedPeerIds]);
+
+  useEffect(() => {
+    transcriptRef.current = transcript;
+  }, [transcript]);
 
   useEffect(() => {
     return () => {
@@ -885,13 +895,23 @@ export default function App() {
         }
 
         case 'remote-transcribe-toggle': {
-          handleToggleCapturePeer('local');
+          const currentlyCapturingLocal = capturedPeerIdsRef.current.includes('local');
+          if (typeof msg.enabled === 'boolean') {
+            if (msg.enabled && !currentlyCapturingLocal) {
+              handleToggleCapturePeer('local');
+            } else if (!msg.enabled && currentlyCapturingLocal) {
+              handleToggleCapturePeer('local');
+            }
+          } else {
+            handleToggleCapturePeer('local');
+          }
           break;
         }
 
         case 'room-session-cleared': {
           setTranscript([]);
           setTasks([]);
+          setSummaryBullets([]);
           break;
         }
 
@@ -971,9 +991,12 @@ export default function App() {
       setScreenStream(null);
     }
     // Cleanly stop all active selective audio recordings
+    capturedPeerIdsRef.current = [];
     peerAudioRecordersRef.current.forEach((session) => {
       try {
-        if (session.recorder) {
+        if (typeof session.stop === 'function') {
+          session.stop();
+        } else if (session.recorder) {
           session.recorder.onstop = null;
           if (session.recorder.state !== 'inactive') {
             session.recorder.stop();
@@ -986,6 +1009,7 @@ export default function App() {
 
     if (localRecognitionRef.current) {
       try {
+        localRecognitionRef.current.onend = null;
         localRecognitionRef.current.stop();
       } catch (e) {}
       localRecognitionRef.current = null;
@@ -1021,6 +1045,7 @@ export default function App() {
   const handleClearNotesAndTranscript = useCallback(async () => {
     setTranscript([]);
     setTasks([]);
+    setSummaryBullets([]);
     try {
       const cleanRoom = extractRoomCode(roomName) || 'strategy-sync';
       if (wsRef.current && wsRef.current.readyState === 1) {
@@ -1035,12 +1060,15 @@ export default function App() {
     if (!text || typeof text !== 'string' || text.trim().length < 4) return;
     try {
       const gatewayUrl = import.meta.env.VITE_GATEWAY_URL || '';
-      // Include recent transcript lines for conversational context
-      const recentLines = (transcript || [])
+      // Always read latest transcript ref so context never goes stale
+      const recentLines = (transcriptRef.current || [])
         .slice(-5)
         .filter((item) => item?.text && !item.text.startsWith('[') && item.text.trim())
         .map((item) => `${item.speaker}: ${item.text.trim()}`);
-      recentLines.push(`${speaker}: ${text}`);
+      const candidateLine = `${speaker}: ${text.trim()}`;
+      if (!recentLines.includes(candidateLine)) {
+        recentLines.push(candidateLine);
+      }
       const transcriptContext = recentLines.join('\n');
 
       const res = await fetch(`${gatewayUrl}/api/nlp-tasks/extract-tasks`, {
@@ -1050,6 +1078,9 @@ export default function App() {
       });
       if (res.ok) {
         const data = await res.json();
+        if (Array.isArray(data.summary) && data.summary.length > 0) {
+          setSummaryBullets(data.summary);
+        }
         if (Array.isArray(data.tasks) && data.tasks.length > 0) {
           setTasks((prevTasks) => {
             const updated = [...prevTasks];
@@ -1166,293 +1197,320 @@ export default function App() {
     if (!peerId) return;
 
     const isLocal = peerId === 'local' || peerId === user?.id;
-    const speakerName = isLocal ? (user?.name || 'You') : (remotePeers.find((p) => p.peerId === peerId)?.name || 'Participant');
+    const speakerName = isLocal
+      ? (user?.name || 'You')
+      : (remotePeers.find((p) => p.peerId === peerId)?.name || 'Participant');
+    const isAlreadyCaptured = capturedPeerIdsRef.current.includes(peerId);
 
-    setCapturedPeerIds((prev) => {
-      const isAlreadyCaptured = prev.includes(peerId);
-
-      if (isAlreadyCaptured) {
-        // Stop capturing for this peer
-        if (isLocal && localRecognitionRef.current) {
-          try {
-            localRecognitionRef.current.onend = null;
-            localRecognitionRef.current.stop();
-          } catch (e) {}
-          localRecognitionRef.current = null;
-        }
-
-        const activeSession = peerAudioRecordersRef.current.get(peerId);
-        if (activeSession) {
-          if (typeof activeSession.stop === 'function') {
-            activeSession.stop();
-          } else {
-            if (activeSession.interval) {
-              clearInterval(activeSession.interval);
-            }
-            try {
-              if (activeSession.recorder && activeSession.recorder.state !== 'inactive') {
-                activeSession.recorder.stop();
-              }
-            } catch (e) {}
-          }
-          peerAudioRecordersRef.current.delete(peerId);
-        }
-        return prev.filter((id) => id !== peerId);
+    const startMediaRecorderForPeer = (transcribeChunks = true) => {
+      let audioTracks = [];
+      if (isLocal) {
+        audioTracks = localStreamRef.current ? localStreamRef.current.getAudioTracks() : [];
       } else {
-        // For local peer on desktop: start Web Speech Recognition if available
-        if (isLocal && typeof window !== 'undefined') {
-          const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-          if (SpeechRec) {
-            try {
-              const rec = new SpeechRec();
-              rec.continuous = true;
-              rec.interimResults = false;
-              rec.lang = 'en-IN';
-
-              rec.onresult = (event) => {
-                for (let i = event.resultIndex; i < event.results.length; i++) {
-                  const rawText = event.results[i][0]?.transcript?.trim();
-                  if (rawText && isValidSpeechTranscript(rawText, speakerName)) {
-                    const cleanText = rawText.replace(/^["'`«»“”„]+|["'`«»“”„]+$/g, '').trim();
-                    const now = Date.now();
-                    const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-                    setTranscript((prevTr) => {
-                      const last = prevTr[prevTr.length - 1];
-                      // Merge utterances if same speaker within 7 seconds to keep natural sentences together
-                      if (last && last.speaker === speakerName && (now - (last.timestamp || 0) < 7000)) {
-                        const mergedText = `${last.text} ${cleanText}`.trim();
-                        const updatedLast = {
-                          ...last,
-                          text: mergedText,
-                          timestamp: now
-                        };
-                        const nextList = [...prevTr.slice(0, -1), updatedLast];
-                        if (wsRef.current && wsRef.current.readyState === 1) {
-                          wsRef.current.send(JSON.stringify({ type: 'transcript-entry-update', entry: updatedLast }));
-                        }
-                        return nextList;
-                      }
-                      const entry = {
-                        id: `tr-${now}-${Math.random().toString(36).slice(2, 6)}`,
-                        speaker: speakerName,
-                        time: timeStr,
-                        text: cleanText,
-                        timestamp: now
-                      };
-                      if (wsRef.current && wsRef.current.readyState === 1) {
-                        wsRef.current.send(JSON.stringify({ type: 'transcript-entry', entry }));
-                      }
-                      return [...prevTr, entry];
-                    });
-
-                    // Buffer and debounce live task extraction so pauses do not split into fragmented actions
-                    const existing = utteranceDebounceRef.current.get(speakerName) || { text: '', timer: null };
-                    if (existing.timer) clearTimeout(existing.timer);
-                    const combinedUtterance = existing.text ? `${existing.text} ${cleanText}` : cleanText;
-                    const newTimer = setTimeout(() => {
-                      processLiveTranscriptForActions(speakerName, combinedUtterance);
-                      utteranceDebounceRef.current.delete(speakerName);
-                    }, 4000);
-                    utteranceDebounceRef.current.set(speakerName, { text: combinedUtterance, timer: newTimer });
-                  }
-                }
-              };
-              rec.onerror = () => {};
-              rec.start();
-              localRecognitionRef.current = rec;
-            } catch (e) {}
-          }
-        }
-
-        // If native Web Speech Recognition is active for local user, don't run redundant MediaRecorder loop
-        if (isLocal && localRecognitionRef.current) {
-          peerAudioRecordersRef.current.set(peerId, {
-            stop: () => {},
-            recorder: { state: 'recording', stop: () => {} }
-          });
-          return;
-        }
-
-        // For remote peer: send signaling request
-        if (!isLocal && wsRef.current && wsRef.current.readyState === 1) {
-          try {
-            wsRef.current.send(
-              JSON.stringify({
-                type: 'remote-transcribe-toggle',
-                targetPeerId: peerId
-              })
-            );
-          } catch (e) {}
-        }
-
-        // Audio track acquisition for MediaRecorder
-        let audioTracks = [];
-        if (isLocal) {
-          audioTracks = localStreamRef.current ? localStreamRef.current.getAudioTracks() : [];
+        const streamFromRef = remoteStreamsRef.current.get(peerId);
+        if (streamFromRef && streamFromRef.getAudioTracks().length > 0) {
+          audioTracks = streamFromRef.getAudioTracks();
         } else {
-          const streamFromRef = remoteStreamsRef.current.get(peerId);
-          if (streamFromRef && streamFromRef.getAudioTracks().length > 0) {
-            audioTracks = streamFromRef.getAudioTracks();
-          } else {
-            const targetPeer = remotePeers.find((p) => p.peerId === peerId);
-            audioTracks = targetPeer?.stream?.getAudioTracks() || [];
+          const targetPeer = remotePeers.find((p) => p.peerId === peerId);
+          audioTracks = targetPeer?.stream?.getAudioTracks() || [];
+        }
+        if (audioTracks.length === 0) {
+          const pc = peerConnectionsRef.current.get(peerId);
+          if (pc && typeof pc.getReceivers === 'function') {
+            const receiver = pc.getReceivers().find((r) => r.track && r.track.kind === 'audio');
+            if (receiver && receiver.track) {
+              audioTracks = [receiver.track];
+            }
           }
-          if (audioTracks.length === 0) {
-            const pc = peerConnectionsRef.current.get(peerId);
-            if (pc && typeof pc.getReceivers === 'function') {
-              const receiver = pc.getReceivers().find((r) => r.track && r.track.kind === 'audio');
-              if (receiver && receiver.track) {
-                audioTracks = [receiver.track];
-              }
+        }
+      }
+
+      if (typeof window === 'undefined' || typeof window.MediaRecorder === 'undefined' || audioTracks.length === 0) {
+        peerAudioRecordersRef.current.set(peerId, {
+          stop: () => {},
+          recorder: { state: 'recording', stop: () => {} },
+          chunks: []
+        });
+        return;
+      }
+
+      try {
+        let audioStream = new MediaStream(audioTracks);
+        let activeAudioCtx = null;
+        let analyser = null;
+        let freqData = null;
+        try {
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          if (AudioCtx) {
+            activeAudioCtx = new AudioCtx();
+            if (activeAudioCtx.state === 'suspended') {
+              activeAudioCtx.resume().catch(() => {});
+            }
+            const src = activeAudioCtx.createMediaStreamSource(new MediaStream(audioTracks));
+            const dest = activeAudioCtx.createMediaStreamDestination();
+            src.connect(dest);
+            if (dest.stream && dest.stream.getAudioTracks().length > 0) {
+              audioStream = dest.stream;
+            }
+            analyser = activeAudioCtx.createAnalyser();
+            analyser.fftSize = 256;
+            src.connect(analyser);
+            freqData = new Uint8Array(analyser.frequencyBinCount);
+          }
+        } catch (e) {}
+
+        let mimeType = '';
+        if (typeof MediaRecorder.isTypeSupported === 'function') {
+          const preferredTypes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/aac'];
+          for (const pt of preferredTypes) {
+            if (MediaRecorder.isTypeSupported(pt)) {
+              mimeType = pt;
+              break;
             }
           }
         }
 
-        if (typeof window !== 'undefined' && typeof window.MediaRecorder !== 'undefined' && audioTracks.length > 0) {
-          try {
-            let audioStream = new MediaStream(audioTracks);
-            let activeAudioCtx = null;
-            let analyser = null;
-            let freqData = null;
-            try {
-              const AudioCtx = window.AudioContext || window.webkitAudioContext;
-              if (AudioCtx) {
-                activeAudioCtx = new AudioCtx();
-                if (activeAudioCtx.state === 'suspended') {
-                  activeAudioCtx.resume().catch(() => {});
-                }
-                const src = activeAudioCtx.createMediaStreamSource(new MediaStream(audioTracks));
-                const dest = activeAudioCtx.createMediaStreamDestination();
-                src.connect(dest);
-                if (dest.stream && dest.stream.getAudioTracks().length > 0) {
-                  audioStream = dest.stream;
-                }
-                analyser = activeAudioCtx.createAnalyser();
-                analyser.fftSize = 256;
-                src.connect(analyser);
-                freqData = new Uint8Array(analyser.frequencyBinCount);
-              }
-            } catch (e) {}
+        const options = mimeType ? { mimeType } : undefined;
+        const sessionState = {
+          active: true,
+          currentRecorder: null,
+          timer: null,
+          startedAt: Date.now(),
+          sessionChunks: [],
+          hadSpeech: false
+        };
 
-            let mimeType = '';
-            if (typeof MediaRecorder.isTypeSupported === 'function') {
-              const preferredTypes = [
-                'audio/webm;codecs=opus',
-                'audio/webm',
-                'audio/mp4',
-                'audio/aac'
-              ];
-              for (const pt of preferredTypes) {
-                if (MediaRecorder.isTypeSupported(pt)) {
-                  mimeType = pt;
-                  break;
+        const flushSavedClip = (mime) => {
+          if (sessionState.sessionChunks.length === 0) return;
+          const fullBlob = new Blob(sessionState.sessionChunks, { type: mime || 'audio/webm' });
+          sessionState.sessionChunks = [];
+          if (fullBlob.size < 1000) return;
+          const elapsedSec = Math.max(1, Math.round((Date.now() - sessionState.startedAt) / 1000));
+          const url = typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function'
+            ? URL.createObjectURL(fullBlob)
+            : '';
+          setCapturedAudioClips((prev) => [
+            {
+              id: `clip-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              peerId,
+              peerName: speakerName,
+              blob: fullBlob,
+              url,
+              duration: `${elapsedSec}s`,
+              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+            },
+            ...prev
+          ].slice(0, 20));
+        };
+
+        const recordSegment = () => {
+          if (!sessionState.active) return;
+          try {
+            const rec = new MediaRecorder(audioStream, options);
+            const segChunks = [];
+            let hasAudibleSpeech = !analyser;
+
+            let energyInterval = null;
+            if (analyser && freqData) {
+              energyInterval = setInterval(() => {
+                analyser.getByteFrequencyData(freqData);
+                let sum = 0;
+                for (let i = 0; i < freqData.length; i++) sum += freqData[i];
+                if (sum / freqData.length > 5) {
+                  hasAudibleSpeech = true;
+                  sessionState.hadSpeech = true;
                 }
-              }
+              }, 200);
             }
 
-            const options = mimeType ? { mimeType } : undefined;
-            const sessionState = { active: true, currentRecorder: null, timer: null };
-
-            const recordSegment = () => {
-              if (!sessionState.active) return;
-              try {
-                const rec = new MediaRecorder(audioStream, options);
-                const segChunks = [];
-                let hasAudibleSpeech = !analyser;
-
-                let energyInterval = null;
-                if (analyser && freqData) {
-                  energyInterval = setInterval(() => {
-                    analyser.getByteFrequencyData(freqData);
-                    let sum = 0;
-                    for (let i = 0; i < freqData.length; i++) {
-                      sum += freqData[i];
-                    }
-                    if (sum / freqData.length > 6) {
-                      hasAudibleSpeech = true;
-                    }
-                  }, 200);
-                }
-
-                rec.ondataavailable = (e) => {
-                  if (e.data && e.data.size > 0) {
-                    segChunks.push(e.data);
-                  }
-                };
-                rec.onstop = () => {
-                  if (energyInterval) clearInterval(energyInterval);
-                  const mime = rec.mimeType || mimeType || 'audio/webm';
-                  // Only send if non-silent audio was recorded
-                  if (segChunks.length > 0 && hasAudibleSpeech) {
-                    const blob = new Blob(segChunks, { type: mime });
-                    if (blob.size >= 500) {
-                      sendAudioBlobForTranscription(blob, mime, speakerName);
-                    }
-                  }
-                  if (sessionState.active) {
-                    recordSegment();
-                  }
-                };
-                sessionState.currentRecorder = rec;
-                rec.start();
-                sessionState.timer = setTimeout(() => {
-                  if (rec.state === 'recording') {
-                    rec.stop();
-                  }
-                }, 7000);
-              } catch (e) {
-                console.warn('Error in recordSegment:', e);
+            rec.ondataavailable = (e) => {
+              if (e.data && e.data.size > 0) {
+                segChunks.push(e.data);
+                sessionState.sessionChunks.push(e.data);
               }
             };
-
-            recordSegment();
-
-            peerAudioRecordersRef.current.set(peerId, {
-              stop: () => {
-                sessionState.active = false;
-                if (sessionState.timer) clearTimeout(sessionState.timer);
-                if (sessionState.currentRecorder && sessionState.currentRecorder.state !== 'inactive') {
-                  sessionState.currentRecorder.stop();
+            rec.onstop = () => {
+              if (energyInterval) clearInterval(energyInterval);
+              const mime = rec.mimeType || mimeType || 'audio/webm';
+              if (transcribeChunks && segChunks.length > 0 && hasAudibleSpeech) {
+                const blob = new Blob(segChunks, { type: mime });
+                if (blob.size >= 500) {
+                  sendAudioBlobForTranscription(blob, mime, speakerName);
                 }
-                if (activeAudioCtx) {
-                  try { activeAudioCtx.close(); } catch (e) {}
-                }
-              },
-              recorder: {
-                state: 'recording',
-                stop: () => {
-                  sessionState.active = false;
-                  if (sessionState.timer) clearTimeout(sessionState.timer);
-                  if (sessionState.currentRecorder && sessionState.currentRecorder.state !== 'inactive') {
-                    sessionState.currentRecorder.stop();
-                  }
-                  if (activeAudioCtx) {
-                    try { activeAudioCtx.close(); } catch (e) {}
-                  }
-                }
-              },
-              stream: audioStream
-            });
-          } catch (err) {
-            console.warn('Failed to start MediaRecorder on audio track:', err);
+              }
+              if (sessionState.active) {
+                recordSegment();
+              } else {
+                flushSavedClip(mime);
+              }
+            };
+            sessionState.currentRecorder = rec;
+            rec.start();
+            sessionState.timer = setTimeout(() => {
+              if (rec.state === 'recording') {
+                rec.stop();
+              }
+            }, 7000);
+          } catch (e) {
+            console.warn('Error in recordSegment:', e);
           }
-        } else {
-          // Graceful fallback for headless test runners / mock environments
-          const mockSession = {
-            stop: () => {},
-            recorder: {
-              state: 'recording',
-              stop: () => {}
-            },
-            chunks: []
-          };
-          peerAudioRecordersRef.current.set(peerId, mockSession);
-        }
+        };
 
-        return [...prev, peerId];
+        recordSegment();
+
+        const stopRecorder = () => {
+          sessionState.active = false;
+          if (sessionState.timer) clearTimeout(sessionState.timer);
+          if (sessionState.currentRecorder && sessionState.currentRecorder.state !== 'inactive') {
+            try { sessionState.currentRecorder.stop(); } catch (e) {}
+          } else {
+            flushSavedClip(mimeType || 'audio/webm');
+          }
+          if (activeAudioCtx) {
+            try { activeAudioCtx.close(); } catch (e) {}
+          }
+        };
+
+        peerAudioRecordersRef.current.set(peerId, {
+          stop: stopRecorder,
+          recorder: { state: 'recording', stop: stopRecorder },
+          stream: audioStream
+        });
+      } catch (err) {
+        console.warn('Failed to start MediaRecorder on audio track:', err);
       }
-    });
+    };
+
+    if (isAlreadyCaptured) {
+      const nextIds = capturedPeerIdsRef.current.filter((id) => id !== peerId);
+      capturedPeerIdsRef.current = nextIds;
+      setCapturedPeerIds(nextIds);
+
+      if (isLocal && localRecognitionRef.current) {
+        try {
+          localRecognitionRef.current.onend = null;
+          localRecognitionRef.current.stop();
+        } catch (e) {}
+        localRecognitionRef.current = null;
+      }
+
+      if (!isLocal && wsRef.current && wsRef.current.readyState === 1) {
+        try {
+          wsRef.current.send(JSON.stringify({ type: 'remote-transcribe-toggle', targetPeerId: peerId, enabled: false }));
+        } catch (e) {}
+      }
+
+      const activeSession = peerAudioRecordersRef.current.get(peerId);
+      if (activeSession) {
+        if (typeof activeSession.stop === 'function') {
+          activeSession.stop();
+        } else {
+          if (activeSession.interval) clearInterval(activeSession.interval);
+          try {
+            if (activeSession.recorder && activeSession.recorder.state !== 'inactive') {
+              activeSession.recorder.stop();
+            }
+          } catch (e) {}
+        }
+        peerAudioRecordersRef.current.delete(peerId);
+      }
+      return;
+    }
+
+    // Starting capture for peerId
+    const nextIds = [...capturedPeerIdsRef.current, peerId];
+    capturedPeerIdsRef.current = nextIds;
+    setCapturedPeerIds(nextIds);
+
+    let speechActive = false;
+    if (isLocal && typeof window !== 'undefined') {
+      const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (SpeechRec) {
+        try {
+          const rec = new SpeechRec();
+          rec.continuous = true;
+          rec.interimResults = false;
+          rec.lang = (typeof navigator !== 'undefined' && navigator.language) ? navigator.language : 'en-US';
+
+          rec.onresult = (event) => {
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+              const rawText = event.results[i][0]?.transcript?.trim();
+              if (rawText && isValidSpeechTranscript(rawText, speakerName)) {
+                const cleanText = rawText.replace(/^["'`«»“”„]+|["'`«»“”„]+$/g, '').trim();
+                const now = Date.now();
+                const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+                setTranscript((prevTr) => {
+                  const last = prevTr[prevTr.length - 1];
+                  if (last && last.speaker === speakerName && (now - (last.timestamp || 0) < 7000)) {
+                    const mergedText = `${last.text} ${cleanText}`.trim();
+                    const updatedLast = { ...last, text: mergedText, timestamp: now };
+                    if (wsRef.current && wsRef.current.readyState === 1) {
+                      wsRef.current.send(JSON.stringify({ type: 'transcript-entry-update', entry: updatedLast }));
+                    }
+                    return [...prevTr.slice(0, -1), updatedLast];
+                  }
+                  const entry = {
+                    id: `tr-${now}-${Math.random().toString(36).slice(2, 6)}`,
+                    speaker: speakerName,
+                    time: timeStr,
+                    text: cleanText,
+                    timestamp: now
+                  };
+                  if (wsRef.current && wsRef.current.readyState === 1) {
+                    wsRef.current.send(JSON.stringify({ type: 'transcript-entry', entry }));
+                  }
+                  return [...prevTr, entry];
+                });
+
+                const existing = utteranceDebounceRef.current.get(speakerName) || { text: '', timer: null };
+                if (existing.timer) clearTimeout(existing.timer);
+                const combinedUtterance = existing.text ? `${existing.text} ${cleanText}` : cleanText;
+                const newTimer = setTimeout(() => {
+                  processLiveTranscriptForActions(speakerName, combinedUtterance);
+                  utteranceDebounceRef.current.delete(speakerName);
+                }, 4000);
+                utteranceDebounceRef.current.set(speakerName, { text: combinedUtterance, timer: newTimer });
+              }
+            }
+          };
+
+          rec.onerror = (ev) => {
+            if (ev?.error && ['not-allowed', 'service-not-allowed', 'network', 'audio-capture'].includes(ev.error)) {
+              try { rec.onend = null; rec.stop(); } catch (e) {}
+              localRecognitionRef.current = null;
+              // Fall back to MediaRecorder + server Whisper/Gemini STT if active
+              if (capturedPeerIdsRef.current.includes('local')) {
+                const existing = peerAudioRecordersRef.current.get('local');
+                if (existing && typeof existing.stop === 'function') existing.stop();
+                startMediaRecorderForPeer(true);
+              }
+            }
+          };
+
+          rec.onend = () => {
+            if (capturedPeerIdsRef.current.includes('local') && localRecognitionRef.current === rec) {
+              try { rec.start(); } catch (e) {}
+            }
+          };
+
+          rec.start();
+          localRecognitionRef.current = rec;
+          speechActive = true;
+        } catch (e) {
+          speechActive = false;
+        }
+      }
+    }
+
+    if (!isLocal && wsRef.current && wsRef.current.readyState === 1) {
+      try {
+        wsRef.current.send(JSON.stringify({ type: 'remote-transcribe-toggle', targetPeerId: peerId, enabled: true }));
+      } catch (e) {}
+    }
+
+    // Record audio clip locally (and transcribe chunks if SpeechRecognition isn't running)
+    startMediaRecorderForPeer(!speechActive);
   }, [remotePeers, sendAudioBlobForTranscription, user?.name, user?.id, processLiveTranscriptForActions]);
 
   const handleDeleteClip = (clipId) => {
@@ -1579,15 +1637,19 @@ export default function App() {
   };
 
   const handleAddTranscript = (text) => {
+    const speakerName = user?.name || 'You';
     const entry = {
       id: `tr-${Date.now()}`,
-      speaker: user?.name || 'You',
+      speaker: speakerName,
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       text
     };
     setTranscript((prev) => [...prev, entry]);
     if (wsRef.current && wsRef.current.readyState === 1) {
       wsRef.current.send(JSON.stringify({ type: 'transcript-entry', entry }));
+    }
+    if (text && !String(text).trim().startsWith('[') && String(text).trim().length >= 8) {
+      processLiveTranscriptForActions(speakerName, text);
     }
   };
 
@@ -1623,6 +1685,9 @@ export default function App() {
       });
       if (response.ok) {
         const data = await response.json();
+        if (Array.isArray(data.summary) && data.summary.length > 0) {
+          setSummaryBullets(data.summary);
+        }
         if (Array.isArray(data.tasks) && data.tasks.length > 0) {
           const formatted = ensureUniqueTaskIds(
             data.tasks.map((t, idx) => ({
@@ -1855,6 +1920,7 @@ export default function App() {
             onDeleteClip={handleDeleteClip}
             onClearSession={handleClearNotesAndTranscript}
             jamState={jamState}
+            summaryBullets={summaryBullets}
             onSendClipToDaw={handleSendClipToDaw}
           />
         )}
@@ -1980,6 +2046,7 @@ export default function App() {
               onDeleteClip={handleDeleteClip}
               onClearSession={handleClearNotesAndTranscript}
               jamState={jamState}
+              summaryBullets={summaryBullets}
               onSendClipToDaw={handleSendClipToDaw}
             />
           </main>

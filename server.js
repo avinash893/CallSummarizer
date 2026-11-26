@@ -10,7 +10,7 @@ const crypto = require('crypto');
 const express = require('express');
 const cors = require('cors');
 const { WebSocketServer } = require('ws');
-const { extractLocalTasks } = require('./services/nlp-task-service/index');
+const { extractLocalTasks, generateLocalSummary } = require('./services/nlp-task-service/index');
 
 // Load local .env if present
 const envPath = path.join(__dirname, '.env');
@@ -1209,21 +1209,22 @@ app.post('/api/nlp-tasks/extract-tasks', async (req, res) => {
     const geminiKey = process.env.GEMINI_API_KEY || req.headers['x-gemini-api-key'] || req.body?.geminiApiKey;
 
     if (geminiKey) {
-        const candidateModels = ['gemini-3-flash-preview', 'gemini-3.1-flash-lite-preview', 'gemini-3.5-flash-lite'];
+        const candidateModels = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-3-flash-preview'];
         for (const modelName of candidateModels) {
             try {
                 const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${geminiKey}`;
-                const prompt = `You are an expert meeting assistant. Extract all action items, commitments, and delegated tasks from the following meeting transcript (which may include Indian names like Sukhman, Avinash, Rohan, and conversational or Hinglish phrasing).
+                const prompt = `You are an expert meeting assistant. Extract all action items, commitments, and a 2-bullet summary from the following meeting transcript.
 
 Transcript:
 ${cleanTranscript}
 
 Guidelines:
-- Identify who is assigned to do what (assignee), the clear action/task (title), and any due date or exact time mentioned (due).
-- If speaker says "Sukman, you have to make notes today itself by 1:00 p.m.", extract task "Make notes" assigned to "Sukhman" with due "Today at 1:00 PM".
-- Infer sensible titles and normalize names (e.g. Sukman -> Sukhman).
+- Identify who is assigned to do what (assignee), the clear concise action/task (title), and any due date or exact time mentioned (due).
+- If speaker says "Alice, please send the stems today at 1:00 pm", extract title "Send stems", assignee "Alice", due "Today at 1:00 PM".
+- Include a 2-3 bullet "summary" array capturing key topics, decisions, and next steps.
 - Return valid JSON matching this schema:
 {
+  "summary": ["Concise summary bullet 1", "Concise summary bullet 2"],
   "tasks": [
     {
       "title": "Clean concise action description",
@@ -1246,8 +1247,9 @@ Guidelines:
                     const data = await apiRes.json();
                     const rawJson = data.candidates?.[0]?.content?.parts?.[0]?.text;
                     if (rawJson) {
-                        const parsed = JSON.parse(rawJson);
-                        if (Array.isArray(parsed.tasks) && parsed.tasks.length > 0) {
+                        const cleaned = rawJson.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
+                        const parsed = JSON.parse(cleaned);
+                        if (Array.isArray(parsed.tasks)) {
                             const normalizedTasks = parsed.tasks.map((t, idx) => {
                                 let title = String(t.title || '').replace(/\b(?:the|a|an)\s+/ig, '').trim();
                                 if (title) title = title.charAt(0).toUpperCase() + title.slice(1);
@@ -1258,13 +1260,18 @@ Guidelines:
                                         : `task-${Date.now()}-${idx + 1}`,
                                     title: title || t.title,
                                     assignee: (/rohan/i.test(t.assignee || '')) ? 'Rohan Sharma' : (t.assignee || 'You'),
+                                    due: t.due || 'Upcoming',
                                     completed: Boolean(t.completed)
                                 };
                             });
+                            const summary = Array.isArray(parsed.summary) && parsed.summary.length > 0
+                                ? parsed.summary
+                                : generateLocalSummary(cleanTranscript, normalizedTasks);
                             if (roomId && rooms.has(roomId)) {
                                 rooms.get(roomId).tasks = normalizedTasks;
+                                rooms.get(roomId).summary = summary;
                             }
-                            return res.json({ tasks: normalizedTasks, source: modelName });
+                            return res.json({ tasks: normalizedTasks, summary, source: modelName });
                         }
                     }
                 }
@@ -1284,10 +1291,12 @@ Guidelines:
         seenIds.add(id);
         return { ...t, id: String(id), completed: Boolean(t.completed) };
     });
+    const summary = generateLocalSummary(cleanTranscript, tasks);
     if (roomId && rooms.has(roomId)) {
         rooms.get(roomId).tasks = tasks;
+        rooms.get(roomId).summary = summary;
     }
-    res.json({ tasks, source: 'render-server-nlp' });
+    res.json({ tasks, summary, source: 'render-server-nlp' });
 });
 
 // Validates whether transcribed text is actual human speech rather than silence, timestamps, or artifacts
@@ -1336,7 +1345,7 @@ async function handleTranscribeAudio(req, res) {
     const geminiKey = process.env.GEMINI_API_KEY || req.headers['x-gemini-api-key'] || req.body?.geminiApiKey;
 
     if (geminiKey) {
-        const candidateModels = ['gemini-3-flash-preview', 'gemini-3.1-flash-lite-preview', 'gemini-3.5-flash-lite'];
+        const candidateModels = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-3-flash-preview'];
         for (const modelName of candidateModels) {
             try {
                 const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${geminiKey}`;
@@ -2025,6 +2034,37 @@ wss.on('connection', (ws) => {
                         broadcastToRoom(ws.roomId, {
                             type: 'transcript-entry',
                             entry
+                        }, ws);
+                    }
+                }
+                break;
+            }
+
+            case 'transcript-entry-update': {
+                if (!ws.roomId || !data.entry) break;
+                const room = rooms.get(ws.roomId);
+                if (room) {
+                    const rawText = String(data.entry.text || '').trim();
+                    const cleanSpeaker = String(data.entry.speaker || 'Participant').trim();
+                    if (!isValidSpeechTranscript(rawText, cleanSpeaker)) {
+                        break;
+                    }
+                    const cleanEntry = {
+                        id: data.entry.id || crypto.randomUUID(),
+                        speaker: cleanSpeaker,
+                        time: data.entry.time || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                        text: rawText.replace(/^["'`«»“”„]+|["'`«»“”„]+$/g, '').trim()
+                    };
+                    if (cleanEntry.text) {
+                        const existingIdx = room.transcript.findIndex((t) => t.id === cleanEntry.id);
+                        if (existingIdx !== -1) {
+                            room.transcript[existingIdx] = cleanEntry;
+                        } else {
+                            room.transcript.push(cleanEntry);
+                        }
+                        broadcastToRoom(ws.roomId, {
+                            type: 'transcript-entry-update',
+                            entry: cleanEntry
                         }, ws);
                     }
                 }

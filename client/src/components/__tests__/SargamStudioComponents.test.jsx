@@ -168,5 +168,31 @@ describe('SargamJam Studio Components', () => {
       fireEvent.click(playBtn);
     });
     expect(onSendControl).toHaveBeenCalledWith(expect.objectContaining({ action: 'play' }));
+
+    // Verify event-driven pause stops all peers' audio cleanly without per-tick polling
+    rerender(
+      <PitchAndLyricsView
+        jamState={{ tonicMidi: 60, raga: 'All Notes', tuningMode: 'et' }}
+        onUpdateJamState={vi.fn()}
+        liveMicPitch={null}
+        backingState={{
+          title: 'Leader Jam',
+          vocalUrl: '/api/rooms/r1/shared-audio/abc',
+          instUrl: '/api/rooms/r1/shared-audio/def',
+          noteBars: [],
+          lyrics: []
+        }}
+        onUpdateBackingState={vi.fn()}
+        selfPeerId="peer-follower"
+        leaderPeerId="peer-leader"
+        leaderName="Riya"
+        onSendBackingControl={onSendControl}
+        onClaimLeader={onClaimLeader}
+        backingControlEvent={{ action: 'pause', isPlaying: false, currentTime: 42, seq: 9 }}
+      />
+    );
+    audioEls.forEach((a) => {
+      expect(a.pause).toHaveBeenCalled();
+    });
   });
 });

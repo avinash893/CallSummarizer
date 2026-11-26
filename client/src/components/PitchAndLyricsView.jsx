@@ -144,7 +144,7 @@ export default function PitchAndLyricsView({
     }
   }, [backingState?.vocalUrl, backingState?.instUrl]);
 
-  // Synchronize Leader transport commands (play, pause, stop, seek, sync, volume)
+  // Synchronize Leader event-driven transport commands (play, pause, stop, seek, volume)
   useEffect(() => {
     if (!backingControlEvent) return;
     if (backingControlEvent.seq && backingControlEvent.seq <= lastAppliedSeqRef.current) return;
@@ -167,7 +167,7 @@ export default function PitchAndLyricsView({
     if (typeof backingControlEvent.instVol === 'number') setInstVol(backingControlEvent.instVol);
 
     if (backingControlEvent.action === 'stop' || backingControlEvent.action === 'pause' || backingControlEvent.isPlaying === false) {
-      followerAnchorRef.current = { playing: false, baseTime: targetSec, serverAnchorMs: eventServerMs };
+      followerAnchorRef.current = null;
       resetPlaybackRates();
       vEl?.pause();
       iEl?.pause();
@@ -183,21 +183,18 @@ export default function PitchAndLyricsView({
       return;
     }
 
-    if (backingControlEvent.action === 'play' || backingControlEvent.action === 'seek' || backingControlEvent.action === 'sync' || backingControlEvent.isPlaying === true) {
+    if (backingControlEvent.action === 'play' || backingControlEvent.action === 'seek' || backingControlEvent.isPlaying === true) {
       followerAnchorRef.current = { playing: Boolean(backingControlEvent.isPlaying), baseTime, serverAnchorMs: eventServerMs };
 
-      const alreadyPlaying = Boolean((vEl && !vEl.paused) || (iEl && !iEl.paused));
-      const snapThreshold = backingControlEvent.action === 'sync' ? 0.16 : 0.06;
-      if (vEl && Math.abs((vEl.currentTime || 0) - targetSec) > snapThreshold) {
+      if (vEl && Math.abs((vEl.currentTime || 0) - targetSec) > 0.08) {
         try { vEl.currentTime = targetSec; } catch (e) {}
       }
-      if (iEl && backingState?.instUrl && Math.abs((iEl.currentTime || 0) - targetSec) > snapThreshold) {
+      if (iEl && backingState?.instUrl && Math.abs((iEl.currentTime || 0) - targetSec) > 0.08) {
         try { iEl.currentTime = targetSec; } catch (e) {}
       }
-      if (backingControlEvent.action !== 'sync' || !alreadyPlaying) {
-        setCurrentTime(targetSec);
-      }
+      setCurrentTime(targetSec);
 
+      const alreadyPlaying = Boolean((vEl && !vEl.paused) || (iEl && !iEl.paused));
       if (backingControlEvent.isPlaying && (!alreadyPlaying || backingControlEvent.action === 'play')) {
         if (!backingState?.noteBars?.length) {
           ensureVocalAnalyser();
@@ -216,14 +213,14 @@ export default function PitchAndLyricsView({
             setStatusMsg('Leader started playback — click Play once to unlock browser audio.');
             return;
           }
-          // Re-align immediately after HTTP buffering / decoder spin-up so follower matches Leader live time
+          // One-time post-buffer alignment when playback begins, then let local playback run undisturbed
           const anchor = followerAnchorRef.current;
           if (anchor?.playing) {
             const liveExpected = Math.max(0, anchor.baseTime + Math.max(0, (getServerNowMs() - anchor.serverAnchorMs) / 1000));
-            if (vEl && Math.abs((vEl.currentTime || 0) - liveExpected) > 0.06) {
+            if (vEl && Math.abs((vEl.currentTime || 0) - liveExpected) > 0.08) {
               try { vEl.currentTime = liveExpected; } catch (e) {}
             }
-            if (iEl && backingState?.instUrl && Math.abs((iEl.currentTime || 0) - liveExpected) > 0.06) {
+            if (iEl && backingState?.instUrl && Math.abs((iEl.currentTime || 0) - liveExpected) > 0.08) {
               try { iEl.currentTime = liveExpected; } catch (e) {}
             }
             setCurrentTime(liveExpected);
@@ -279,30 +276,8 @@ export default function PitchAndLyricsView({
       }
       if (d && Number.isFinite(d)) setDuration(d);
 
-      // Gentle follower phase-lock so music stays tightly aligned across peers
-      if (!isLeader && followerAnchorRef.current?.playing) {
-        const expected = Math.max(
-          0,
-          followerAnchorRef.current.baseTime +
-            Math.max(0, (getServerNowMs() - followerAnchorRef.current.serverAnchorMs) / 1000)
-        );
-        const drift = expected - t;
-        if (Math.abs(drift) > 0.18) {
-          if (vEl) try { vEl.currentTime = expected; vEl.playbackRate = 1.0; } catch (e) {}
-          if (iEl && backingState?.instUrl) try { iEl.currentTime = expected; iEl.playbackRate = 1.0; } catch (e) {}
-        } else if (drift > 0.04) {
-          if (vEl) vEl.playbackRate = 1.05;
-          if (iEl && backingState?.instUrl) iEl.playbackRate = 1.05;
-        } else if (drift < -0.04) {
-          if (vEl) vEl.playbackRate = 0.95;
-          if (iEl && backingState?.instUrl) iEl.playbackRate = 0.95;
-        } else {
-          resetPlaybackRates();
-        }
-      }
-
-      // Keep inst stem aligned with vocal stem without forcing rapid re-seeks
-      if (vEl && iEl && backingState?.instUrl && Math.abs((vEl.currentTime || 0) - (iEl.currentTime || 0)) > 0.14) {
+      // Keep inst stem aligned with vocal stem only if severely out of phase (>0.25s)
+      if (vEl && iEl && backingState?.instUrl && Math.abs((vEl.currentTime || 0) - (iEl.currentTime || 0)) > 0.25) {
         try { iEl.currentTime = vEl.currentTime; } catch (e) {}
       }
 
@@ -339,20 +314,6 @@ export default function PitchAndLyricsView({
     rafRef.current = requestAnimationFrame(tick);
     return stopPlaybackLoop;
   }, [isPlaying, isLeader, vocalVol, instVol, onSendBackingControl, jamState.tonicMidi, jamState.tuningMode, jamState.raga, backingState?.noteBars, backingState?.instUrl]);
-
-  // Leader continuous 1.2s sync pulse while playing so followers never drift behind
-  useEffect(() => {
-    if (!isLeader || !isPlaying || !onSendBackingControl) return;
-    const timer = setInterval(() => {
-      const vEl = vocalAudioRef.current;
-      const iEl = instAudioRef.current;
-      const liveTime = vEl?.currentTime ?? iEl?.currentTime;
-      if (Number.isFinite(liveTime) && ((!vEl || !vEl.paused) || (!iEl || !iEl.paused))) {
-        onSendBackingControl({ action: 'sync', currentTime: liveTime, vocalVol, instVol });
-      }
-    }, 1200);
-    return () => clearInterval(timer);
-  }, [isLeader, isPlaying, vocalVol, instVol, onSendBackingControl]);
 
   const togglePlay = async () => {
     const vEl = vocalAudioRef.current;

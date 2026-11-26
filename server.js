@@ -1959,10 +1959,91 @@ function normalizeSargamPayload(data, backend, fallbackTitle = 'AI Separated Tra
     };
 }
 
+const SARGAM_LOCAL_SCRIPT = path.join(__dirname, 'services', 'sargam-ai', 'local_stems.py');
+const SARGAM_LOCAL_CACHE_DIR = process.env.SARGAM_LOCAL_CACHE_DIR || path.join(os.tmpdir(), 'callsummarizer_sargam_cache');
+const SARGAM_ALLOW_LOCAL_FALLBACK = process.env.SARGAM_ALLOW_LOCAL_FALLBACK !== 'false';
+let cachedLocalProbe = null;
+let cachedLocalProbeAt = 0;
+
+function resolveLocalCacheFile(relFile) {
+    if (!relFile || typeof relFile !== 'string') return null;
+    const base = path.resolve(SARGAM_LOCAL_CACHE_DIR);
+    const resolved = path.resolve(base, relFile);
+    if (!resolved.startsWith(base + path.sep)) return null;
+    return resolved;
+}
+
+async function parseUpstreamSargamResponse(upRes) {
+    const raw = await upRes.text().catch(() => '');
+    let data = {};
+    try {
+        data = raw ? JSON.parse(raw) : {};
+    } catch (e) {
+        data = {};
+    }
+    const ok = upRes.ok && data.success !== false;
+    const errorText = data.detail || data.error || (raw && raw.trim().slice(0, 260)) || '';
+    return { ok, status: upRes.status, data, errorText };
+}
+
+function probeLocalSargam() {
+    if (!SARGAM_ALLOW_LOCAL_FALLBACK || !fs.existsSync(SARGAM_LOCAL_SCRIPT)) {
+        return Promise.resolve({ ok: false });
+    }
+    const now = Date.now();
+    if (cachedLocalProbe && now - cachedLocalProbeAt < 60000) {
+        return Promise.resolve(cachedLocalProbe);
+    }
+    const { execFile } = require('child_process');
+    return new Promise((resolve) => {
+        execFile(process.env.PYTHON_PATH || 'python', [SARGAM_LOCAL_SCRIPT, '--probe'], { timeout: 10000 }, (err, stdout) => {
+            if (!err && stdout) {
+                try {
+                    const parsed = JSON.parse(stdout.trim().split(/\r?\n/).pop());
+                    cachedLocalProbe = { ok: Boolean(parsed.ok), cuda: Boolean(parsed.cuda) };
+                    cachedLocalProbeAt = Date.now();
+                    return resolve(cachedLocalProbe);
+                } catch (e) {}
+            }
+            cachedLocalProbe = { ok: false };
+            cachedLocalProbeAt = Date.now();
+            resolve(cachedLocalProbe);
+        });
+    });
+}
+
+function runLocalSargamSeparation(mode, input, title = '') {
+    if (!SARGAM_ALLOW_LOCAL_FALLBACK || !fs.existsSync(SARGAM_LOCAL_SCRIPT)) {
+        return Promise.reject(new Error('Local stem separator not installed.'));
+    }
+    const { execFile } = require('child_process');
+    const args = [SARGAM_LOCAL_SCRIPT, '--mode', mode, '--input', input, '--cache-dir', SARGAM_LOCAL_CACHE_DIR];
+    if (title) args.push('--title', title);
+    return new Promise((resolve, reject) => {
+        execFile(
+            process.env.PYTHON_PATH || 'python',
+            args,
+            { timeout: 300000, maxBuffer: 15 * 1024 * 1024 },
+            (err, stdout, stderr) => {
+                const lastLine = String(stdout || '').trim().split(/\r?\n/).filter(Boolean).pop() || '';
+                if (lastLine) {
+                    try {
+                        const parsed = JSON.parse(lastLine);
+                        if (parsed && parsed.success) return resolve(parsed);
+                        return reject(new Error(parsed?.error || stderr || err?.message || 'Local separation failed'));
+                    } catch (parseErr) {}
+                }
+                return reject(new Error(stderr?.trim() || err?.message || 'Local stem extraction failed'));
+            }
+        );
+    });
+}
+
 app.get('/api/sargam/health', async (req, res) => {
     const backend = resolveSargamBackend(req.query.backend || req.headers['x-sargam-backend']);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
+    let modalErr = '';
     try {
         const upRes = await fetch(`${backend}/api/health`, { signal: controller.signal });
         clearTimeout(timeout);
@@ -1970,11 +2051,22 @@ app.get('/api/sargam/health', async (req, res) => {
             const details = await upRes.json().catch(() => ({}));
             return res.json({ ok: true, backend, details });
         }
-        return res.json({ ok: false, backend, status: upRes.status });
+        modalErr = (await upRes.text().catch(() => '')).trim().slice(0, 200) || `HTTP ${upRes.status}`;
     } catch (err) {
         clearTimeout(timeout);
-        return res.json({ ok: false, backend, error: err.message });
+        modalErr = err.message;
     }
+    const local = await probeLocalSargam();
+    if (local.ok) {
+        return res.json({
+            ok: true,
+            backend: local.cuda ? 'local-gpu' : 'local-cpu',
+            mode: 'local',
+            cuda: local.cuda,
+            modalError: modalErr
+        });
+    }
+    return res.json({ ok: false, backend, error: modalErr });
 });
 
 const sargamAudioCache = new Map();
@@ -2039,6 +2131,8 @@ app.post('/api/sargam/separate-stems', async (req, res) => {
         return res.status(400).json({ error: 'Invalid or private media URL provided.' });
     }
     const backend = resolveSargamBackend(requestedBackend || req.headers['x-sargam-backend']);
+    let upstreamError = '';
+    let upstreamStatus = 502;
     try {
         const upRes = await fetch(`${backend}/api/separate-stems`, {
             method: 'POST',
@@ -2046,16 +2140,30 @@ app.post('/api/sargam/separate-stems', async (req, res) => {
             body: JSON.stringify({ url: targetUrl }),
             signal: AbortSignal.timeout(240000)
         });
-        const data = await upRes.json().catch(() => ({}));
-        if (!upRes.ok || data.success === false) {
-            return res.status(upRes.ok ? 422 : upRes.status).json({ error: data.detail || data.error || 'Stem separation failed.' });
+        const parsed = await parseUpstreamSargamResponse(upRes);
+        if (parsed.ok) {
+            const normalized = normalizeSargamPayload(parsed.data, backend, 'AI Separated Track');
+            warmSargamAudioCache(normalized, backend);
+            return res.json(normalized);
         }
-        const normalized = normalizeSargamPayload(data, backend, 'AI Separated Track');
-        warmSargamAudioCache(normalized, backend);
-        return res.json(normalized);
+        upstreamStatus = parsed.status || 422;
+        upstreamError = parsed.errorText || 'Stem separation failed.';
     } catch (err) {
-        return res.status(502).json({ error: `Stem backend unreachable: ${err.message}` });
+        upstreamError = `Stem backend unreachable: ${err.message}`;
     }
+
+    // Fallback to local GPU/CPU Demucs + yt-dlp when cloud backend fails or workspace is disabled
+    const localProbe = await probeLocalSargam();
+    if (localProbe.ok) {
+        try {
+            const localData = await runLocalSargamSeparation('url', targetUrl);
+            const normalized = normalizeSargamPayload(localData, backend, 'AI Separated Track');
+            return res.json(normalized);
+        } catch (localErr) {
+            return res.status(500).json({ error: localErr.message || upstreamError || 'Stem separation failed.' });
+        }
+    }
+    return res.status(upstreamStatus >= 400 ? upstreamStatus : 502).json({ error: upstreamError || 'Stem separation failed.' });
 });
 
 app.post('/api/sargam/separate-stems-file', express.raw({ type: '*/*', limit: '60mb' }), async (req, res) => {
@@ -2064,6 +2172,10 @@ app.post('/api/sargam/separate-stems-file', express.raw({ type: '*/*', limit: '6
     if (!req.body || !Buffer.isBuffer(req.body) || req.body.length === 0) {
         return res.status(400).json({ error: 'Uploaded audio file is empty.' });
     }
+
+    const filename = String(req.headers['x-filename'] || req.query.filename || 'upload.mp3').replace(/[^a-zA-Z0-9._-]/g, '_');
+    let upstreamError = '';
+    let upstreamStatus = 502;
 
     try {
         let upRes;
@@ -2075,7 +2187,6 @@ app.post('/api/sargam/separate-stems-file', express.raw({ type: '*/*', limit: '6
                 signal: AbortSignal.timeout(240000)
             });
         } else {
-            const filename = String(req.headers['x-filename'] || req.query.filename || 'upload.mp3').replace(/[^a-zA-Z0-9._-]/g, '_');
             const formData = new FormData();
             formData.append('file', new Blob([req.body], { type: contentType }), filename);
             upRes = await fetch(`${backend}/api/separate-stems-file`, {
@@ -2085,16 +2196,34 @@ app.post('/api/sargam/separate-stems-file', express.raw({ type: '*/*', limit: '6
             });
         }
 
-        const data = await upRes.json().catch(() => ({}));
-        if (!upRes.ok || data.success === false) {
-            return res.status(upRes.ok ? 422 : upRes.status).json({ error: data.detail || data.error || 'File stem separation failed.' });
+        const parsed = await parseUpstreamSargamResponse(upRes);
+        if (parsed.ok) {
+            const normalized = normalizeSargamPayload(parsed.data, backend, 'Uploaded Song Stems');
+            warmSargamAudioCache(normalized, backend);
+            return res.json(normalized);
         }
-        const normalized = normalizeSargamPayload(data, backend, 'Uploaded Song Stems');
-        warmSargamAudioCache(normalized, backend);
-        return res.json(normalized);
+        upstreamStatus = parsed.status || 422;
+        upstreamError = parsed.errorText || 'File stem separation failed.';
     } catch (err) {
-        return res.status(502).json({ error: `Stem file backend unreachable: ${err.message}` });
+        upstreamError = `Stem file backend unreachable: ${err.message}`;
     }
+
+    const localProbe = await probeLocalSargam();
+    if (localProbe.ok && !contentType.includes('multipart/form-data')) {
+        const tmpIn = path.join(os.tmpdir(), `sargam_upload_${crypto.randomUUID()}_${filename}`);
+        try {
+            fs.writeFileSync(tmpIn, req.body);
+            const title = filename.replace(/\.[^.]+$/, '');
+            const localData = await runLocalSargamSeparation('file', tmpIn, title);
+            const normalized = normalizeSargamPayload(localData, backend, title || 'Uploaded Song Stems');
+            return res.json(normalized);
+        } catch (localErr) {
+            return res.status(500).json({ error: localErr.message || upstreamError || 'File stem separation failed.' });
+        } finally {
+            try { if (fs.existsSync(tmpIn)) fs.unlinkSync(tmpIn); } catch (e) {}
+        }
+    }
+    return res.status(upstreamStatus >= 400 ? upstreamStatus : 502).json({ error: upstreamError || 'File stem separation failed.' });
 });
 
 app.post('/api/sargam/upload-cookies', express.raw({ type: '*/*', limit: '2mb' }), async (req, res) => {
@@ -2102,6 +2231,10 @@ app.post('/api/sargam/upload-cookies', express.raw({ type: '*/*', limit: '2mb' }
     if (!req.body || !Buffer.isBuffer(req.body) || req.body.length === 0) {
         return res.status(400).json({ error: 'Uploaded cookies file is empty.' });
     }
+    try {
+        fs.mkdirSync(SARGAM_LOCAL_CACHE_DIR, { recursive: true });
+        fs.writeFileSync(path.join(SARGAM_LOCAL_CACHE_DIR, 'cookies.txt'), req.body);
+    } catch (e) {}
     try {
         const formData = new FormData();
         formData.append('file', new Blob([req.body], { type: 'text/plain' }), 'cookies.txt');
@@ -2111,13 +2244,11 @@ app.post('/api/sargam/upload-cookies', express.raw({ type: '*/*', limit: '2mb' }
             signal: AbortSignal.timeout(15000)
         });
         const data = await upRes.json().catch(() => ({}));
-        if (!upRes.ok) {
-            return res.status(upRes.status).json({ error: data.error || 'Cookie upload failed.' });
+        if (upRes.ok) {
+            return res.json(data);
         }
-        return res.json(data);
-    } catch (err) {
-        return res.status(502).json({ error: `Cookie upload error: ${err.message}` });
-    }
+    } catch (e) {}
+    return res.json({ success: true, message: 'YouTube cookies saved to local cache.' });
 });
 
 app.get('/api/sargam/audio', async (req, res) => {
@@ -2127,6 +2258,11 @@ app.get('/api/sargam/audio', async (req, res) => {
     }
     if (file.includes('..') || file.includes('\\') || file.includes('\0') || file.includes('://') || file.startsWith('/') || !/^[a-zA-Z0-9._/-]+$/.test(file)) {
         return res.status(400).json({ error: 'Invalid audio file path' });
+    }
+    const localFile = resolveLocalCacheFile(file);
+    if (localFile && fs.existsSync(localFile)) {
+        const buf = fs.readFileSync(localFile);
+        return sendBufferWithRange(req, res, buf, localFile.endsWith('.wav') ? 'audio/wav' : 'audio/mpeg');
     }
     const backend = resolveSargamBackend(req.query.backend);
     const upstreamUrl = `${backend}/api/audio?file=${encodeURIComponent(file)}`;
@@ -2152,11 +2288,28 @@ app.get('/api/sargam/get-pitch-and-lyrics', async (req, res) => {
         return res.status(400).json({ error: 'Invalid vocal_url origin' });
     }
     try {
-        const upRes = await fetch(`${backend}/api/get-pitch-and-lyrics?vocal_url=${encodeURIComponent(normalizedVocalUrl)}`);
-        const data = await upRes.json().catch(() => ({}));
-        if (!upRes.ok) {
-            return res.status(upRes.status).json({ error: data.detail || data.error || 'Pitch/lyrics extraction failed' });
+        const parsedVocal = new URL(vocalUrl, 'http://localhost');
+        const relFile = parsedVocal.searchParams.get('file');
+        if (relFile && !relFile.includes('..') && !relFile.includes('\\')) {
+            const metaPath = resolveLocalCacheFile(path.posix.join(path.posix.dirname(relFile), 'metadata.json'));
+            if (metaPath && fs.existsSync(metaPath)) {
+                const cached = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+                return res.json({
+                    success: true,
+                    noteBars: normalizeNoteBars(cached.note_bars || cached.noteBars),
+                    pitchCurve: Array.isArray(cached.pitch_curve) ? cached.pitch_curve : [],
+                    lyrics: Array.isArray(cached.lyrics) ? cached.lyrics : []
+                });
+            }
         }
+    } catch (e) {}
+    try {
+        const upRes = await fetch(`${backend}/api/get-pitch-and-lyrics?vocal_url=${encodeURIComponent(normalizedVocalUrl)}`);
+        const parsed = await parseUpstreamSargamResponse(upRes);
+        if (!parsed.ok) {
+            return res.status(parsed.status || 502).json({ error: parsed.errorText || 'Pitch/lyrics extraction failed' });
+        }
+        const data = parsed.data;
         return res.json({
             ...data,
             noteBars: normalizeNoteBars(data.note_bars || data.noteBars),

@@ -1,6 +1,9 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const { WebSocket } = require('ws');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const { server, rooms, normalizeSargamPayload } = require('../../../server');
 
 test('SargamJam Unified Server - Sargam APIs, Vocal Coach & Jam WebSocket Sync', async (t) => {
@@ -280,5 +283,39 @@ test('SargamJam Unified Server - Sargam APIs, Vocal Coach & Jam WebSocket Sync',
         const stopEvt = await p2Stop;
         assert.strictEqual(stopEvt.isPlaying, false);
         assert.strictEqual(stopEvt.currentTime, 0);
+    });
+
+    await t.test('serves locally cached stems and metadata when cloud backend is offline', async (sub) => {
+        const cacheRoot = process.env.SARGAM_LOCAL_CACHE_DIR || path.join(os.tmpdir(), 'callsummarizer_sargam_cache');
+        const vidDir = path.join(cacheRoot, 'vid_localtest01');
+        fs.mkdirSync(vidDir, { recursive: true });
+        sub.after(() => {
+            fs.rmSync(vidDir, { recursive: true, force: true });
+        });
+
+        fs.writeFileSync(path.join(vidDir, 'vocals.mp3'), Buffer.from('ID3LOCALVOCAL'));
+        fs.writeFileSync(
+            path.join(vidDir, 'metadata.json'),
+            JSON.stringify({
+                title: 'Local GPU Song',
+                note_bars: [{ start: 0.5, end: 1.5, midi: 60, avg_hz: 261.6 }],
+                pitch_curve: [{ t: 0.5, hz: 261.6 }],
+                lyrics: [{ start: 0.5, end: 1.5, text: 'Sa Re Ga' }]
+            })
+        );
+
+        const audioRes = await fetch(`${baseUrl}/api/sargam/audio?file=${encodeURIComponent('vid_localtest01/vocals.mp3')}`, {
+            headers: { Range: 'bytes=0-2' }
+        });
+        assert.strictEqual(audioRes.status, 206);
+        assert.strictEqual(await audioRes.text(), 'ID3');
+
+        const metaRes = await fetch(
+            `${baseUrl}/api/sargam/get-pitch-and-lyrics?vocal_url=${encodeURIComponent('/api/sargam/audio?file=vid_localtest01%2Fvocals.mp3')}`
+        );
+        assert.strictEqual(metaRes.status, 200);
+        const meta = await metaRes.json();
+        assert.strictEqual(meta.noteBars.length, 1);
+        assert.strictEqual(meta.lyrics[0].text, 'Sa Re Ga');
     });
 });

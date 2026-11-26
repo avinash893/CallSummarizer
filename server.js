@@ -26,26 +26,88 @@ if (fs.existsSync(envPath)) {
 }
 
 const app = express();
+app.disable('x-powered-by');
 app.set('trust proxy', 1);
 const PORT = process.env.PORT || 8080;
+const IS_PROD = process.env.NODE_ENV === 'production';
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
 const TURNSTILE_SITE_KEY = process.env.CLOUDFLARE_TURNSTILE_SITE_KEY || '';
 const TURNSTILE_SECRET_KEY = process.env.CLOUDFLARE_TURNSTILE_SECRET_KEY || '';
+const ALLOWED_ORIGINS = new Set(
+    String(process.env.ALLOWED_ORIGINS || '')
+        .split(',')
+        .map((o) => o.trim())
+        .filter(Boolean)
+);
 
 app.use((req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+    res.setHeader('Permissions-Policy', 'geolocation=(), payment=(), usb=()');
+    if (IS_PROD && (req.secure || req.headers['x-forwarded-proto'] === 'https')) {
+        res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    }
     next();
 });
 
-app.use(cors({
-    origin: true,
-    credentials: true
-}));
+app.use((req, res, next) => {
+    const reqHost = req.get('host');
+    return cors({
+        origin: (origin, cb) => {
+            if (!origin) return cb(null, true);
+            if (ALLOWED_ORIGINS.has(origin)) return cb(null, true);
+            try {
+                const parsed = new URL(origin);
+                if (reqHost && parsed.host === reqHost) return cb(null, true);
+                if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') {
+                    return cb(null, true);
+                }
+            } catch (e) {}
+            return cb(null, false);
+        },
+        credentials: true
+    })(req, res, next);
+});
 app.use(express.json({ limit: '15mb' }));
+
+function createRateLimiter({ windowMs, max }) {
+    const hits = new Map();
+    return (req, res, next) => {
+        const ip = req.ip || req.socket?.remoteAddress || 'unknown';
+        const now = Date.now();
+        let entry = hits.get(ip);
+        if (!entry || now - entry.start > windowMs) {
+            entry = { start: now, count: 0 };
+        }
+        entry.count += 1;
+        hits.set(ip, entry);
+        if (hits.size > 5000) {
+            for (const [k, v] of hits.entries()) {
+                if (now - v.start > windowMs) hits.delete(k);
+            }
+        }
+        if (entry.count > max) {
+            return res.status(429).json({ error: 'Too many requests. Please slow down and try again shortly.' });
+        }
+        return next();
+    };
+}
+
+const authRateLimiter = createRateLimiter({ windowMs: 5 * 60 * 1000, max: 60 });
+const aiRateLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 60 });
+const stemsRateLimiter = createRateLimiter({ windowMs: 5 * 60 * 1000, max: 25 });
+
+app.use('/api/auth', authRateLimiter);
+app.use('/api/nlp-tasks', aiRateLimiter);
+app.use('/api/transcribe-audio', aiRateLimiter);
+app.use('/api/ai-vocal-coach', aiRateLimiter);
+app.use('/api/sargam/separate-stems', stemsRateLimiter);
+app.use('/api/sargam/separate-stems-file', stemsRateLimiter);
+app.use('/api/sargam/upload-cookies', stemsRateLimiter);
 
 const DEFAULT_SARGAM_BACKEND = (
     process.env.SARGAM_BACKEND_URL ||
@@ -81,7 +143,25 @@ function resolveSargamBackend(requested) {
 
 const TEN_DAYS_SECONDS = 10 * 24 * 60 * 60; // 10 days in seconds (864,000s)
 const TEN_DAYS_MS = TEN_DAYS_SECONDS * 1000;
-const SESSION_SECRET = process.env.SESSION_SECRET || GOOGLE_CLIENT_SECRET || 'callsummarizer-persistent-session-secret-2026';
+const SESSION_SECRET_FILE = path.join(__dirname, '.session_secret');
+
+function resolveSessionSecret() {
+    if (process.env.SESSION_SECRET) return process.env.SESSION_SECRET;
+    if (process.env.GOOGLE_CLIENT_SECRET) return process.env.GOOGLE_CLIENT_SECRET;
+    try {
+        if (fs.existsSync(SESSION_SECRET_FILE)) {
+            const existing = fs.readFileSync(SESSION_SECRET_FILE, 'utf8').trim();
+            if (existing.length >= 32) return existing;
+        }
+        const generated = crypto.randomBytes(32).toString('hex');
+        fs.writeFileSync(SESSION_SECRET_FILE, generated, { encoding: 'utf8', mode: 0o600 });
+        return generated;
+    } catch (e) {
+        return crypto.randomBytes(32).toString('hex');
+    }
+}
+
+const SESSION_SECRET = resolveSessionSecret();
 
 // Persistent 10-day server session store: sessionId -> { sessionId, user, tokens, createdAt }
 const sessions = new Map();
@@ -113,7 +193,11 @@ function verifyAndRestoreSessionToken(tokenStr) {
     if (parts.length !== 3) return null;
     const [, encoded, sig] = parts;
     const expectedSig = crypto.createHmac('sha256', SESSION_SECRET).update(encoded).digest('base64url');
-    if (sig !== expectedSig) return null;
+    const sigBuf = Buffer.from(sig, 'utf8');
+    const expectedBuf = Buffer.from(expectedSig, 'utf8');
+    if (sigBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(sigBuf, expectedBuf)) {
+        return null;
+    }
 
     try {
         const decoded = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
@@ -184,7 +268,7 @@ function saveSessionsToDisk() {
             if (s && s.sessionId) unique.set(s.sessionId, s);
         }
         const arr = Array.from(unique.values());
-        fs.writeFileSync(SESSIONS_FILE, JSON.stringify(arr, null, 2), 'utf8');
+        fs.writeFileSync(SESSIONS_FILE, JSON.stringify(arr, null, 2), { encoding: 'utf8', mode: 0o600 });
     } catch (e) {
         // Safe fallback
     }
@@ -195,12 +279,14 @@ loadSessionsFromDisk();
 function getSession(req) {
     if (!req) return null;
 
+    // Never accept session IDs from URL query strings to avoid log/Referer leakage
     const candidates = [
-        req.body?.sessionId,
-        req.query?.sessionId,
         req.headers ? req.headers['x-session-id'] : null,
+        req.headers ? req.headers['x-session-token'] : null,
         (req.headers?.authorization?.startsWith('Bearer ')) ? req.headers.authorization.slice(7).trim() : null,
-        req.headers?.cookie ? (req.headers.cookie.match(/cs_session_id=([^;]+)/)?.[1] || null) : null
+        req.headers?.cookie ? (req.headers.cookie.match(/cs_session_id=([^;]+)/)?.[1] || null) : null,
+        req.body?.sessionToken,
+        req.body?.sessionId
     ].filter(Boolean);
 
     for (const cand of candidates) {
@@ -372,20 +458,48 @@ app.post('/api/auth/verify-turnstile', async (req, res) => {
 
 // Google Authentication verification / user profile endpoint
 app.post('/api/auth/google', async (req, res) => {
-    const { credential, accessToken, name, email, picture, sessionId: requestedSessionId } = req.body || {};
+    const { credential, accessToken, name, email, picture } = req.body || {};
 
     try {
-        const existingSession = getSession(req) || (requestedSessionId && sessions.has(requestedSessionId) ? sessions.get(requestedSessionId) : null);
-        const existingTokens = existingSession?.tokens || {};
+        const authenticatedSession = getSession(req);
 
         // Case 1: Google ID Token JWT (from Google Identity Services button / One Tap)
         if (credential && typeof credential === 'string' && credential.split('.').length === 3) {
-            const payloadBase64 = credential.split('.')[1];
-            const decoded = JSON.parse(Buffer.from(payloadBase64, 'base64url').toString('utf8'));
+            let decoded = null;
+            if (process.env.NODE_ENV === 'production') {
+                try {
+                    const verifyRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`);
+                    if (!verifyRes.ok) {
+                        return res.status(401).json({ authenticated: false, error: 'Invalid Google ID token signature' });
+                    }
+                    const info = await verifyRes.json();
+                    if (GOOGLE_CLIENT_ID && info.aud !== GOOGLE_CLIENT_ID) {
+                        return res.status(401).json({ authenticated: false, error: 'Google token audience mismatch' });
+                    }
+                    if (info.email_verified !== true && info.email_verified !== 'true') {
+                        return res.status(401).json({ authenticated: false, error: 'Google email is not verified' });
+                    }
+                    if (info.exp && Number(info.exp) * 1000 <= Date.now()) {
+                        return res.status(401).json({ authenticated: false, error: 'Google ID token expired' });
+                    }
+                    decoded = info;
+                } catch (e) {
+                    return res.status(502).json({ authenticated: false, error: 'Failed to verify Google ID token' });
+                }
+            } else {
+                const payloadBase64 = credential.split('.')[1];
+                decoded = JSON.parse(Buffer.from(payloadBase64, 'base64url').toString('utf8'));
+            }
+
             const userName = decoded.name || decoded.given_name || 'Google User';
             const userEmail = (decoded.email || '').trim().toLowerCase();
+            if (!userEmail) {
+                return res.status(401).json({ authenticated: false, error: 'Google token missing verified email' });
+            }
             const userId = decoded.sub || crypto.randomUUID();
-            const sessionId = existingSession ? existingSession.sessionId : crypto.randomUUID();
+            const canReuseSession = authenticatedSession && authenticatedSession.user?.email === userEmail;
+            const existingTokens = canReuseSession ? (authenticatedSession.tokens || {}) : {};
+            const sessionId = canReuseSession ? authenticatedSession.sessionId : crypto.randomUUID();
 
             const userObj = {
                 id: userId,
@@ -405,7 +519,7 @@ app.post('/api/auth/google', async (req, res) => {
                     accessToken: accessToken || existingTokens.accessToken || null,
                     scope: existingTokens.scope || 'openid email profile https://www.googleapis.com/auth/calendar.events'
                 },
-                createdAt: existingSession?.createdAt || new Date().toISOString()
+                createdAt: canReuseSession ? authenticatedSession.createdAt : new Date().toISOString()
             };
             const sessionToken = signSessionToken(sessionObj);
             sessionObj.token = sessionToken;
@@ -432,7 +546,7 @@ app.post('/api/auth/google', async (req, res) => {
             let userPicture = '';
             let userId = crypto.randomUUID();
 
-            if (accessToken.startsWith('mock-') || accessToken === 'test-access-token') {
+            if (process.env.NODE_ENV !== 'production' && (accessToken.startsWith('mock-') || accessToken === 'test-access-token')) {
                 userName = name || 'Google User';
                 userEmail = (email || 'user@gmail.com').trim().toLowerCase();
                 userPicture = picture || '';
@@ -467,7 +581,9 @@ app.post('/api/auth/google', async (req, res) => {
                 });
             }
 
-            const sessionId = existingSession ? existingSession.sessionId : crypto.randomUUID();
+            const canReuseSession = authenticatedSession && authenticatedSession.user?.email === userEmail;
+            const existingTokens = canReuseSession ? (authenticatedSession.tokens || {}) : {};
+            const sessionId = canReuseSession ? authenticatedSession.sessionId : crypto.randomUUID();
             const userObj = {
                 id: userId,
                 name: userName,
@@ -485,13 +601,12 @@ app.post('/api/auth/google', async (req, res) => {
                     accessToken,
                     scope: 'openid email profile https://www.googleapis.com/auth/calendar.events'
                 },
-                createdAt: existingSession?.createdAt || new Date().toISOString()
+                createdAt: canReuseSession ? authenticatedSession.createdAt : new Date().toISOString()
             };
             const sessionToken = signSessionToken(sessionObj);
             sessionObj.token = sessionToken;
             userObj.sessionId = sessionId;
             userObj.sessionToken = sessionToken;
-            userObj.accessToken = accessToken;
             sessions.set(sessionId, sessionObj);
             sessions.set(sessionToken, sessionObj);
             saveSessionsToDisk();
@@ -506,19 +621,27 @@ app.post('/api/auth/google', async (req, res) => {
             });
         }
 
-        // Case 3: Direct Google profile sign-in (e.g., manual form or offline/testing)
+        // Case 3: Direct profile sign-in (only when Google OAuth client isn't enforcing Google identity in prod)
         if (name && email) {
-            const cleanName = String(name).trim();
+            if (process.env.NODE_ENV === 'production' && GOOGLE_CLIENT_ID && process.env.ALLOW_DEV_LOGIN !== 'true') {
+                return res.status(401).json({
+                    authenticated: false,
+                    error: 'Google OAuth verification is required in production'
+                });
+            }
+            const cleanName = String(name).trim().slice(0, 80);
             const cleanEmail = String(email).trim().toLowerCase();
             const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-            if (!emailRegex.test(cleanEmail)) {
+            if (!cleanName || !emailRegex.test(cleanEmail)) {
                 return res.status(400).json({
                     authenticated: false,
                     error: 'Invalid Google email address format'
                 });
             }
 
-            const sessionId = existingSession ? existingSession.sessionId : crypto.randomUUID();
+            const canReuseSession = authenticatedSession && authenticatedSession.user?.email === cleanEmail;
+            const existingTokens = canReuseSession ? (authenticatedSession.tokens || {}) : {};
+            const sessionId = canReuseSession ? authenticatedSession.sessionId : crypto.randomUUID();
             const userId = crypto.createHash('sha256').update(cleanEmail).digest('hex').slice(0, 16);
 
             const userObj = {
@@ -535,16 +658,15 @@ app.post('/api/auth/google', async (req, res) => {
                 user: userObj,
                 tokens: {
                     ...existingTokens,
-                    accessToken: accessToken || existingTokens.accessToken || 'mock-calendar-token',
+                    accessToken: accessToken || existingTokens.accessToken || (!IS_PROD ? 'mock-calendar-token' : null),
                     scope: 'openid email profile https://www.googleapis.com/auth/calendar.events'
                 },
-                createdAt: existingSession?.createdAt || new Date().toISOString()
+                createdAt: canReuseSession ? authenticatedSession.createdAt : new Date().toISOString()
             };
             const sessionToken = signSessionToken(sessionObj);
             sessionObj.token = sessionToken;
             userObj.sessionId = sessionId;
             userObj.sessionToken = sessionToken;
-            userObj.accessToken = sessionObj.tokens.accessToken;
             sessions.set(sessionId, sessionObj);
             sessions.set(sessionToken, sessionObj);
             saveSessionsToDisk();
@@ -566,11 +688,16 @@ app.post('/api/auth/google', async (req, res) => {
 });
 
 function getGoogleRedirectUri(req) {
+    if (process.env.PUBLIC_BASE_URL) {
+        return `${process.env.PUBLIC_BASE_URL.replace(/\/$/, '')}/api/auth/google/callback`;
+    }
     const forwardedProto = req.headers['x-forwarded-proto']
-        ? String(req.headers['x-forwarded-proto']).split(',')[0].trim()
+        ? String(req.headers['x-forwarded-proto']).split(',')[0].trim().toLowerCase()
         : '';
-    const proto = forwardedProto || req.protocol || 'https';
-    return `${proto}://${req.get('host')}/api/auth/google/callback`;
+    const proto = (forwardedProto === 'http' || forwardedProto === 'https') ? forwardedProto : (req.protocol === 'https' ? 'https' : 'http');
+    const rawHost = String(req.get('host') || 'localhost:8080').trim();
+    const safeHost = /^[a-zA-Z0-9.-]+(:\d{1,5})?$/.test(rawHost) ? rawHost : 'localhost:8080';
+    return `${proto}://${safeHost}/api/auth/google/callback`;
 }
 
 // Server-side Google OAuth2 authorization URL initiation
@@ -692,7 +819,7 @@ app.get('/api/auth/google/callback', async (req, res) => {
             sessions.set(sessionToken, sessionObj);
             saveSessionsToDisk();
             setSessionCookie(res, req, sessionToken);
-            return res.redirect(`/?sessionId=${encodeURIComponent(sessionToken)}&googleCredential=${encodeURIComponent(tokenData.id_token || '')}`);
+            return res.redirect('/?googleAuth=1');
         }
         return res.redirect('/?authError=token_exchange_failed');
     } catch (err) {
@@ -703,7 +830,11 @@ app.get('/api/auth/google/callback', async (req, res) => {
 // Logout endpoint
 app.post('/api/auth/logout', (req, res) => {
     const session = getSession(req);
-    const targetSessionId = req.body?.sessionId || session?.sessionId;
+    if (!session) {
+        setSessionCookie(res, req, '', 'Thu, 01 Jan 1970 00:00:00 GMT');
+        return res.status(IS_PROD ? 401 : 200).json({ success: !IS_PROD });
+    }
+    const targetSessionId = session.sessionId;
     if (targetSessionId) {
         revokedSessions.add(targetSessionId);
         if (sessions.has(targetSessionId)) {
@@ -715,7 +846,6 @@ app.post('/api/auth/logout', (req, res) => {
         }
         saveSessionsToDisk();
     }
-    if (session?.sessionId) revokedSessions.add(session.sessionId);
     if (session?.token) revokedSessions.add(session.token);
     setSessionCookie(res, req, '', 'Thu, 01 Jan 1970 00:00:00 GMT');
     return res.json({ success: true });
@@ -987,38 +1117,38 @@ app.post('/api/calendar/events', async (req, res) => {
             }
         };
 
-        // Explicit mock errors for testing and simulation
-        if (accessToken === 'mock-fail' || accessToken === 'mock-expired') {
-            return res.status(401).json({
-                success: false,
-                error: 'Google Calendar API error: User calendar access revoked or expired'
-            });
-        }
-        if (accessToken === 'mock-forbidden' || accessToken === 'mock-insufficient-scopes') {
-            return res.status(403).json({
-                success: false,
-                error: 'Google Calendar API error: Insufficient permissions to create calendar events'
-            });
-        }
-
-        // If test / simulated token is provided
-        if (accessToken.startsWith('mock-') || accessToken === 'test-access-token') {
-            const gcalStart = startDateTime.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
-            const gcalEnd = endDateTime.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
-            const templateUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(eventPayload.summary)}&dates=${gcalStart}/${gcalEnd}&details=${encodeURIComponent(eventPayload.description + '\n\nAlarm: 5-minute popup reminder')}`;
-            return res.status(201).json({
-                success: true,
-                mode: 'simulated',
-                event: {
-                    id: 'cal-event-' + Date.now(),
-                    htmlLink: templateUrl,
-                    summary: eventPayload.summary,
-                    description: eventPayload.description,
-                    start: eventPayload.start,
-                    end: eventPayload.end,
-                    reminders: eventPayload.reminders
-                }
-            });
+        // Explicit mock errors & simulated events allowed strictly outside production
+        if (!IS_PROD) {
+            if (accessToken === 'mock-fail' || accessToken === 'mock-expired') {
+                return res.status(401).json({
+                    success: false,
+                    error: 'Google Calendar API error: User calendar access revoked or expired'
+                });
+            }
+            if (accessToken === 'mock-forbidden' || accessToken === 'mock-insufficient-scopes') {
+                return res.status(403).json({
+                    success: false,
+                    error: 'Google Calendar API error: Insufficient permissions to create calendar events'
+                });
+            }
+            if (accessToken.startsWith('mock-') || accessToken === 'test-access-token') {
+                const gcalStart = startDateTime.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+                const gcalEnd = endDateTime.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+                const templateUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(eventPayload.summary)}&dates=${gcalStart}/${gcalEnd}&details=${encodeURIComponent(eventPayload.description + '\n\nAlarm: 5-minute popup reminder')}`;
+                return res.status(201).json({
+                    success: true,
+                    mode: 'simulated',
+                    event: {
+                        id: 'cal-event-' + Date.now(),
+                        htmlLink: templateUrl,
+                        summary: eventPayload.summary,
+                        description: eventPayload.description,
+                        start: eventPayload.start,
+                        end: eventPayload.end,
+                        reminders: eventPayload.reminders
+                    }
+                });
+            }
         }
 
         let activeToken = accessToken;
@@ -1098,6 +1228,12 @@ app.post('/api/calendar/events', async (req, res) => {
     }
 });
 
+function sanitizePublicParticipant(p) {
+    if (!p) return null;
+    const { email: _omitEmail, sessionId: _omitSid, ...safe } = p;
+    return safe;
+}
+
 // Meeting Service routes
 app.get('/api/rooms/:id', (req, res) => {
     const normalized = normalizeRoomId(req.params.id);
@@ -1109,12 +1245,13 @@ app.get('/api/rooms/:id', (req, res) => {
     if (room.participants.size === 0 && room.emptySince && (Date.now() - room.emptySince >= ROOM_EMPTY_EXPIRY_MS)) {
         room.transcript = [];
         room.tasks = [];
+        room.summary = [];
         if (room.cleanupTimer) {
             clearTimeout(room.cleanupTimer);
             room.cleanupTimer = null;
         }
     }
-    const activeParticipants = Array.from(room.participants.values());
+    const activeParticipants = Array.from(room.participants.values()).map(sanitizePublicParticipant);
     res.json({
         roomId: room.roomId,
         host: room.host,
@@ -1122,6 +1259,7 @@ app.get('/api/rooms/:id', (req, res) => {
         participantCount: activeParticipants.length,
         transcript: room.transcript,
         tasks: room.tasks,
+        summary: room.summary || [],
         jamState: room.jamState || createDefaultJamState(),
         backingState: room.backingState || createDefaultBackingState(),
         status: 'active',
@@ -1131,11 +1269,15 @@ app.get('/api/rooms/:id', (req, res) => {
 
 // Explicit session wipe endpoint to remove older transcripts and tasks for a room
 app.delete('/api/rooms/:id/session', (req, res) => {
+    if (process.env.NODE_ENV === 'production' && !getSession(req)) {
+        return res.status(401).json({ error: 'Authentication required to clear room session' });
+    }
     const normalized = normalizeRoomId(req.params.id);
     if (rooms.has(normalized)) {
         const room = rooms.get(normalized);
         room.transcript = [];
         room.tasks = [];
+        room.summary = [];
         broadcastToRoom(normalized, { type: 'room-session-cleared' });
     }
     res.json({ success: true, message: `Room ${normalized} session cleared` });
@@ -1437,19 +1579,54 @@ function toProxyAudioUrl(rawUrl, backendBase) {
     }
 }
 
+function isSafePublicHttpUrl(rawUrl) {
+    try {
+        const parsed = new URL(rawUrl);
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+        const h = parsed.hostname.toLowerCase();
+        if (
+            h === 'localhost' ||
+            h === '0.0.0.0' ||
+            h.endsWith('.local') ||
+            h.endsWith('.internal') ||
+            /^127\./.test(h) ||
+            /^10\./.test(h) ||
+            /^192\.168\./.test(h) ||
+            /^169\.254\./.test(h) ||
+            /^172\.(1[6-9]|2\d|3[01])\./.test(h) ||
+            h === '::1' ||
+            h === '[::1]' ||
+            /^\[?(fc|fd|fe80)/i.test(h)
+        ) {
+            return false;
+        }
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
 function toBackendVocalUrl(clientUrl, backendBase) {
     if (!clientUrl || typeof clientUrl !== 'string') return '';
     if (clientUrl.startsWith('/api/sargam/audio')) {
         try {
             const u = new URL(clientUrl, 'http://localhost');
             const file = u.searchParams.get('file');
-            if (file) return `${backendBase}/api/audio?file=${encodeURIComponent(file)}`;
+            if (file && !file.includes('..') && !file.includes('\\')) {
+                return `${backendBase}/api/audio?file=${encodeURIComponent(file)}`;
+            }
         } catch (e) {}
     }
-    if (clientUrl.startsWith('/')) {
+    if (clientUrl.startsWith('/api/audio')) {
         return `${backendBase}${clientUrl}`;
     }
-    return clientUrl;
+    try {
+        const parsed = new URL(clientUrl);
+        if (ALLOWED_SARGAM_HOSTS.has(parsed.origin)) {
+            return clientUrl;
+        }
+    } catch (e) {}
+    return '';
 }
 
 function normalizeNoteBars(rawBars) {
@@ -1515,6 +1692,9 @@ app.post('/api/sargam/separate-stems', async (req, res) => {
     const targetUrl = (url || sourceUrl || '').trim();
     if (!targetUrl) {
         return res.status(400).json({ error: 'Please provide a YouTube or audio URL.' });
+    }
+    if (!isSafePublicHttpUrl(targetUrl)) {
+        return res.status(400).json({ error: 'Invalid or private media URL provided.' });
     }
     const backend = resolveSargamBackend(requestedBackend || req.headers['x-sargam-backend']);
     try {
@@ -1599,6 +1779,9 @@ app.get('/api/sargam/audio', async (req, res) => {
     if (!file) {
         return res.status(400).json({ error: 'Missing file parameter' });
     }
+    if (file.includes('..') || file.includes('\\') || file.includes('\0') || file.includes('://') || file.startsWith('/') || !/^[a-zA-Z0-9._/-]+$/.test(file)) {
+        return res.status(400).json({ error: 'Invalid audio file path' });
+    }
     const backend = resolveSargamBackend(req.query.backend);
     const upstreamUrl = `${backend}/api/audio?file=${encodeURIComponent(file)}`;
     const headers = {};
@@ -1629,6 +1812,9 @@ app.get('/api/sargam/get-pitch-and-lyrics', async (req, res) => {
     }
     const backend = resolveSargamBackend(req.query.backend);
     const normalizedVocalUrl = toBackendVocalUrl(vocalUrl, backend);
+    if (!normalizedVocalUrl) {
+        return res.status(400).json({ error: 'Invalid vocal_url origin' });
+    }
     try {
         const upRes = await fetch(`${backend}/api/get-pitch-and-lyrics?vocal_url=${encodeURIComponent(normalizedVocalUrl)}`);
         const data = await upRes.json().catch(() => ({}));
@@ -1778,7 +1964,7 @@ app.use((req, res) => {
 const server = http.createServer(app);
 
 // Attach Room-Aware WebSockets Signaling Server
-const wss = new WebSocketServer({ server });
+const wss = new WebSocketServer({ server, maxPayload: 256 * 1024 });
 
 function broadcastToRoom(roomId, payload, excludeWs = null) {
     const serialized = typeof payload === 'string' ? payload : JSON.stringify(payload);
@@ -1848,12 +2034,10 @@ wss.on('connection', (ws) => {
         try {
             data = JSON.parse(rawStr);
         } catch (e) {
-            // Non-JSON message fallback broadcast
-            wss.clients.forEach((client) => {
-                if (client !== ws && client.readyState === 1) {
-                    try { client.send(rawStr, () => {}); } catch (err) {}
-                }
-            });
+            // Drop malformed non-JSON frames rather than broadcasting across rooms
+            return;
+        }
+        if (!data || typeof data !== 'object' || typeof data.type !== 'string') {
             return;
         }
 
@@ -1867,8 +2051,7 @@ wss.on('connection', (ws) => {
 
                 const participant = {
                     peerId: ws.peerId,
-                    name: data.user?.name || 'Guest',
-                    email: data.user?.email || '',
+                    name: String(data.user?.name || 'Guest').slice(0, 80),
                     picture: data.user?.picture || '',
                     initials: data.user?.initials || getInitials(data.user?.name || 'Guest'),
                     instrument: data.user?.instrument || 'Vocalist',
@@ -1879,7 +2062,7 @@ wss.on('connection', (ws) => {
                 };
 
                 room.participants.set(ws.peerId, participant);
-                const participantsList = Array.from(room.participants.values());
+                const participantsList = Array.from(room.participants.values()).map(sanitizePublicParticipant);
 
                 // Acknowledge join to the connecting client with current room state
                 try {
@@ -2085,15 +2268,9 @@ wss.on('connection', (ws) => {
             }
 
             default: {
-                // Legacy broadcast for generic messages
+                // Only relay messages within an authenticated/joined room; never broadcast globally across wss.clients
                 if (ws.roomId) {
                     broadcastToRoom(ws.roomId, rawStr, ws);
-                } else {
-                    wss.clients.forEach((client) => {
-                        if (client !== ws && client.readyState === 1) {
-                            try { client.send(rawStr, () => {}); } catch (e) {}
-                        }
-                    });
                 }
                 break;
             }

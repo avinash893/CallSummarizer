@@ -27,3 +27,4 @@ pnpm-debug.log*
 Thumbs.db
 .agents/
 .sessions.json
+.session_secret

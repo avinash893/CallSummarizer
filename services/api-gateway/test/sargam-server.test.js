@@ -17,6 +17,7 @@ test('SargamJam Unified Server - Sargam APIs, Vocal Coach & Jam WebSocket Sync',
     });
 
     t.after(() => {
+        server.closeAllConnections?.();
         server.close();
     });
 
@@ -83,9 +84,14 @@ test('SargamJam Unified Server - Sargam APIs, Vocal Coach & Jam WebSocket Sync',
         assert.ok(data.analysis.raagTip);
     });
 
-    await t.test('WebSocket broadcasts jam-state-sync and pitch-telemetry across peers and updates room state', async () => {
+    await t.test('WebSocket broadcasts jam-state-sync and pitch-telemetry across peers and updates room state', async (sub) => {
         const ws1 = new WebSocket(wsUrl);
         const ws2 = new WebSocket(wsUrl);
+        sub.after(() => {
+            try { ws1.close(); } catch (e) {}
+            try { ws2.close(); } catch (e) {}
+            rooms.delete('yaman-riyaz-session');
+        });
 
         await Promise.all([
             new Promise((res) => ws1.once('open', res)),
@@ -107,7 +113,7 @@ test('SargamJam Unified Server - Sargam APIs, Vocal Coach & Jam WebSocket Sync',
 
         const ack1 = await room1UsersPromise;
         assert.ok(ack1.jamState);
-        assert.strictEqual(ack1.jamState.raga, 'Bilawal');
+        assert.strictEqual(ack1.jamState.raga, 'All Notes');
 
         const room2UsersPromise = new Promise((res) => {
             const handler = (raw) => {

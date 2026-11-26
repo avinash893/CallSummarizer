@@ -249,9 +249,11 @@ export default function App() {
     if (typeof window !== 'undefined' && window.localStorage) {
       try {
         if (nextUser && nextUser.email) {
+          // Never persist raw Google OAuth accessToken to localStorage
+          const { accessToken: _omitAccessToken, ...safeLocalUser } = nextUser;
           const userWithTimestamp = {
-            ...nextUser,
-            savedAt: nextUser.savedAt || Date.now()
+            ...safeLocalUser,
+            savedAt: safeLocalUser.savedAt || Date.now()
           };
           window.localStorage.setItem('cs_google_user', JSON.stringify(userWithTimestamp));
         } else {
@@ -282,21 +284,23 @@ export default function App() {
 
     const params = typeof window !== 'undefined' && window.location?.search ? new URLSearchParams(window.location.search) : null;
     const urlSessionId = params?.get('sessionId');
+    const urlGoogleAuth = params?.get('googleAuth');
     const cred = params?.get('googleCredential');
     const effectiveSessionId = urlSessionId || user?.sessionId;
 
-    if (urlSessionId && typeof window !== 'undefined' && window.history?.replaceState) {
+    if ((urlSessionId || urlGoogleAuth || cred) && typeof window !== 'undefined' && window.history?.replaceState) {
       try {
         const cleanUrl = new URL(window.location.href);
         cleanUrl.searchParams.delete('sessionId');
         cleanUrl.searchParams.delete('googleCredential');
+        cleanUrl.searchParams.delete('googleAuth');
         window.history.replaceState({}, '', cleanUrl.toString());
       } catch (e) {}
     }
 
-    if (effectiveSessionId) {
-      fetch('/api/auth/session?sessionId=' + encodeURIComponent(effectiveSessionId), {
-        headers: { 'X-Session-ID': effectiveSessionId },
+    if (effectiveSessionId || urlGoogleAuth) {
+      fetch('/api/auth/session', {
+        headers: effectiveSessionId ? { 'X-Session-ID': effectiveSessionId } : {},
         credentials: 'include'
       })
         .then((r) => {

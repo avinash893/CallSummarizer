@@ -20,7 +20,8 @@ describe('TopBar Component', () => {
       />
     );
 
-    expect(screen.getByText('SargamJam Studio')).toBeInTheDocument();
+    expect(screen.getByText('TaalMeet')).toBeInTheDocument();
+    expect(document.querySelector('.taalmeet-logo-svg')).toBeInTheDocument();
     expect(screen.getByText('strategy-sync')).toBeInTheDocument();
     expect(screen.getByText('04:15')).toBeInTheDocument();
     expect(screen.getByText('Services')).toBeInTheDocument();

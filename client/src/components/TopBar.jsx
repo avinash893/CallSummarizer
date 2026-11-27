@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import TaalMeetLogo from './TaalMeetLogo';
 
 export default function TopBar({
   roomName,
@@ -28,9 +29,9 @@ export default function TopBar({
     <header className="top-nav">
       <div className="top-nav-left">
         <div className="brand-title">
-          <i className="bi bi-music-note-beamed brand-icon-accent"></i>
-          <span className="brand-text-full">SargamJam Studio</span>
-          <span className="brand-text-short">SJ</span>
+          <TaalMeetLogo size={26} />
+          <span className="brand-text-full">TaalMeet</span>
+          <span className="brand-text-short">TM</span>
         </div>
 
         <button

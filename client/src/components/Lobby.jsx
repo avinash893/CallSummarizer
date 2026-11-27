@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import TurnstileWidget from './TurnstileWidget';
+import TaalMeetLogo from './TaalMeetLogo';
 
 const DEFAULT_GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 
@@ -292,8 +293,8 @@ export default function Lobby({
       <div className="lobby-box">
         <header className="lobby-header-row">
           <div className="lobby-brand-wordmark">
-            <i className="bi bi-music-note-beamed brand-icon-accent"></i>
-            <span>SargamJam Studio</span>
+            <TaalMeetLogo size={32} />
+            <span>TaalMeet</span>
           </div>
 
           {/* Google Account Badge + Theme Switcher */}

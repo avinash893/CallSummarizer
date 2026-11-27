@@ -306,6 +306,12 @@ input, textarea, select {
   font-size: 1.05rem;
 }
 
+.taalmeet-logo-svg {
+  flex-shrink: 0;
+  border-radius: 7px;
+  box-shadow: 0 2px 8px rgba(234, 88, 12, 0.25);
+}
+
 .room-chip {
   background: var(--bg-surface-elevated);
   border: 1px solid var(--border-subtle);

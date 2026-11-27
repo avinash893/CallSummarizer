@@ -83,7 +83,8 @@ describe('App Main Flow', () => {
       fireEvent.click(screen.getByRole('button', { name: /Join now/i }));
     });
 
-    expect(screen.getByText('SargamJam Studio')).toBeInTheDocument();
+    expect(screen.getByText('TaalMeet')).toBeInTheDocument();
+    expect(container.querySelector('.taalmeet-logo-svg')).toBeInTheDocument();
     // Only 1 video tile when only 1 person has joined (no fake demo tile)
     expect(container.querySelectorAll('.video-tile').length).toBe(1);
     expect(screen.queryByText('RS')).not.toBeInTheDocument();
